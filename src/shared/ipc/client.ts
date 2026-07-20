@@ -19,6 +19,8 @@ import type { GitStatus } from "./bindings/GitStatus";
 import type { IndexStats } from "./bindings/IndexStats";
 import type { JobInfo } from "./bindings/JobInfo";
 import type { KernelEvent } from "./bindings/KernelEvent";
+import type { MemoryEntry } from "./bindings/MemoryEntry";
+import type { NotificationDto } from "./bindings/NotificationDto";
 import type { Project } from "./bindings/Project";
 import type { TermEvent } from "./bindings/TermEvent";
 import type { TermSessionInfo } from "./bindings/TermSessionInfo";
@@ -38,6 +40,8 @@ export type {
   IndexStats,
   JobInfo,
   KernelEvent,
+  MemoryEntry,
+  NotificationDto,
   Project,
   TermEvent,
   TermSessionInfo,
@@ -81,6 +85,12 @@ export const ipc = {
   commandsList: () => call<CommandDescriptor[]>("commands_list"),
   jobsRecent: () => call<JobInfo[]>("jobs_recent"),
 
+  notificationsList: () => call<NotificationDto[]>("notifications_list"),
+  notificationsUnreadCount: () => call<number>("notifications_unread_count"),
+  notificationMarkRead: (id: string) =>
+    call<void>("notification_mark_read", { id }),
+  notificationsMarkAllRead: () => call<void>("notifications_mark_all_read"),
+
   termCreate: (
     opts: { shell?: string; cwd?: string; cols: number; rows: number },
     onOutput: Channel<TermEvent>,
@@ -90,6 +100,7 @@ export const ipc = {
     call<void>("term_resize", { id, cols, rows }),
   termKill: (id: string) => call<void>("term_kill", { id }),
   termList: () => call<TermSessionInfo[]>("term_list"),
+  termTail: (id: string) => call<string>("term_tail", { id }),
 
   gitStatus: (path: string) => call<GitStatus>("git_status", { path }),
   gitStage: (path: string, files: string[]) =>
@@ -144,6 +155,12 @@ export const ipc = {
 
   indexProject: (path: string) => call<string>("index_project", { path }),
   indexStats: (path: string) => call<IndexStats>("index_stats", { path }),
+
+  aiMemoryList: (projectPath: string) =>
+    call<MemoryEntry[]>("ai_memory_list", { projectPath }),
+  aiMemoryAdd: (projectPath: string, content: string) =>
+    call<MemoryEntry>("ai_memory_add", { projectPath, content }),
+  aiMemoryDelete: (id: string) => call<void>("ai_memory_delete", { id }),
   aiCommitMessage: (path: string, provider: string, model: string) =>
     call<string>("ai_commit_message", { path, provider, model }),
 };

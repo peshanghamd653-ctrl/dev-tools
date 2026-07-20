@@ -13,6 +13,7 @@ export const aiKeys = {
   messages: (id: string) => ["ai", "messages", id] as const,
   secrets: ["secrets"] as const,
   ollamaModels: ["ai", "ollama-models"] as const,
+  memory: (projectPath: string) => ["ai", "memory", projectPath] as const,
 };
 
 export function useConversations() {
@@ -36,6 +37,14 @@ export function useSecretNames() {
     queryKey: aiKeys.secrets,
     queryFn: ipc.secretList,
     enabled: inDesktopShell,
+  });
+}
+
+export function useMemoryEntries(projectPath: string | null) {
+  return useQuery({
+    queryKey: aiKeys.memory(projectPath ?? "none"),
+    queryFn: () => ipc.aiMemoryList(projectPath ?? ""),
+    enabled: inDesktopShell && Boolean(projectPath),
   });
 }
 

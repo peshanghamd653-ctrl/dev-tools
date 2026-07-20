@@ -4,8 +4,11 @@
 
 use sqlx::{Row, SqlitePool};
 
-use crate::providers::AiResult;
-use crate::types::{ChatMessage, Conversation};
+use crate::providers::{AiError, AiResult};
+use crate::types::{ChatMessage, Conversation, MemoryEntry};
+
+const MAX_MEMORY_CONTENT: usize = 500;
+const MAX_MEMORY_ENTRIES: i64 = 100;
 
 fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
@@ -45,6 +48,91 @@ pub async fn init(pool: &SqlitePool) -> AiResult<()> {
     )
     .execute(pool)
     .await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS ai_memory (
+            id         TEXT PRIMARY KEY,
+            project    TEXT NOT NULL,
+            content    TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_ai_memory_project ON ai_memory (project, created_at)",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+// ---- Long-term memory ----
+
+pub async fn memory_list(pool: &SqlitePool, project: &str) -> AiResult<Vec<MemoryEntry>> {
+    let rows = sqlx::query(
+        "SELECT id, project, content, created_at FROM ai_memory
+         WHERE project = ?1 ORDER BY created_at ASC, id ASC",
+    )
+    .bind(project)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|row| MemoryEntry {
+            id: row.get("id"),
+            project: row.get("project"),
+            content: row.get("content"),
+            created_at: row.get("created_at"),
+        })
+        .collect())
+}
+
+pub async fn memory_add(pool: &SqlitePool, project: &str, content: &str) -> AiResult<MemoryEntry> {
+    let content = content.trim();
+    if content.is_empty() {
+        return Err(AiError::InvalidInput("memory content is empty".into()));
+    }
+    if content.chars().count() > MAX_MEMORY_CONTENT {
+        return Err(AiError::InvalidInput(format!(
+            "memory entries are capped at {MAX_MEMORY_CONTENT} characters; save a shorter fact"
+        )));
+    }
+    let count: i64 = sqlx::query("SELECT COUNT(*) AS n FROM ai_memory WHERE project = ?1")
+        .bind(project)
+        .fetch_one(pool)
+        .await?
+        .get("n");
+    if count >= MAX_MEMORY_ENTRIES {
+        return Err(AiError::InvalidInput(format!(
+            "memory is full ({MAX_MEMORY_ENTRIES} entries); delete outdated entries first"
+        )));
+    }
+    let entry = MemoryEntry {
+        id: new_id(),
+        project: project.to_string(),
+        content: content.to_string(),
+        created_at: now_ms(),
+    };
+    sqlx::query("INSERT INTO ai_memory (id, project, content, created_at) VALUES (?1, ?2, ?3, ?4)")
+        .bind(&entry.id)
+        .bind(&entry.project)
+        .bind(&entry.content)
+        .bind(entry.created_at)
+        .execute(pool)
+        .await?;
+    Ok(entry)
+}
+
+pub async fn memory_delete(pool: &SqlitePool, id: &str) -> AiResult<()> {
+    let result = sqlx::query("DELETE FROM ai_memory WHERE id = ?1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AiError::InvalidInput(format!(
+            "memory entry not found: {id}"
+        )));
+    }
     Ok(())
 }
 
@@ -233,6 +321,33 @@ mod tests {
         delete_conversation(&pool, &conv.id).await.unwrap();
         assert!(list_conversations(&pool).await.unwrap().is_empty());
         assert!(messages(&pool, &conv.id).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn memory_roundtrip_isolation_and_caps() {
+        let (_dir, pool) = test_pool().await;
+        let a = memory_add(&pool, "C:/proj/a", "uses pnpm, not npm")
+            .await
+            .unwrap();
+        memory_add(&pool, "C:/proj/a", "CI runs on windows-latest")
+            .await
+            .unwrap();
+        memory_add(&pool, "C:/proj/b", "different project fact")
+            .await
+            .unwrap();
+
+        let listed = memory_list(&pool, "C:/proj/a").await.unwrap();
+        assert_eq!(listed.len(), 2, "memory is per-project");
+        assert_eq!(listed[0].content, "uses pnpm, not npm");
+
+        assert!(memory_add(&pool, "C:/proj/a", "   ").await.is_err());
+        assert!(memory_add(&pool, "C:/proj/a", &"x".repeat(600))
+            .await
+            .is_err());
+
+        memory_delete(&pool, &a.id).await.unwrap();
+        assert!(memory_delete(&pool, &a.id).await.is_err(), "double delete");
+        assert_eq!(memory_list(&pool, "C:/proj/a").await.unwrap().len(), 1);
     }
 
     #[tokio::test]

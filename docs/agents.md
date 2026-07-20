@@ -60,12 +60,15 @@ stream_once(messages, tools) → text delta(s) + tool_use block(s)
 - `ToolExecutor` is a trait (`devos-ai::providers::ToolExecutor`); the
   desktop layer implements it as `ProjectTools` (`src-tauri/src/tools.rs`),
   scoped to one canonicalized project root.
-- Tool set today: `read_file`, `list_dir`, `find_files`, `search_code`
-  (read-only level) plus `edit_file`, `write_file`, `run_command` (write
-  level). See [security.md](security.md) for containment and approval
-  guarantees. `search_code` queries the FTS5 project index (bm25-ranked,
-  file:line + snippet); if the project isn't indexed it tells the model to
-  ask the user to index it rather than failing.
+- Tool set today: `read_file`, `list_dir`, `find_files`, `search_code`,
+  `save_memory` (read level) plus `edit_file`, `write_file`, `run_command`
+  (write level). See [security.md](security.md) for containment and
+  approval guarantees. `search_code` queries the FTS5 project index
+  (bm25-ranked, file:line + snippet); if the project isn't indexed it tells
+  the model to ask the user to index it rather than failing. `save_memory`
+  sits at the read level deliberately: it writes only to DevOS's own
+  memory store, which is fully visible and deletable in the Memory dialog
+  — it cannot touch project files.
 - **Nothing runs without an explicit grant.** The frontend only includes
   `toolsEnabled` / `writeToolsEnabled` in the `ai_send` call when the user
   has turned on the corresponding chips; otherwise the backend never even
@@ -78,16 +81,32 @@ stream_once(messages, tools) → text delta(s) + tool_use block(s)
 - Live activity streams to the UI as `AiDelta::ToolCall` / `ToolResult`
   frames, rendered as a running list above the assistant's reply.
 
-## Background agents — planned (M2 remainder / M4)
+## Long-term memory — implemented
 
-Not yet built. Design intent, for when it lands: an agent = prompt + tool
-allowlist + trigger (schedule or event) + budget, executed as a kernel job
-(`JobRunner`), reporting via `KernelEvent::NotificationAdded`. First planned
-agent: a build-failure watcher subscribing to terminal/job events, using the
-same read-only tool set to diagnose a failure and propose a fix as a
-notification — never auto-applying a change. This reuses every piece
-already built (jobs, events, tool executor) rather than needing new
-infrastructure.
+Per-project facts in `ai_memory` (capped: 500 chars/entry, 100 entries per
+project). Injected into the project system prompt on every send when the
+project is attached. Three surfaces, all showing the same data:
+
+- the model's `save_memory` tool ("remember that we use pnpm"),
+- the Memory dialog in the chat UI (list, manual add, delete),
+- the system prompt block "Saved project memory".
+
+Deliberately transparent: there is no hidden summarization or automatic
+distillation — every remembered fact was either saved by the model in a
+visible tool call or typed by the user, and each is one click from deletion.
+
+## Background agents — infrastructure ready, first agent partially manual
+
+The pieces an agent needs all exist now: durable jobs (`JobRunner`), the
+event bus, the gated tool executor, and a persistent reporting surface
+(`Kernel::notify` → Notification Center bell).
+
+The build-failure watcher ships today in its **manual** form: the terminal
+keeps a 32 KB backend ring buffer per session, and "Diagnose with AI" sends
+the ANSI-stripped tail into a fresh chat. The **automatic** form needs OSC
+133 shell integration (so the manager can see command boundaries and exit
+codes in the output stream) — then: non-zero exit → agent job reads the
+same buffer → diagnosis → `notify()`. Never auto-applies a change.
 
 ## Project indexing / RAG — lexical half implemented
 

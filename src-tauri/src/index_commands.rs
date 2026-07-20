@@ -8,15 +8,25 @@ use crate::state::AppState;
 
 #[tauri::command]
 pub async fn index_project(state: State<'_, AppState>, path: String) -> Result<String, String> {
-    let pool = state.kernel.pool.clone();
+    let kernel = state.kernel.clone();
     state
         .kernel
         .jobs
         .submit("index", "reindex", async move {
-            devos_index::reindex_project(&pool, &path)
-                .await
-                .map(|s| serde_json::json!({ "files": s.files, "chunks": s.chunks }))
-                .map_err(|e| e.to_string())
+            match devos_index::reindex_project(&kernel.pool, &path).await {
+                Ok(stats) => {
+                    let _ = kernel
+                        .notify(
+                            "index",
+                            "info",
+                            "Project index updated",
+                            Some(&format!("{} files, {} chunks", stats.files, stats.chunks)),
+                        )
+                        .await;
+                    Ok(serde_json::json!({ "files": stats.files, "chunks": stats.chunks }))
+                }
+                Err(e) => Err(e.to_string()),
+            }
         })
         .await
         .map_err(|e| e.to_string())

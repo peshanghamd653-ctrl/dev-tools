@@ -21,6 +21,8 @@ pub enum AiError {
     Db(#[from] sqlx::Error),
     #[error("unknown provider: {0}")]
     UnknownProvider(String),
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }
 
 pub type AiResult<T> = Result<T, AiError>;

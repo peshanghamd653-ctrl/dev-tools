@@ -65,6 +65,10 @@ Used by:
 | `settings_get` / `settings_set` | `key` / `key, value` | `string \| null` / `()` | `settingsChanged` |
 | `commands_list` | — | `CommandDescriptor[]` | — |
 | `jobs_recent` | — | `JobInfo[]` (last 50) | — |
+| `notifications_list` | — | `NotificationDto[]` (last 50) | — |
+| `notifications_unread_count` | — | `number` | — |
+| `notification_mark_read` | `id` | `()` | — |
+| `notifications_mark_all_read` | — | `()` | — |
 
 ### Terminal (M1)
 
@@ -75,6 +79,7 @@ Used by:
 | `term_resize` | `id, cols, rows` | `()` |
 | `term_kill` | `id` | `()` |
 | `term_list` | — | `TermSessionInfo[]` |
+| `term_tail` | `id` | `string` (recent output, ANSI-stripped) |
 
 ### Git (M1)
 
@@ -104,6 +109,9 @@ Used by:
 | `ai_ollama_models` | — | `string[]` | queries local Ollama `/api/tags` |
 | `ai_send` | `conversationId, content, projectPath?, toolsEnabled?, writeToolsEnabled?, onDelta: Channel<AiDelta>` | `ChatMessage` | runs the tool-calling agent loop when `toolsEnabled && projectPath && provider == "claude"`; `writeToolsEnabled` adds the mutating tool defs |
 | `ai_tool_respond` | `id, approved` | `bool` (false if the id was unknown/expired) | resolves a pending per-call approval |
+| `ai_memory_list` | `projectPath` | `MemoryEntry[]` | project key normalized backend-side |
+| `ai_memory_add` | `projectPath, content` | `MemoryEntry` | caps: 500 chars, 100 entries/project |
+| `ai_memory_delete` | `id` | `()` | |
 | `ai_commit_message` | `path, provider, model` | `string` | one-shot, no streaming; reads the staged diff |
 
 ### Index (M2)
@@ -117,7 +125,7 @@ Used by:
 
 `KernelEvent` is a tagged union `{ kind, data? }`:
 `workspacesChanged` · `projectsChanged{workspaceId}` · `settingsChanged{key}`
-· `jobUpdated{job}` · `notificationAdded{level,title,body}`.
+· `jobUpdated{job}` · `notificationAdded{notification: NotificationDto}`.
 
 `TermEvent` (per-session channel): `output{bytes}` · `exit{code}`.
 

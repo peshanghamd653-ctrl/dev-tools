@@ -74,6 +74,17 @@ pub fn tool_defs() -> Vec<ToolDef> {
                 "required": ["query"]
             }),
         },
+        ToolDef {
+            name: "save_memory".into(),
+            description: "Save a short durable fact about this project to DevOS memory (e.g. conventions, decisions, preferences the user asks you to remember). It will be included in future conversations. The user can see and delete every entry. Max 500 characters.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "content": { "type": "string", "description": "One concise fact worth remembering" }
+                },
+                "required": ["content"]
+            }),
+        },
     ]
 }
 
@@ -243,6 +254,15 @@ impl ProjectTools {
         } else {
             Ok(matches.join("\n"))
         }
+    }
+
+    async fn save_memory(&self, input: &Value) -> Result<String, String> {
+        let content = input["content"].as_str().ok_or("missing 'content'")?;
+        let project = devos_index::project_key(&self.root.to_string_lossy());
+        let entry = devos_ai::repo::memory_add(&self.pool, &project, content)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(format!("saved to project memory: {}", entry.content))
     }
 
     async fn search_code(&self, input: &Value) -> Result<String, String> {
@@ -452,6 +472,7 @@ impl ToolExecutor for ProjectTools {
             "list_dir" => self.list_dir(input),
             "find_files" => self.find_files(input),
             "search_code" => self.search_code(input).await,
+            "save_memory" => self.save_memory(input).await,
             "edit_file" | "write_file" | "run_command" => {
                 let gate = self
                     .gate
@@ -689,6 +710,27 @@ mod tests {
             .execute("run_command", &json!({"command": sleep_cmd}))
             .await;
         assert!(timed_out.unwrap_err().contains("timed out"));
+    }
+
+    #[tokio::test]
+    async fn save_memory_persists_via_repo() {
+        let (dir, tools) = fixture().await;
+        devos_ai::repo::init(&tools.pool).await.unwrap();
+        let saved = tools
+            .execute(
+                "save_memory",
+                &json!({"content": "  uses pnpm workspaces  "}),
+            )
+            .await
+            .unwrap();
+        assert!(saved.contains("uses pnpm workspaces"));
+
+        let project = devos_index::project_key(&dir.path().join("project").to_string_lossy());
+        let entries = devos_ai::repo::memory_list(&tools.pool, &project)
+            .await
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].content, "uses pnpm workspaces");
     }
 
     #[tokio::test]

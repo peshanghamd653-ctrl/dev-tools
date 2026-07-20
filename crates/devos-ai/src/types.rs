@@ -72,3 +72,16 @@ pub struct ChatTurn {
     pub role: String,
     pub content: String,
 }
+
+/// One saved long-term memory fact, scoped to a project. Always visible and
+/// deletable in the UI — memory is transparent, not magic.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryEntry {
+    pub id: String,
+    pub project: String,
+    pub content: String,
+    #[ts(type = "number")]
+    pub created_at: i64,
+}

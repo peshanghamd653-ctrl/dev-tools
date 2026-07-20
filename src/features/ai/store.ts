@@ -19,12 +19,18 @@ interface AiState {
    * chat (ADR-0005). Off by default.
    */
   writeToolsEnabled: boolean;
+  /**
+   * A message queued by another page (e.g. terminal "Diagnose with AI");
+   * the AI page consumes and sends it exactly once. Never persisted.
+   */
+  pendingPrompt: string | null;
   setActiveConversation: (id: string | null) => void;
   setProvider: (provider: "claude" | "ollama", model: string) => void;
   setModel: (model: string) => void;
   setAttachProject: (attach: boolean) => void;
   setToolsEnabled: (enabled: boolean) => void;
   setWriteToolsEnabled: (enabled: boolean) => void;
+  setPendingPrompt: (prompt: string | null) => void;
 }
 
 export const useAiStore = create<AiState>()(
@@ -46,9 +52,21 @@ export const useAiStore = create<AiState>()(
           // Revoking read access also revokes the write level.
           writeToolsEnabled: enabled ? s.writeToolsEnabled : false,
         })),
+      pendingPrompt: null,
       setWriteToolsEnabled: (enabled) => set({ writeToolsEnabled: enabled }),
+      setPendingPrompt: (prompt) => set({ pendingPrompt: prompt }),
     }),
-    { name: "devos-ai" },
+    {
+      name: "devos-ai",
+      partialize: (s) => ({
+        activeConversationId: s.activeConversationId,
+        provider: s.provider,
+        model: s.model,
+        attachProject: s.attachProject,
+        toolsEnabled: s.toolsEnabled,
+        writeToolsEnabled: s.writeToolsEnabled,
+      }),
+    },
   ),
 );
 

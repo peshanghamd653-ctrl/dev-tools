@@ -147,8 +147,9 @@ pub async fn ai_commit_message(
     Ok(text.trim().trim_matches('`').trim().to_string())
 }
 
-/// Build a compact system prompt describing the attached project.
-async fn project_context(project_path: &str) -> String {
+/// Build a compact system prompt describing the attached project, including
+/// saved long-term memory (all entries are user-visible in the Memory panel).
+async fn project_context(pool: &sqlx::SqlitePool, project_path: &str) -> String {
     let repo_path = std::path::Path::new(project_path);
     let mut ctx = format!(
         "You are the DevOS AI assistant inside the user's development environment. \
@@ -167,12 +168,53 @@ async fn project_context(project_path: &str) -> String {
             }
         }
     }
+    let project = devos_index::project_key(project_path);
+    if let Ok(memories) = devos_ai::repo::memory_list(pool, &project).await {
+        if !memories.is_empty() {
+            ctx.push_str("\nSaved project memory (facts the user asked to remember):");
+            for entry in memories.iter().take(50) {
+                ctx.push_str(&format!("\n- {}", entry.content));
+            }
+        }
+    }
     ctx.push_str("\nBe concise and practical.");
     ctx
 }
 
-/// Send a user message and stream the assistant reply over `on_delta`.
-/// Resolves when the reply is complete (already persisted).
+// ---- Long-term memory (visible/editable surface for the Memory panel) ----
+
+#[tauri::command]
+pub async fn ai_memory_list(
+    state: State<'_, AppState>,
+    project_path: String,
+) -> Result<Vec<devos_ai::MemoryEntry>, String> {
+    ai_repo::memory_list(&state.kernel.pool, &devos_index::project_key(&project_path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn ai_memory_add(
+    state: State<'_, AppState>,
+    project_path: String,
+    content: String,
+) -> Result<devos_ai::MemoryEntry, String> {
+    ai_repo::memory_add(
+        &state.kernel.pool,
+        &devos_index::project_key(&project_path),
+        &content,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn ai_memory_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    ai_repo::memory_delete(&state.kernel.pool, &id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Resolve a pending per-call tool approval (see approvals.rs).
 #[tauri::command]
 pub async fn ai_tool_respond(
@@ -183,6 +225,8 @@ pub async fn ai_tool_respond(
     Ok(state.approvals.resolve(&id, approved))
 }
 
+/// Send a user message and stream the assistant reply over `on_delta`.
+/// Resolves when the reply is complete (already persisted).
 #[tauri::command]
 pub async fn ai_send(
     state: State<'_, AppState>,
@@ -229,7 +273,7 @@ pub async fn ai_send(
         .map_err(|e| e.to_string())?;
 
     let system = match &project_path {
-        Some(path) => Some(project_context(path).await),
+        Some(path) => Some(project_context(pool, path).await),
         None => None,
     };
 

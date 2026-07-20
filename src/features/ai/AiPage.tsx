@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Brain,
   Check,
   ChevronsUpDown,
   KeyRound,
@@ -34,12 +35,20 @@ import { Input } from "@/shared/ui/input";
 import {
   aiKeys,
   useConversations,
+  useMemoryEntries,
   useMessages,
   useOllamaModels,
   useSecretNames,
   useSendMessage,
   type PendingApproval,
 } from "./hooks";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/ui/dialog";
 import { CLAUDE_MODELS, useAiStore } from "./store";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -80,11 +89,27 @@ export function AiPage() {
   );
 
   const [draft, setDraft] = useState("");
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const { data: memories } = useMemoryEntries(project?.path ?? null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, send.streamText]);
+
+  // Consume a prompt queued by another page (terminal diagnosis) exactly
+  // once — and only once the queued-for conversation is actually active.
+  const pendingPrompt = useAiStore((s) => s.pendingPrompt);
+  const setPendingPrompt = useAiStore((s) => s.setPendingPrompt);
+  useEffect(() => {
+    if (!pendingPrompt || !active || active.id !== activeId || send.isPending) {
+      return;
+    }
+    setPendingPrompt(null);
+    send.mutate(pendingPrompt, {
+      onError: (error) => toast.error(String(error)),
+    });
+  }, [pendingPrompt, active, activeId, send, setPendingPrompt]);
 
   if (!inDesktopShell) {
     return (
@@ -226,6 +251,15 @@ export function AiPage() {
         </div>
       </aside>
 
+      {project && (
+        <MemoryDialog
+          open={memoryOpen}
+          onOpenChange={setMemoryOpen}
+          projectPath={project.path}
+          projectName={project.name}
+        />
+      )}
+
       <section className="flex min-h-0 flex-col">
         {active?.provider === "claude" && !hasClaudeKey ? (
           <ClaudeKeySetup />
@@ -317,6 +351,15 @@ export function AiPage() {
                       )}
                     />
                     {project.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMemoryOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                    title="Facts saved for this project — always visible, always deletable"
+                  >
+                    <Brain className="size-3" />
+                    Memory{memories?.length ? ` (${memories.length})` : ""}
                   </button>
                   {attachProject && active?.provider === "claude" && (
                     <>
@@ -427,6 +470,102 @@ function MessageBubble({
         <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
       </div>
     </div>
+  );
+}
+
+/** All long-term memory for the attached project: list, add, delete. */
+function MemoryDialog({
+  open,
+  onOpenChange,
+  projectPath,
+  projectName,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectPath: string;
+  projectName: string;
+}) {
+  const queryClient = useQueryClient();
+  const { data: memories } = useMemoryEntries(open ? projectPath : null);
+  const [newFact, setNewFact] = useState("");
+
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: aiKeys.memory(projectPath) });
+
+  function addFact() {
+    const content = newFact.trim();
+    if (!content) return;
+    void ipc
+      .aiMemoryAdd(projectPath, content)
+      .then(() => {
+        setNewFact("");
+        return refresh();
+      })
+      .catch((error) => toast.error(String(error)));
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Brain className="size-4" />
+            Memory — {projectName}
+          </DialogTitle>
+          <DialogDescription>
+            Facts included in every conversation about this project. The
+            assistant can add entries with its save_memory tool; you can add
+            or delete them here.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-72 space-y-1 overflow-y-auto">
+          {memories?.length === 0 && (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              Nothing saved yet.
+            </p>
+          )}
+          {memories?.map((entry) => (
+            <div
+              key={entry.id}
+              className="group flex items-start gap-2 rounded-md border px-2.5 py-1.5"
+            >
+              <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm">
+                {entry.content}
+              </p>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100"
+                aria-label="Delete memory entry"
+                onClick={() =>
+                  void ipc
+                    .aiMemoryDelete(entry.id)
+                    .then(refresh)
+                    .catch((error) => toast.error(String(error)))
+                }
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2">
+          <Input
+            value={newFact}
+            onChange={(e) => setNewFact(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addFact();
+            }}
+            placeholder="Add a fact, e.g. “we use pnpm, never npm”"
+          />
+          <Button disabled={!newFact.trim()} onClick={addFact}>
+            Add
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

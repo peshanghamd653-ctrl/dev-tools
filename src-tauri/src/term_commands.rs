@@ -77,3 +77,9 @@ pub async fn term_kill(state: State<'_, AppState>, id: String) -> Result<(), Str
 pub async fn term_list(state: State<'_, AppState>) -> Result<Vec<TermSessionInfo>, String> {
     Ok(state.terminal.list())
 }
+
+/// Recent output of a session, ANSI-stripped (for AI diagnosis).
+#[tauri::command]
+pub async fn term_tail(state: State<'_, AppState>, id: String) -> Result<String, String> {
+    state.terminal.tail(&id).map_err(|e| e.to_string())
+}

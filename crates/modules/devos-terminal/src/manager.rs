@@ -38,7 +38,11 @@ struct Session {
     writer: Mutex<Box<dyn Write + Send>>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    /// Last `TAIL_CAP_BYTES` of raw output.
+    buffer: Arc<Mutex<Vec<u8>>>,
 }
+
+const TAIL_CAP_BYTES: usize = 32 * 1024;
 
 /// Owns every live pty. Sessions survive UI route changes because they live
 /// here, not in the webview.
@@ -103,9 +107,14 @@ impl TerminalManager {
 
         let (tx, rx) = mpsc::unbounded_channel();
 
+        // Recent-output ring buffer: powers AI diagnosis and (later) the
+        // build-failure watcher. Owned here so it survives webview reloads.
+        let buffer = Arc::new(Mutex::new(Vec::<u8>::new()));
+
         // Blocking pty reads happen on a dedicated OS thread; events flow out
         // through the unbounded channel (send is sync-safe).
         let out_tx = tx.clone();
+        let read_buffer = Arc::clone(&buffer);
         std::thread::Builder::new()
             .name(format!("pty-read-{id}"))
             .spawn(move || {
@@ -114,6 +123,15 @@ impl TerminalManager {
                     match reader.read(&mut buf) {
                         Ok(0) | Err(_) => break,
                         Ok(n) => {
+                            {
+                                let mut tail =
+                                    read_buffer.lock().expect("tail buffer lock poisoned");
+                                tail.extend_from_slice(&buf[..n]);
+                                if tail.len() > TAIL_CAP_BYTES {
+                                    let excess = tail.len() - TAIL_CAP_BYTES;
+                                    tail.drain(..excess);
+                                }
+                            }
                             if out_tx
                                 .send(TermEvent::Output {
                                     bytes: buf[..n].to_vec(),
@@ -132,6 +150,7 @@ impl TerminalManager {
             writer: Mutex::new(writer),
             master: Mutex::new(pair.master),
             killer: Mutex::new(killer),
+            buffer,
         });
         self.sessions
             .lock()
@@ -166,6 +185,18 @@ impl TerminalManager {
             })?;
 
         Ok(SessionHandle { info, events: rx })
+    }
+
+    /// Recent output as plain text: ANSI/OSC sequences and carriage returns
+    /// stripped, ready to hand to an AI or a log view.
+    pub fn tail(&self, id: &str) -> TermResult<String> {
+        let session = self.get(id)?;
+        let bytes = session
+            .buffer
+            .lock()
+            .expect("tail buffer lock poisoned")
+            .clone();
+        Ok(strip_ansi(&String::from_utf8_lossy(&bytes)))
     }
 
     pub fn write(&self, id: &str, data: &[u8]) -> TermResult<()> {
@@ -224,6 +255,50 @@ impl TerminalManager {
             .cloned()
             .ok_or_else(|| TermError::NotFound(id.to_string()))
     }
+}
+
+/// Remove ANSI escape sequences (CSI, OSC, two-char escapes) and carriage
+/// returns, leaving readable text.
+fn strip_ansi(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            match chars.peek() {
+                // CSI: ESC [ …params… final-byte (@ through ~)
+                Some('[') => {
+                    chars.next();
+                    for n in chars.by_ref() {
+                        if ('\u{40}'..='\u{7e}').contains(&n) {
+                            break;
+                        }
+                    }
+                }
+                // OSC: ESC ] …payload… (BEL or ESC \)
+                Some(']') => {
+                    chars.next();
+                    while let Some(n) = chars.next() {
+                        if n == '\u{07}' {
+                            break;
+                        }
+                        if n == '\u{1b}' {
+                            if chars.peek() == Some(&'\\') {
+                                chars.next();
+                            }
+                            break;
+                        }
+                    }
+                }
+                // Two-character escape (ESC + one char).
+                _ => {
+                    chars.next();
+                }
+            }
+        } else if c != '\r' {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn shell_title(shell: &str) -> String {
@@ -324,8 +399,22 @@ mod tests {
         assert!(exit_code.is_some(), "no exit event received");
         assert!(manager.list()[0].exited, "session not marked exited");
 
+        // The backend tail mirrors the stream, with escapes stripped.
+        let tail = manager.tail(&id).expect("tail");
+        assert!(tail.contains("hello_devos"), "tail missing output: {tail}");
+        assert!(!tail.contains('\u{1b}'), "tail must be ANSI-free");
+
         manager.kill(&id).expect("kill removes session");
         assert!(manager.list().is_empty());
+    }
+
+    #[test]
+    fn strip_ansi_removes_csi_osc_and_carriage_returns() {
+        assert_eq!(strip_ansi("\u{1b}[32mgreen\u{1b}[0m"), "green");
+        assert_eq!(strip_ansi("\u{1b}]0;window title\u{07}text"), "text");
+        assert_eq!(strip_ansi("\u{1b}]133;D;1\u{1b}\\after"), "after");
+        assert_eq!(strip_ansi("line1\r\nline2\r"), "line1\nline2");
+        assert_eq!(strip_ansi("\u{1b}Mplain"), "plain");
     }
 
     #[tokio::test]

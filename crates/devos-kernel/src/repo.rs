@@ -4,7 +4,7 @@
 use sqlx::{Row, SqlitePool};
 
 use crate::error::{KernelError, KernelResult};
-use crate::types::{Project, Workspace};
+use crate::types::{NotificationDto, Project, Workspace};
 
 fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
@@ -196,6 +196,90 @@ pub async fn remove_project(pool: &SqlitePool, id: &str) -> KernelResult<()> {
     if result.rows_affected() == 0 {
         return Err(KernelError::NotFound(format!("project {id}")));
     }
+    Ok(())
+}
+
+// ---- Notifications ----
+
+fn notification_from_row(row: &sqlx::sqlite::SqliteRow) -> NotificationDto {
+    NotificationDto {
+        id: row.get("id"),
+        module: row.get("module"),
+        level: row.get("level"),
+        title: row.get("title"),
+        body: row.get("body"),
+        read: row.get::<i64, _>("read") != 0,
+        created_at: row.get("created_at"),
+    }
+}
+
+pub async fn add_notification(
+    pool: &SqlitePool,
+    module: &str,
+    level: &str,
+    title: &str,
+    body: Option<&str>,
+) -> KernelResult<NotificationDto> {
+    let notification = NotificationDto {
+        id: new_id(),
+        module: module.to_string(),
+        level: level.to_string(),
+        title: title.to_string(),
+        body: body.map(String::from),
+        read: false,
+        created_at: now_ms(),
+    };
+    sqlx::query(
+        "INSERT INTO notifications (id, module, level, title, body, read, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6)",
+    )
+    .bind(&notification.id)
+    .bind(&notification.module)
+    .bind(&notification.level)
+    .bind(&notification.title)
+    .bind(&notification.body)
+    .bind(notification.created_at)
+    .execute(pool)
+    .await?;
+    Ok(notification)
+}
+
+pub async fn list_notifications(
+    pool: &SqlitePool,
+    limit: i64,
+) -> KernelResult<Vec<NotificationDto>> {
+    let rows = sqlx::query(
+        "SELECT id, module, level, title, body, read, created_at
+         FROM notifications ORDER BY created_at DESC, id DESC LIMIT ?1",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.iter().map(notification_from_row).collect())
+}
+
+pub async fn unread_notification_count(pool: &SqlitePool) -> KernelResult<i64> {
+    let row = sqlx::query("SELECT COUNT(*) AS n FROM notifications WHERE read = 0")
+        .fetch_one(pool)
+        .await?;
+    Ok(row.get("n"))
+}
+
+pub async fn mark_notification_read(pool: &SqlitePool, id: &str) -> KernelResult<()> {
+    let result = sqlx::query("UPDATE notifications SET read = 1 WHERE id = ?1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(KernelError::NotFound(format!("notification {id}")));
+    }
+    Ok(())
+}
+
+pub async fn mark_all_notifications_read(pool: &SqlitePool) -> KernelResult<()> {
+    sqlx::query("UPDATE notifications SET read = 1 WHERE read = 0")
+        .execute(pool)
+        .await?;
     Ok(())
 }
 

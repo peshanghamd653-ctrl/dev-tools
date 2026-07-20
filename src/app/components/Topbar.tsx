@@ -1,5 +1,6 @@
 import { Check, ChevronsUpDown, Command as CommandIcon, Plus } from "lucide-react";
 
+import { NotificationBell } from "@/features/notifications/NotificationBell";
 import {
   useActiveWorkspace,
   useWorkspaces,
@@ -54,6 +55,8 @@ export function Topbar() {
       </DropdownMenu>
 
       <div className="flex-1" />
+
+      <NotificationBell />
 
       <Button
         variant="outline"

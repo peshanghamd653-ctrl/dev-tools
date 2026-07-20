@@ -76,6 +76,23 @@ impl JobRunner {
             if let Err(db_error) = update {
                 tracing::error!(job = %info.id, %db_error, "failed to persist job result");
             }
+            // Failures become persistent notifications, not just transient
+            // events — this is how background work reports problems.
+            if let Some(message) = &error {
+                if let Ok(notification) = crate::repo::add_notification(
+                    &runner.pool,
+                    &info.module,
+                    "error",
+                    &format!("{} failed", info.kind),
+                    Some(message),
+                )
+                .await
+                {
+                    runner
+                        .events
+                        .emit(KernelEvent::NotificationAdded { notification });
+                }
+            }
             runner.events.emit(KernelEvent::JobUpdated {
                 job: JobInfo {
                     status,

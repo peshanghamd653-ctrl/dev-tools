@@ -27,22 +27,19 @@ export function useKernelEventBridge() {
         case "settingsChanged":
           void queryClient.invalidateQueries({ queryKey: ["settings"] });
           break;
-        case "jobUpdated": {
-          const { job } = event.data;
-          if (job.status === "failed") {
-            toast.error(`${job.module}: ${job.kind} failed`, {
-              description: job.error ?? undefined,
-            });
-          } else if (job.status === "succeeded" && job.module === "index") {
-            toast.success("Project index updated");
-          }
+        case "jobUpdated":
+          // Job outcomes surface as notifications; here we only refresh data.
           void queryClient.invalidateQueries({ queryKey: ["jobs"] });
           break;
-        }
         case "notificationAdded": {
-          const { level, title, body } = event.data;
-          if (level === "error") toast.error(title, { description: body });
-          else toast(title, { description: body });
+          const { notification } = event.data;
+          const options = { description: notification.body ?? undefined };
+          if (notification.level === "error") {
+            toast.error(notification.title, options);
+          } else {
+            toast.success(notification.title, options);
+          }
+          void queryClient.invalidateQueries({ queryKey: ["notifications"] });
           break;
         }
       }

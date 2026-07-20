@@ -48,10 +48,20 @@ Deferred to M1.5: project templates, repository cloning, file explorer.
   the kernel's first real background job, with a bm25-ranked `search_code`
   AI tool returning file:line + snippets. Triggered from the Projects page
   or the palette ("Index Project for AI Search").
+- ✅ **Long-term project memory**: `ai_memory` table, `save_memory` AI tool
+  (read level — writes only to DevOS's own store), facts injected into the
+  project system prompt, and a Memory dialog in the chat (list/add/delete —
+  transparent, never magic).
+- ✅ **Terminal AI diagnosis**: the terminal keeps a 32 KB backend ring
+  buffer of output (ANSI-stripped on read); a toolbar button sends the tail
+  into a fresh AI chat with a "diagnose and propose a fix" prompt. This is
+  the manual core of the build-failure watcher — the automatic version
+  needs OSC 133 shell integration for command boundaries, and will build on
+  this same buffer.
 - Planned: vector half of retrieval (tree-sitter symbols + `sqlite-vec`
-  embeddings layered on the same tables); long-term memory; first
-  background agent (build-failure watcher subscribing to terminal/job
-  events).
+  embeddings layered on the same tables); automatic build-failure watcher
+  (OSC 133 shell integration → detect non-zero command exits → auto-diagnose
+  → notify).
 
 ### M3 — Ops tools
 - Docker module via `bollard` (containers, images, logs, compose)
@@ -59,9 +69,14 @@ Deferred to M1.5: project templates, repository cloning, file explorer.
 - Database manager: SQLite/Postgres/MySQL; schema explorer, SQL editor
 - Secret manager UI (the store exists; a dedicated management screen doesn't yet)
 
+- ✅ **Notification Center** (pulled forward from M4): `Kernel::notify`
+  persists + broadcasts; failed jobs auto-notify; index completions notify;
+  topbar bell with unread badge, level dots, mark-read/mark-all-read. This
+  is the reporting surface background agents will use.
+
 ### M4 — Watchers & deploys
-- System monitoring (`sysinfo`), notification center, website monitor,
-  screenshot → GitHub issue, deployments (Vercel first)
+- System monitoring (`sysinfo`), website monitor, screenshot → GitHub
+  issue, deployments (Vercel first)
 
 ### M5 — Extensibility & polish
 - WASM plugin runtime (Extism-style) + contribution manifests, plugin SDK,

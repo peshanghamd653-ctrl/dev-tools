@@ -153,3 +153,35 @@ pub async fn commands_list(state: State<'_, AppState>) -> Result<Vec<CommandDesc
 pub async fn jobs_recent(state: State<'_, AppState>) -> Result<Vec<JobInfo>, String> {
     state.kernel.jobs.list_recent(50).await.map_err(err)
 }
+
+// ---- Notifications ----
+
+#[tauri::command]
+pub async fn notifications_list(
+    state: State<'_, AppState>,
+) -> Result<Vec<devos_kernel::types::NotificationDto>, String> {
+    repo::list_notifications(&state.kernel.pool, 50)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn notifications_unread_count(state: State<'_, AppState>) -> Result<i64, String> {
+    repo::unread_notification_count(&state.kernel.pool)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn notification_mark_read(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    repo::mark_notification_read(&state.kernel.pool, &id)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn notifications_mark_all_read(state: State<'_, AppState>) -> Result<(), String> {
+    repo::mark_all_notifications_read(&state.kernel.pool)
+        .await
+        .map_err(err)
+}

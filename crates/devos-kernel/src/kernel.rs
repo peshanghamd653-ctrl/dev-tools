@@ -47,6 +47,24 @@ impl Kernel {
     pub fn module_ids(&self) -> &[&'static str] {
         &self.module_ids
     }
+
+    /// Persist a notification and broadcast it — the standard way modules,
+    /// jobs, and (later) agents report to the user.
+    pub async fn notify(
+        &self,
+        module: &str,
+        level: &str,
+        title: &str,
+        body: Option<&str>,
+    ) -> KernelResult<crate::types::NotificationDto> {
+        let notification =
+            crate::repo::add_notification(&self.pool, module, level, title, body).await?;
+        self.events
+            .emit(crate::types::KernelEvent::NotificationAdded {
+                notification: notification.clone(),
+            });
+        Ok(notification)
+    }
 }
 
 #[cfg(test)]
@@ -142,6 +160,83 @@ mod tests {
         kernel.events.emit(KernelEvent::WorkspacesChanged);
         let event = rx.recv().await.unwrap();
         assert!(matches!(event, KernelEvent::WorkspacesChanged));
+    }
+
+    #[tokio::test]
+    async fn notifications_roundtrip_and_unread_tracking() {
+        let (_dir, kernel) = test_kernel().await;
+        let mut rx = kernel.events.subscribe();
+
+        let first = kernel
+            .notify("git", "info", "Pushed", Some("2 commits to origin/main"))
+            .await
+            .unwrap();
+        kernel
+            .notify("index", "error", "Reindex failed", None)
+            .await
+            .unwrap();
+
+        // notify() broadcasts the full DTO.
+        match rx.recv().await.unwrap() {
+            KernelEvent::NotificationAdded { notification } => {
+                assert_eq!(notification.id, first.id);
+                assert_eq!(notification.title, "Pushed");
+            }
+            other => panic!("expected NotificationAdded, got {other:?}"),
+        }
+
+        assert_eq!(
+            repo::unread_notification_count(&kernel.pool).await.unwrap(),
+            2
+        );
+        let listed = repo::list_notifications(&kernel.pool, 10).await.unwrap();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].title, "Reindex failed", "newest first");
+
+        repo::mark_notification_read(&kernel.pool, &first.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            repo::unread_notification_count(&kernel.pool).await.unwrap(),
+            1
+        );
+        repo::mark_all_notifications_read(&kernel.pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            repo::unread_notification_count(&kernel.pool).await.unwrap(),
+            0
+        );
+        assert!(repo::mark_notification_read(&kernel.pool, "nope")
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn failed_jobs_create_notifications() {
+        let (_dir, kernel) = test_kernel().await;
+        let mut rx = kernel.events.subscribe();
+        kernel
+            .jobs
+            .submit("index", "reindex", async {
+                Err("disk on fire".to_string())
+            })
+            .await
+            .unwrap();
+        // Wait until the failure notification arrives.
+        loop {
+            if let KernelEvent::NotificationAdded { notification } = rx.recv().await.unwrap() {
+                assert_eq!(notification.module, "index");
+                assert_eq!(notification.level, "error");
+                assert_eq!(notification.title, "reindex failed");
+                assert_eq!(notification.body.as_deref(), Some("disk on fire"));
+                break;
+            }
+        }
+        assert_eq!(
+            repo::unread_notification_count(&kernel.pool).await.unwrap(),
+            1
+        );
     }
 
     #[tokio::test]

@@ -25,7 +25,7 @@ WAL mode, foreign keys on, opened via SQLx. All timestamps are Unix epoch
 | `projects` | Folders registered in a workspace | `UNIQUE(workspace_id, path)`, FK cascade |
 | `settings` | Key-value app settings | upsert via `ON CONFLICT` |
 | `jobs` | Durable background jobs | `status: pending/running/succeeded/failed` |
-| `notifications` | Notification center backlog (UI arrives M4) | `read` flag |
+| `notifications` | Notification center (bell in the topbar) | `read` flag; written by `Kernel::notify` and failed jobs |
 | `audit_log` | Security-relevant actions | append-only, not yet written to |
 
 ## AI tables (`devos-ai`, implemented)
@@ -34,6 +34,7 @@ WAL mode, foreign keys on, opened via SQLx. All timestamps are Unix epoch
 |---|---|---|
 | `ai_conversations` | One row per chat | `provider`, `model`, auto-titled from the first user message |
 | `ai_messages` | Turn history | FK cascade from `ai_conversations`; indexed on `(conversation_id, created_at)` |
+| `ai_memory` | Long-term facts per project | keyed by normalized project path; 500 chars/entry, 100 entries/project |
 
 ## Secrets table (`devos-secrets`, implemented)
 
@@ -50,11 +51,10 @@ WAL mode, foreign keys on, opened via SQLx. All timestamps are Unix epoch
 
 ## Planned per milestone
 
-- **M2 (remainder)** `ai_memory` (long-term memory entries) · `sqlite-vec`
-  virtual table for embeddings alongside `index_chunks` · agent
-  definitions/runs · `term_sessions` if session metadata needs to survive
-  a full app restart (today sessions are in-memory only, tracked via
-  `TerminalManager`)
+- **M2 (remainder)** `sqlite-vec` virtual table for embeddings alongside
+  `index_chunks` · agent definitions/runs · `term_sessions` if session
+  metadata needs to survive a full app restart (today sessions are
+  in-memory only, tracked via `TerminalManager`)
 - **M3** `api_collections`, `api_requests`, `api_environments` ·
   `db_connections` (credentials referenced from `secrets`)
 - **M4** `monitors`, `monitor_checks` (uptime/perf history) · `deployments`

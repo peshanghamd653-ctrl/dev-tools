@@ -100,6 +100,21 @@ pub struct AppInfo {
     pub db_path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationDto {
+    pub id: String,
+    pub module: String,
+    /// "info" | "warning" | "error"
+    pub level: String,
+    pub title: String,
+    pub body: Option<String>,
+    pub read: bool,
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
 /// Events broadcast on the kernel event bus and forwarded to the frontend
 /// on the `devos://event` channel.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -112,18 +127,8 @@ pub struct AppInfo {
 )]
 pub enum KernelEvent {
     WorkspacesChanged,
-    ProjectsChanged {
-        workspace_id: String,
-    },
-    SettingsChanged {
-        key: String,
-    },
-    JobUpdated {
-        job: JobInfo,
-    },
-    NotificationAdded {
-        level: String,
-        title: String,
-        body: String,
-    },
+    ProjectsChanged { workspace_id: String },
+    SettingsChanged { key: String },
+    JobUpdated { job: JobInfo },
+    NotificationAdded { notification: NotificationDto },
 }

@@ -1,8 +1,11 @@
 import { useEffect, useRef } from "react";
-import { Columns2, Plus, Terminal, Unplug, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { Columns2, Plus, Sparkles, Terminal, Unplug, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { inDesktopShell } from "@/shared/ipc/client";
+import { useAiStore } from "@/features/ai/store";
+import { inDesktopShell, ipc } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
@@ -22,6 +25,34 @@ export function TerminalPage() {
   const setActive = useTerminalStore((s) => s.setActive);
   const toggleSplit = useTerminalStore((s) => s.toggleSplit);
   const bootstrapped = useRef(false);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  async function diagnoseActive() {
+    if (!activeId) return;
+    try {
+      const tail = await ipc.termTail(activeId);
+      if (!tail.trim()) {
+        toast.info("No terminal output to diagnose yet");
+        return;
+      }
+      const { provider, model, setActiveConversation, setPendingPrompt } =
+        useAiStore.getState();
+      const conversation = await ipc.aiConversationCreate(provider, model);
+      await queryClient.invalidateQueries({
+        queryKey: ["ai", "conversations"],
+      });
+      setActiveConversation(conversation.id);
+      setPendingPrompt(
+        "Diagnose the problem in this terminal output and propose a concrete fix:\n\n```\n" +
+          tail.slice(-6000) +
+          "\n```",
+      );
+      void navigate({ to: "/ai" });
+    } catch (error) {
+      toast.error(String(error));
+    }
+  }
 
   useEffect(() => {
     if (!inDesktopShell || bootstrapped.current) return;
@@ -113,6 +144,24 @@ export function TerminalPage() {
         </Tooltip>
 
         <div className="flex-1" />
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              aria-label="Diagnose with AI"
+              disabled={!active || active.status === "disconnected"}
+              onClick={() => void diagnoseActive()}
+            >
+              <Sparkles className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            Diagnose recent output with AI
+          </TooltipContent>
+        </Tooltip>
 
         <Tooltip>
           <TooltipTrigger asChild>

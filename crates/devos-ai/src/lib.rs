@@ -10,7 +10,7 @@ pub use providers::claude::run_agent;
 pub use providers::{
     AiError, AiProvider, AiRegistry, AiResult, StreamRequest, ToolDef, ToolExecutor,
 };
-pub use types::{AiDelta, ChatMessage, ChatTurn, Conversation};
+pub use types::{AiDelta, ChatMessage, ChatTurn, Conversation, MemoryEntry};
 
 use devos_kernel::module::{Module, ModuleCtx};
 use devos_kernel::types::CommandDescriptor;

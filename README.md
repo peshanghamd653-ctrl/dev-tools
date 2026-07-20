@@ -6,9 +6,11 @@ development loop. Built with Tauri v2 + Rust and React 19.
 
 ## Status
 
-**M0 — Foundation.** Working app shell (sidebar, command palette, workspaces,
-projects, settings) on a modular Rust kernel with a typed IPC boundary.
-See [docs/02-roadmap.md](docs/02-roadmap.md) for what lands next.
+**M0 + M1 complete, M2 in progress.** App shell, terminal, git, and an AI
+assistant with Claude/Ollama streaming and tool calling, on a modular Rust
+kernel with a typed IPC boundary. See
+[docs/feature-roadmap.md](docs/feature-roadmap.md) for what's shipped and
+what's next.
 
 ## Development
 
@@ -27,6 +29,12 @@ Key shortcuts: `Ctrl+K` command palette · `Ctrl+B` toggle sidebar ·
 
 ## Documentation
 
-The full design suite lives in [docs/](docs/): architecture, roadmap,
-wireframes, folder structure, database schema, IPC contracts, plugin API,
-AI architecture, security model, and quality/operations strategy.
+The project knowledge base lives in [docs/](docs/):
+[vision](docs/vision.md) · [architecture](docs/architecture.md) ·
+[tech stack](docs/tech-stack.md) · [coding guidelines](docs/coding-guidelines.md) ·
+[feature roadmap](docs/feature-roadmap.md) · [design system](docs/design-system.md) ·
+[database](docs/database.md) · [IPC contracts](docs/ipc-contracts.md) ·
+[plugin API](docs/plugin-api.md) · [security](docs/security.md) ·
+[performance](docs/performance.md) · [AI & agents](docs/agents.md) ·
+[release process](docs/release-process.md) · [testing](docs/testing.md) ·
+[architecture decisions](docs/adr/).

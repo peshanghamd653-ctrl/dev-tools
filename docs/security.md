@@ -28,13 +28,24 @@ attacker with full control of the user's OS account.
 
 The riskiest new surface as of M2: giving an LLM read access to files.
 
-- **Off by default, per-conversation.** The tools list sent to Claude is
-  empty unless the user has explicitly toggled the "Tools" chip on for that
-  chat. There is no implicit or persistent-across-sessions grant.
-- **Read-only tool set**: `read_file`, `list_dir`, `find_files`. No write,
-  delete, or execute capability exists yet — `edit_file`/`run_command` are
-  planned for a later milestone, explicitly gated separately (see
-  [feature-roadmap.md](feature-roadmap.md)).
+- **Off by default, two grant levels.** The tools list sent to Claude is
+  empty unless the user toggles the "Tools" chip on (read-only level).
+  A second chip adds `edit_file`/`write_file`/`run_command` — and revoking
+  the read level automatically revokes the write level too.
+- **Per-call approval for anything mutating** (ADR-0005): even with the
+  write grant on, every individual `edit_file`/`write_file`/`run_command`
+  call pauses the agent loop, shows an approval card in the chat with the
+  full arguments (the command line, the exact old/new strings), and only
+  proceeds on an explicit Approve. Deny — or 180 seconds of silence — turns
+  the call into an error result the model must work around. The pending
+  approval lives in `ApprovalRegistry` (`src-tauri/src/approvals.rs`),
+  resolved by the `ai_tool_respond` command; a response for an unknown or
+  already-resolved id is a no-op.
+- **Write-tool semantics limit blast radius**: `edit_file` requires the
+  target string to occur exactly once (ambiguity is an error, so the model
+  can't mass-replace by accident); `write_file` refuses to overwrite an
+  existing file; `run_command` runs in the project root with a 60s timeout
+  and capped output, `stdin` closed.
 - **Path containment**: every tool path is joined to the project root,
   canonicalized, and checked with `starts_with(root)` before any filesystem
   read. `../` traversal and absolute paths outside the project are rejected

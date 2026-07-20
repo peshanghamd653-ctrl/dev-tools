@@ -1,6 +1,15 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { FolderKanban, FolderOpen, FolderPlus, MoreHorizontal, Trash2 } from "lucide-react";
+import {
+  FolderKanban,
+  FolderOpen,
+  FolderPlus,
+  MoreHorizontal,
+  ScanSearch,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
+
+import { ipc } from "@/shared/ipc/client";
 
 import { useProjects, useRemoveProject } from "@/features/projects/hooks";
 import { useActiveWorkspace } from "@/features/workspaces/hooks";
@@ -104,6 +113,19 @@ export function ProjectsPage() {
                       >
                         <FolderOpen className="size-4" />
                         Reveal in Explorer
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          ipc
+                            .indexProject(project.path)
+                            .then(() =>
+                              toast.info(`Indexing "${project.name}"…`),
+                            )
+                            .catch((error) => toast.error(String(error)));
+                        }}
+                      >
+                        <ScanSearch className="size-4" />
+                        Index for AI search
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         variant="destructive"

@@ -60,12 +60,21 @@ stream_once(messages, tools) → text delta(s) + tool_use block(s)
 - `ToolExecutor` is a trait (`devos-ai::providers::ToolExecutor`); the
   desktop layer implements it as `ProjectTools` (`src-tauri/src/tools.rs`),
   scoped to one canonicalized project root.
-- Tool set today: `read_file`, `list_dir`, `find_files` — all read-only.
-  See [security.md](security.md) for the containment guarantees.
+- Tool set today: `read_file`, `list_dir`, `find_files`, `search_code`
+  (read-only level) plus `edit_file`, `write_file`, `run_command` (write
+  level). See [security.md](security.md) for containment and approval
+  guarantees. `search_code` queries the FTS5 project index (bm25-ranked,
+  file:line + snippet); if the project isn't indexed it tells the model to
+  ask the user to index it rather than failing.
 - **Nothing runs without an explicit grant.** The frontend only includes
-  `toolsEnabled: true` in the `ai_send` call when the user has turned on
-  the "Tools" chip for that conversation; otherwise the backend never even
-  builds the tool list, and Claude has nothing to call.
+  `toolsEnabled` / `writeToolsEnabled` in the `ai_send` call when the user
+  has turned on the corresponding chips; otherwise the backend never even
+  builds those tool defs, and Claude has nothing to call.
+- **Mutating calls additionally pause on per-call approval**: the executor's
+  `ApprovalGate` emits an `AiDelta::ApprovalRequest` frame, the chat shows
+  an approval card, and the `ai_tool_respond` command resolves the parked
+  oneshot. The gate is a trait, so tests exercise the full approve/deny
+  path with a stub instead of a UI.
 - Live activity streams to the UI as `AiDelta::ToolCall` / `ToolResult`
   frames, rendered as a running list above the assistant's reply.
 
@@ -80,10 +89,14 @@ notification — never auto-applying a change. This reuses every piece
 already built (jobs, events, tool executor) rather than needing new
 infrastructure.
 
-## Project indexing / RAG — planned (M2 remainder)
+## Project indexing / RAG — lexical half implemented
 
-tree-sitter symbol extraction + chunk embeddings in SQLite (`sqlite-vec`);
-Ollama or API embeddings; hybrid lexical + vector retrieval; answers cited
-with file:line links. Not started — `find_files`/`read_file` are a
-stand-in today, sufficient for small-to-medium projects but not a
-substitute for real retrieval at scale.
+`devos-index` provides the lexical side of the documented hybrid-retrieval
+plan: FTS5 chunks (50 lines, 1-based start lines) indexed incrementally by
+mtime/size, pruned on delete, searched with bm25 ranking and snippets.
+Reindexing runs through the kernel `JobRunner` — the first real background
+job — so progress and completion surface via standard `jobUpdated` events.
+
+Still planned: the vector half — tree-sitter symbol extraction + chunk
+embeddings (`sqlite-vec`, Ollama or API embeddings) layered onto the same
+tables, then hybrid lexical+vector retrieval with cited answers.

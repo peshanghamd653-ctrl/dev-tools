@@ -38,10 +38,20 @@ Deferred to M1.5: project templates, repository cloning, file explorer.
   tool set (`read_file`, `list_dir`, `find_files`), a canonicalize-and-contain
   path guard against traversal, and an explicit per-conversation grant the
   user must turn on — off by default. Live tool activity shown in the chat.
-- Planned: `edit_file`/`run_command` tools with per-call approval dialogs
-  (not just a standing grant); project indexing + RAG (tree-sitter symbols +
-  `sqlite-vec` embeddings); long-term memory; first background agent
-  (build-failure watcher subscribing to terminal/job events).
+- ✅ **Write/execute tools with per-call approval**: `edit_file` (unique
+  exact-match replace), `write_file` (new files only), `run_command`
+  (project-root shell, 60s timeout) behind a second grant chip; every
+  individual call pauses the agent loop on an approval card in the chat
+  (Approve/Deny, 180s timeout = deny). See [security.md](security.md).
+- ✅ **Project index (lexical half of RAG)**: `devos-index` module — FTS5
+  full-text index over project files, built incrementally (mtime/size) as
+  the kernel's first real background job, with a bm25-ranked `search_code`
+  AI tool returning file:line + snippets. Triggered from the Projects page
+  or the palette ("Index Project for AI Search").
+- Planned: vector half of retrieval (tree-sitter symbols + `sqlite-vec`
+  embeddings layered on the same tables); long-term memory; first
+  background agent (build-failure watcher subscribing to terminal/job
+  events).
 
 ### M3 — Ops tools
 - Docker module via `bollard` (containers, images, logs, compose)

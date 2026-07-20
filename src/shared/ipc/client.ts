@@ -16,6 +16,7 @@ import type { GitCommit } from "./bindings/GitCommit";
 import type { GitFileEntry } from "./bindings/GitFileEntry";
 import type { GitRepoInfo } from "./bindings/GitRepoInfo";
 import type { GitStatus } from "./bindings/GitStatus";
+import type { IndexStats } from "./bindings/IndexStats";
 import type { JobInfo } from "./bindings/JobInfo";
 import type { KernelEvent } from "./bindings/KernelEvent";
 import type { Project } from "./bindings/Project";
@@ -34,6 +35,7 @@ export type {
   GitFileEntry,
   GitRepoInfo,
   GitStatus,
+  IndexStats,
   JobInfo,
   KernelEvent,
   Project,
@@ -126,6 +128,7 @@ export const ipc = {
     content: string,
     projectPath: string | null,
     toolsEnabled: boolean,
+    writeToolsEnabled: boolean,
     onDelta: Channel<AiDelta>,
   ) =>
     call<ChatMessage>("ai_send", {
@@ -133,8 +136,14 @@ export const ipc = {
       content,
       projectPath,
       toolsEnabled,
+      writeToolsEnabled,
       onDelta,
     }),
+  aiToolRespond: (id: string, approved: boolean) =>
+    call<boolean>("ai_tool_respond", { id, approved }),
+
+  indexProject: (path: string) => call<string>("index_project", { path }),
+  indexStats: (path: string) => call<IndexStats>("index_stats", { path }),
   aiCommitMessage: (path: string, provider: string, model: string) =>
     call<string>("ai_commit_message", { path, provider, model }),
 };

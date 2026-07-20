@@ -102,8 +102,16 @@ Used by:
 | `ai_conversation_delete` | `id` | `()` | |
 | `ai_messages` | `conversationId` | `ChatMessage[]` | |
 | `ai_ollama_models` | — | `string[]` | queries local Ollama `/api/tags` |
-| `ai_send` | `conversationId, content, projectPath?, toolsEnabled?, onDelta: Channel<AiDelta>` | `ChatMessage` | runs the tool-calling agent loop when `toolsEnabled && projectPath && provider == "claude"` |
+| `ai_send` | `conversationId, content, projectPath?, toolsEnabled?, writeToolsEnabled?, onDelta: Channel<AiDelta>` | `ChatMessage` | runs the tool-calling agent loop when `toolsEnabled && projectPath && provider == "claude"`; `writeToolsEnabled` adds the mutating tool defs |
+| `ai_tool_respond` | `id, approved` | `bool` (false if the id was unknown/expired) | resolves a pending per-call approval |
 | `ai_commit_message` | `path, provider, model` | `string` | one-shot, no streaming; reads the staged diff |
+
+### Index (M2)
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `index_project` | `path` | `string` (job id) | runs as a kernel job; completion arrives via `jobUpdated` |
+| `index_stats` | `path` | `IndexStats` | files/chunks/lastIndexed for the project |
 
 ## Event catalog
 
@@ -114,4 +122,5 @@ Used by:
 `TermEvent` (per-session channel): `output{bytes}` · `exit{code}`.
 
 `AiDelta` (per-send channel): `text{text}` · `toolCall{id,name,input}` ·
-`toolResult{id,ok,summary}` · `done` · `error{message}`.
+`approvalRequest{id,name,input}` · `toolResult{id,ok,summary}` · `done` ·
+`error{message}`.

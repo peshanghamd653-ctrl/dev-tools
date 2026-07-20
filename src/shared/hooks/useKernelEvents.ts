@@ -33,6 +33,8 @@ export function useKernelEventBridge() {
             toast.error(`${job.module}: ${job.kind} failed`, {
               description: job.error ?? undefined,
             });
+          } else if (job.status === "succeeded" && job.module === "index") {
+            toast.success("Project index updated");
           }
           void queryClient.invalidateQueries({ queryKey: ["jobs"] });
           break;

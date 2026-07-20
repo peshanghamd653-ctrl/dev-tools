@@ -63,14 +63,23 @@ export interface ToolActivity {
  * records live tool activity; once the backend confirms persistence the
  * messages query is refreshed and the stream resets.
  */
+export interface PendingApproval {
+  id: string;
+  name: string;
+  input: string;
+}
+
 export function useSendMessage(
   conversationId: string | null,
   projectPath: string | null,
   toolsEnabled: boolean,
+  writeToolsEnabled: boolean,
 ) {
   const queryClient = useQueryClient();
   const [streamText, setStreamText] = useState<string | null>(null);
   const [toolEvents, setToolEvents] = useState<ToolActivity[]>([]);
+  const [pendingApproval, setPendingApproval] =
+    useState<PendingApproval | null>(null);
   const streamRef = useRef("");
 
   const mutation = useMutation({
@@ -79,6 +88,7 @@ export function useSendMessage(
       streamRef.current = "";
       setStreamText("");
       setToolEvents([]);
+      setPendingApproval(null);
       const channel = new Channel<AiDelta>();
       channel.onmessage = (delta) => {
         if (delta.kind === "text") {
@@ -87,8 +97,11 @@ export function useSendMessage(
         } else if (delta.kind === "toolCall") {
           const { id, name, input } = delta.data;
           setToolEvents((events) => [...events, { id, name, input }]);
+        } else if (delta.kind === "approvalRequest") {
+          setPendingApproval(delta.data);
         } else if (delta.kind === "toolResult") {
           const { id, ok, summary } = delta.data;
+          setPendingApproval(null);
           setToolEvents((events) =>
             events.map((e) => (e.id === id ? { ...e, ok, summary } : e)),
           );
@@ -99,10 +112,12 @@ export function useSendMessage(
         content,
         projectPath,
         toolsEnabled,
+        writeToolsEnabled,
         channel,
       );
     },
     onSettled: () => {
+      setPendingApproval(null);
       if (conversationId) {
         void queryClient
           .invalidateQueries({ queryKey: aiKeys.messages(conversationId) })
@@ -118,9 +133,22 @@ export function useSendMessage(
     },
   });
 
+  const respondToApproval = useCallback((id: string, approved: boolean) => {
+    setPendingApproval((current) => (current?.id === id ? null : current));
+    void ipc.aiToolRespond(id, approved);
+  }, []);
+
   const reset = useCallback(() => {
     setStreamText(null);
     setToolEvents([]);
+    setPendingApproval(null);
   }, []);
-  return { ...mutation, streamText, toolEvents, resetStream: reset };
+  return {
+    ...mutation,
+    streamText,
+    toolEvents,
+    pendingApproval,
+    respondToApproval,
+    resetStream: reset,
+  };
 }

@@ -1,0 +1,20 @@
+[package]
+name = "devos-index"
+description = "DevOS project index: FTS5 lexical code search (vector search layers on later)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+devos-kernel = { path = "../../devos-kernel" }
+sqlx.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tempfile = "3"

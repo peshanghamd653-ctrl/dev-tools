@@ -1,7 +1,9 @@
 mod ai_commands;
+mod approvals;
 mod commands;
 mod core_module;
 mod git_commands;
+mod index_commands;
 mod state;
 mod term_commands;
 mod tools;
@@ -34,11 +36,14 @@ pub fn run() {
             kernel.register_module(&devos_terminal::TerminalModule);
             kernel.register_module(&devos_git::GitModule);
             kernel.register_module(&devos_ai::AiModule);
+            kernel.register_module(&devos_index::IndexModule);
             let kernel = Arc::new(kernel);
 
             let secrets = tauri::async_runtime::block_on(SecretStore::init(kernel.pool.clone()))?;
             tauri::async_runtime::block_on(devos_ai::repo::init(&kernel.pool))
                 .map_err(|e| format!("ai tables: {e}"))?;
+            tauri::async_runtime::block_on(devos_index::init(&kernel.pool))
+                .map_err(|e| format!("index tables: {e}"))?;
 
             // Forward every kernel event to the webview on one channel.
             let mut rx = kernel.events.subscribe();
@@ -64,6 +69,7 @@ pub fn run() {
                 terminal: Arc::new(TerminalManager::new()),
                 secrets,
                 ai: Arc::new(AiRegistry::new()),
+                approvals: Arc::new(approvals::ApprovalRegistry::default()),
                 startup_ms,
             });
             Ok(())
@@ -107,6 +113,9 @@ pub fn run() {
             ai_commands::ai_ollama_models,
             ai_commands::ai_send,
             ai_commands::ai_commit_message,
+            ai_commands::ai_tool_respond,
+            index_commands::index_project,
+            index_commands::index_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

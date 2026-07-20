@@ -41,10 +41,17 @@ WAL mode, foreign keys on, opened via SQLx. All timestamps are Unix epoch
 |---|---|---|
 | `secrets` | Encrypted key-value store | `value` is a BLOB: 12-byte nonce + AES-256-GCM ciphertext. Master key lives in the OS keystore, never in this table. See [security.md](security.md). |
 
+## Index tables (`devos-index`, implemented)
+
+| Table | Purpose | Notes |
+|---|---|---|
+| `index_files` | Per-file index state | `PRIMARY KEY (project, file)`, mtime+size for incremental skip |
+| `index_chunks` | FTS5 virtual table | `content` indexed; `project`/`file`/`start_line` UNINDEXED; bm25 + snippet() at query time |
+
 ## Planned per milestone
 
-- **M2 (remainder)** `ai_memory` (long-term memory entries) · `index_files`,
-  `index_chunks` (+ `sqlite-vec` virtual table for embeddings) · agent
+- **M2 (remainder)** `ai_memory` (long-term memory entries) · `sqlite-vec`
+  virtual table for embeddings alongside `index_chunks` · agent
   definitions/runs · `term_sessions` if session metadata needs to survive
   a full app restart (today sessions are in-memory only, tracked via
   `TerminalManager`)

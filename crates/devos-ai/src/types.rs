@@ -47,6 +47,13 @@ pub enum AiDelta {
         name: String,
         input: String,
     },
+    /// A mutating tool is waiting for the user's explicit consent.
+    /// Answered via the `ai_tool_respond` command with this `id`.
+    ApprovalRequest {
+        id: String,
+        name: String,
+        input: String,
+    },
     /// A tool finished; `summary` is a short preview of the result.
     ToolResult {
         id: String,

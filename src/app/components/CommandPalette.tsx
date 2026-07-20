@@ -4,6 +4,10 @@ import { toast } from "sonner";
 
 import { primaryNav } from "@/app/nav";
 import { useModuleCommands } from "@/features/app/hooks";
+import { useGitStore } from "@/features/git/store";
+import { useProjects } from "@/features/projects/hooks";
+import { useActiveWorkspace } from "@/features/workspaces/hooks";
+import { ipc } from "@/shared/ipc/client";
 import { useDialogStore } from "@/shared/stores/dialogs";
 import { useUiStore } from "@/shared/stores/ui";
 import {
@@ -20,13 +24,19 @@ import {
 /** Module command ids the shell knows how to execute today. */
 const moduleCommandHandlers: Record<
   string,
-  "createWorkspace" | "addProject" | "newTerminal" | "openGit" | "openAi"
+  | "createWorkspace"
+  | "addProject"
+  | "newTerminal"
+  | "openGit"
+  | "openAi"
+  | "indexProject"
 > = {
   "core.workspace.create": "createWorkspace",
   "core.project.add": "addProject",
   "terminal.new": "newTerminal",
   "git.open": "openGit",
   "ai.open": "openAi",
+  "index.project": "indexProject",
 };
 
 export function CommandPalette() {
@@ -36,6 +46,11 @@ export function CommandPalette() {
   const setAddProjectOpen = useDialogStore((s) => s.setAddProjectOpen);
   const navigate = useNavigate();
   const { data: moduleCommands } = useModuleCommands();
+  const activeWorkspace = useActiveWorkspace();
+  const { data: projects } = useProjects(activeWorkspace?.id);
+  const selectedProjectId = useGitStore((s) => s.selectedProjectId);
+  const paletteProject =
+    projects?.find((p) => p.id === selectedProjectId) ?? projects?.[0] ?? null;
 
   function runAndClose(action: () => void) {
     setOpen(false);
@@ -48,6 +63,16 @@ export function CommandPalette() {
     else if (handler === "addProject") setAddProjectOpen(true);
     else if (handler === "openGit") void navigate({ to: "/git" });
     else if (handler === "openAi") void navigate({ to: "/ai" });
+    else if (handler === "indexProject") {
+      if (!paletteProject) {
+        toast.error("Add a project first");
+      } else {
+        void ipc
+          .indexProject(paletteProject.path)
+          .then(() => toast.info(`Indexing "${paletteProject.name}"…`))
+          .catch((error) => toast.error(String(error)));
+      }
+    }
     else if (handler === "newTerminal") {
       void navigate({ to: "/terminal" });
       void import("@/features/terminal/session").then((m) =>

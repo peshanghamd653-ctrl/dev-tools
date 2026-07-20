@@ -173,6 +173,16 @@ async fn project_context(project_path: &str) -> String {
 
 /// Send a user message and stream the assistant reply over `on_delta`.
 /// Resolves when the reply is complete (already persisted).
+/// Resolve a pending per-call tool approval (see approvals.rs).
+#[tauri::command]
+pub async fn ai_tool_respond(
+    state: State<'_, AppState>,
+    id: String,
+    approved: bool,
+) -> Result<bool, String> {
+    Ok(state.approvals.resolve(&id, approved))
+}
+
 #[tauri::command]
 pub async fn ai_send(
     state: State<'_, AppState>,
@@ -180,6 +190,7 @@ pub async fn ai_send(
     content: String,
     project_path: Option<String>,
     tools_enabled: Option<bool>,
+    write_tools_enabled: Option<bool>,
     on_delta: Channel<AiDelta>,
 ) -> Result<ChatMessage, String> {
     let pool = &state.kernel.pool;
@@ -233,27 +244,38 @@ pub async fn ai_send(
         }
     });
 
-    // The tools grant: only when the user enabled tools for this send AND a
-    // project is attached does the model get any tools at all. Claude-only
-    // for now; other providers fall back to plain chat.
+    // The tools grants: read-only tools exist only when the user enabled
+    // tools for this send AND a project is attached; write/execute tools
+    // additionally need the second grant, and each call still goes through
+    // per-call approval (ADR-0005). Claude-only for now.
     let use_tools = tools_enabled.unwrap_or(false)
         && project_path.is_some()
         && conversation.provider == "claude";
+    let use_write_tools = use_tools && write_tools_enabled.unwrap_or(false);
 
     let result = if use_tools {
         let key = api_key
             .as_deref()
             .ok_or("no Anthropic API key configured")?;
-        let executor = crate::tools::ProjectTools::new(std::path::PathBuf::from(
-            project_path.clone().unwrap_or_default(),
-        ));
+        let root = std::path::PathBuf::from(project_path.clone().unwrap_or_default());
+        let mut defs = crate::tools::tool_defs();
+        let executor = if use_write_tools {
+            defs.extend(crate::tools::write_tool_defs());
+            let gate = std::sync::Arc::new(crate::approvals::ChannelApprovalGate::new(
+                state.approvals.clone(),
+                on_delta.clone(),
+            ));
+            crate::tools::ProjectTools::with_write_access(root, state.kernel.pool.clone(), gate)
+        } else {
+            crate::tools::ProjectTools::new(root, state.kernel.pool.clone())
+        };
         devos_ai::run_agent(
             &state.ai.claude,
             key,
             &conversation.model,
             system.as_deref(),
             &turns,
-            &crate::tools::tool_defs(),
+            &defs,
             &executor,
             &tx,
         )

@@ -853,11 +853,13 @@ dependencies = [
  "async-trait",
  "devos-ai",
  "devos-git",
+ "devos-index",
  "devos-kernel",
  "devos-secrets",
  "devos-terminal",
  "serde",
  "serde_json",
+ "sqlx",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
@@ -865,6 +867,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -873,6 +876,21 @@ version = "0.1.0"
 dependencies = [
  "devos-kernel",
  "serde",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "ts-rs",
+]
+
+[[package]]
+name = "devos-index"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "devos-kernel",
+ "serde",
+ "sqlx",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

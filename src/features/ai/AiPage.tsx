@@ -38,6 +38,7 @@ import {
   useOllamaModels,
   useSecretNames,
   useSendMessage,
+  type PendingApproval,
 } from "./hooks";
 import { CLAUDE_MODELS, useAiStore } from "./store";
 import { useQueryClient } from "@tanstack/react-query";
@@ -60,6 +61,8 @@ export function AiPage() {
   const setAttachProject = useAiStore((s) => s.setAttachProject);
   const toolsEnabled = useAiStore((s) => s.toolsEnabled);
   const setToolsEnabled = useAiStore((s) => s.setToolsEnabled);
+  const writeToolsEnabled = useAiStore((s) => s.writeToolsEnabled);
+  const setWriteToolsEnabled = useAiStore((s) => s.setWriteToolsEnabled);
   const activeWorkspace = useActiveWorkspace();
   const { data: projects } = useProjects(activeWorkspace?.id);
   const selectedProjectId = useGitStore((s) => s.selectedProjectId);
@@ -73,6 +76,7 @@ export function AiPage() {
     active?.id ?? null,
     attachProject && project ? project.path : null,
     toolsEnabled && attachProject && Boolean(project),
+    writeToolsEnabled && toolsEnabled && attachProject && Boolean(project),
   );
 
   const [draft, setDraft] = useState("");
@@ -272,6 +276,12 @@ export function AiPage() {
                     ))}
                   </div>
                 )}
+                {send.pendingApproval && (
+                  <ApprovalCard
+                    approval={send.pendingApproval}
+                    onRespond={send.respondToApproval}
+                  />
+                )}
                 {send.streamText !== null && (
                   <MessageBubble
                     role="assistant"
@@ -309,24 +319,50 @@ export function AiPage() {
                     {project.name}
                   </button>
                   {attachProject && active?.provider === "claude" && (
-                    <button
-                      type="button"
-                      onClick={() => setToolsEnabled(!toolsEnabled)}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
-                        toolsEnabled
-                          ? "border-primary/40 bg-primary/10 text-foreground"
-                          : "border-border text-muted-foreground",
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setToolsEnabled(!toolsEnabled)}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
+                          toolsEnabled
+                            ? "border-primary/40 bg-primary/10 text-foreground"
+                            : "border-border text-muted-foreground",
+                        )}
+                        title={
+                          toolsEnabled
+                            ? "Claude may read files in this project (read-only) — click to revoke"
+                            : "Grant Claude read-only access to project files"
+                        }
+                      >
+                        <Wrench className="size-3" />
+                        {toolsEnabled ? "Tools: read files" : "Tools off"}
+                      </button>
+                      {toolsEnabled && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setWriteToolsEnabled(!writeToolsEnabled)
+                          }
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
+                            writeToolsEnabled
+                              ? "border-yellow-500/50 bg-yellow-500/10 text-foreground"
+                              : "border-border text-muted-foreground",
+                          )}
+                          title={
+                            writeToolsEnabled
+                              ? "Claude may propose edits & commands — every call still needs your approval. Click to revoke."
+                              : "Allow Claude to propose file edits & commands (each call requires your approval)"
+                          }
+                        >
+                          <span className="text-[10px]">⚡</span>
+                          {writeToolsEnabled
+                            ? "Edits & commands: ask each time"
+                            : "Edits & commands off"}
+                        </button>
                       )}
-                      title={
-                        toolsEnabled
-                          ? "Claude may read files in this project (read-only) — click to revoke"
-                          : "Grant Claude read-only access to project files"
-                      }
-                    >
-                      <Wrench className="size-3" />
-                      {toolsEnabled ? "Tools: read files" : "Tools off"}
-                    </button>
+                    </>
                   )}
                 </div>
               )}
@@ -389,6 +425,79 @@ function MessageBubble({
         )}
       >
         <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
+      </div>
+    </div>
+  );
+}
+
+/** Pretty-printed consent card for one mutating tool call. */
+function ApprovalCard({
+  approval,
+  onRespond,
+}: {
+  approval: PendingApproval;
+  onRespond: (id: string, approved: boolean) => void;
+}) {
+  let details: { label: string; value: string; mono?: boolean }[];
+  try {
+    const input = JSON.parse(approval.input) as Record<string, string>;
+    if (approval.name === "run_command") {
+      details = [{ label: "Command", value: input.command ?? "", mono: true }];
+    } else if (approval.name === "edit_file") {
+      details = [
+        { label: "File", value: input.path ?? "", mono: true },
+        { label: "Replace", value: input.old_string ?? "", mono: true },
+        { label: "With", value: input.new_string ?? "", mono: true },
+      ];
+    } else if (approval.name === "write_file") {
+      details = [
+        { label: "New file", value: input.path ?? "", mono: true },
+        { label: "Content", value: input.content ?? "", mono: true },
+      ];
+    } else {
+      details = [{ label: "Input", value: approval.input, mono: true }];
+    }
+  } catch {
+    details = [{ label: "Input", value: approval.input, mono: true }];
+  }
+
+  return (
+    <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/5 p-3">
+      <div className="flex items-center gap-2 pb-2">
+        <span className="text-sm">⚡</span>
+        <p className="text-sm font-medium">
+          Claude wants to run{" "}
+          <span className="font-mono text-xs">{approval.name}</span>
+        </p>
+      </div>
+      <div className="space-y-1.5 pb-3">
+        {details.map((d) => (
+          <div key={d.label}>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              {d.label}
+            </p>
+            <pre
+              className={cn(
+                "max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-card px-2 py-1 text-xs",
+                d.mono && "font-mono",
+              )}
+            >
+              {d.value.length > 2000 ? `${d.value.slice(0, 2000)}…` : d.value}
+            </pre>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" onClick={() => onRespond(approval.id, true)}>
+          Approve
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onRespond(approval.id, false)}
+        >
+          Deny
+        </Button>
       </div>
     </div>
   );

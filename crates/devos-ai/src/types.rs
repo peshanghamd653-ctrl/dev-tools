@@ -38,9 +38,25 @@ pub struct ChatMessage {
     rename_all_fields = "camelCase"
 )]
 pub enum AiDelta {
-    Text { text: String },
+    Text {
+        text: String,
+    },
+    /// The model invoked a tool; `input` is the JSON arguments, serialized.
+    ToolCall {
+        id: String,
+        name: String,
+        input: String,
+    },
+    /// A tool finished; `summary` is a short preview of the result.
+    ToolResult {
+        id: String,
+        ok: bool,
+        summary: String,
+    },
     Done,
-    Error { message: String },
+    Error {
+        message: String,
+    },
 }
 
 /// One turn of the conversation, provider-neutral.

@@ -4,6 +4,7 @@ mod core_module;
 mod git_commands;
 mod state;
 mod term_commands;
+mod tools;
 
 use std::sync::Arc;
 

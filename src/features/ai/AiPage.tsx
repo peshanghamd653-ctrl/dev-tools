@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronsUpDown, KeyRound, Plus, Send, Sparkles, Trash2 } from "lucide-react";
+import {
+  Check,
+  ChevronsUpDown,
+  KeyRound,
+  Loader2,
+  Plus,
+  Send,
+  Sparkles,
+  Trash2,
+  Wrench,
+  X,
+} from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -47,6 +58,8 @@ export function AiPage() {
 
   const attachProject = useAiStore((s) => s.attachProject);
   const setAttachProject = useAiStore((s) => s.setAttachProject);
+  const toolsEnabled = useAiStore((s) => s.toolsEnabled);
+  const setToolsEnabled = useAiStore((s) => s.setToolsEnabled);
   const activeWorkspace = useActiveWorkspace();
   const { data: projects } = useProjects(activeWorkspace?.id);
   const selectedProjectId = useGitStore((s) => s.selectedProjectId);
@@ -59,6 +72,7 @@ export function AiPage() {
   const send = useSendMessage(
     active?.id ?? null,
     attachProject && project ? project.path : null,
+    toolsEnabled && attachProject && Boolean(project),
   );
 
   const [draft, setDraft] = useState("");
@@ -235,6 +249,29 @@ export function AiPage() {
                 {messages?.map((m) => (
                   <MessageBubble key={m.id} role={m.role} content={m.content} />
                 ))}
+                {send.toolEvents.length > 0 && (
+                  <div className="space-y-1">
+                    {send.toolEvents.map((event) => (
+                      <div
+                        key={event.id}
+                        className="flex items-center gap-2 rounded-md border border-border/60 bg-card/50 px-3 py-1.5 font-mono text-[11px]"
+                      >
+                        {event.ok === undefined ? (
+                          <Loader2 className="size-3 animate-spin text-muted-foreground" />
+                        ) : event.ok ? (
+                          <Check className="size-3 text-emerald-400" />
+                        ) : (
+                          <X className="size-3 text-red-400" />
+                        )}
+                        <Wrench className="size-3 text-muted-foreground" />
+                        <span>{event.name}</span>
+                        <span className="truncate text-muted-foreground">
+                          {event.input}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {send.streamText !== null && (
                   <MessageBubble
                     role="assistant"
@@ -247,7 +284,7 @@ export function AiPage() {
 
             <div className="shrink-0 border-t p-3">
               {project && (
-                <div className="mx-auto max-w-3xl pb-2">
+                <div className="mx-auto flex max-w-3xl gap-1.5 pb-2">
                   <button
                     type="button"
                     onClick={() => setAttachProject(!attachProject)}
@@ -271,6 +308,26 @@ export function AiPage() {
                     />
                     {project.name}
                   </button>
+                  {attachProject && active?.provider === "claude" && (
+                    <button
+                      type="button"
+                      onClick={() => setToolsEnabled(!toolsEnabled)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
+                        toolsEnabled
+                          ? "border-primary/40 bg-primary/10 text-foreground"
+                          : "border-border text-muted-foreground",
+                      )}
+                      title={
+                        toolsEnabled
+                          ? "Claude may read files in this project (read-only) — click to revoke"
+                          : "Grant Claude read-only access to project files"
+                      }
+                    >
+                      <Wrench className="size-3" />
+                      {toolsEnabled ? "Tools: read files" : "Tools off"}
+                    </button>
+                  )}
                 </div>
               )}
               <div className="mx-auto flex max-w-3xl items-end gap-2">

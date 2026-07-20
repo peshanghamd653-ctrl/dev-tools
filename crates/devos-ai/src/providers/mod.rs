@@ -35,6 +35,21 @@ pub struct StreamRequest<'a> {
     pub base_url: Option<&'a str>,
 }
 
+/// A tool the model may call, in provider-neutral JSON-schema form.
+#[derive(Debug, Clone)]
+pub struct ToolDef {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+}
+
+/// Executes tool calls on behalf of the agent loop. Implemented by the
+/// desktop layer, which owns filesystem scoping and (later) approval UX.
+#[async_trait::async_trait]
+pub trait ToolExecutor: Send + Sync {
+    async fn execute(&self, name: &str, input: &serde_json::Value) -> Result<String, String>;
+}
+
 #[async_trait::async_trait]
 pub trait AiProvider: Send + Sync {
     fn id(&self) -> &'static str;

@@ -850,6 +850,7 @@ dependencies = [
 name = "devos-desktop"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "devos-ai",
  "devos-git",
  "devos-kernel",
@@ -860,6 +861,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

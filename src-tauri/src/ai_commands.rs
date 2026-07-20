@@ -179,6 +179,7 @@ pub async fn ai_send(
     conversation_id: String,
     content: String,
     project_path: Option<String>,
+    tools_enabled: Option<bool>,
     on_delta: Channel<AiDelta>,
 ) -> Result<ChatMessage, String> {
     let pool = &state.kernel.pool;
@@ -232,18 +233,45 @@ pub async fn ai_send(
         }
     });
 
-    let result = provider
-        .stream_chat(
-            StreamRequest {
-                model: &conversation.model,
-                system: system.as_deref(),
-                messages: &turns,
-                api_key: api_key.as_deref(),
-                base_url: base_url.as_deref(),
-            },
+    // The tools grant: only when the user enabled tools for this send AND a
+    // project is attached does the model get any tools at all. Claude-only
+    // for now; other providers fall back to plain chat.
+    let use_tools = tools_enabled.unwrap_or(false)
+        && project_path.is_some()
+        && conversation.provider == "claude";
+
+    let result = if use_tools {
+        let key = api_key
+            .as_deref()
+            .ok_or("no Anthropic API key configured")?;
+        let executor = crate::tools::ProjectTools::new(std::path::PathBuf::from(
+            project_path.clone().unwrap_or_default(),
+        ));
+        devos_ai::run_agent(
+            &state.ai.claude,
+            key,
+            &conversation.model,
+            system.as_deref(),
+            &turns,
+            &crate::tools::tool_defs(),
+            &executor,
             &tx,
         )
-        .await;
+        .await
+    } else {
+        provider
+            .stream_chat(
+                StreamRequest {
+                    model: &conversation.model,
+                    system: system.as_deref(),
+                    messages: &turns,
+                    api_key: api_key.as_deref(),
+                    base_url: base_url.as_deref(),
+                },
+                &tx,
+            )
+            .await
+    };
     drop(tx);
     let _ = forwarder.await;
 

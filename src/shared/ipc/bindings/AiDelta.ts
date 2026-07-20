@@ -3,4 +3,4 @@
 /**
  * Frames streamed to the frontend while a reply is being generated.
  */
-export type AiDelta = { "kind": "text", "data": { text: string, } } | { "kind": "done" } | { "kind": "error", "data": { message: string, } };
+export type AiDelta = { "kind": "text", "data": { text: string, } } | { "kind": "toolCall", "data": { id: string, name: string, input: string, } } | { "kind": "toolResult", "data": { id: string, ok: boolean, summary: string, } } | { "kind": "done" } | { "kind": "error", "data": { message: string, } };

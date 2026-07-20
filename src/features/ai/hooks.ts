@@ -49,16 +49,28 @@ export function useOllamaModels(enabled: boolean) {
   });
 }
 
+export interface ToolActivity {
+  id: string;
+  name: string;
+  input: string;
+  /** undefined while running */
+  ok?: boolean;
+  summary?: string;
+}
+
 /**
- * Streaming send. `streamText` grows as deltas arrive; once the backend
- * confirms persistence the messages query is refreshed and the stream resets.
+ * Streaming send. `streamText` grows as deltas arrive and `toolEvents`
+ * records live tool activity; once the backend confirms persistence the
+ * messages query is refreshed and the stream resets.
  */
 export function useSendMessage(
   conversationId: string | null,
   projectPath: string | null,
+  toolsEnabled: boolean,
 ) {
   const queryClient = useQueryClient();
   const [streamText, setStreamText] = useState<string | null>(null);
+  const [toolEvents, setToolEvents] = useState<ToolActivity[]>([]);
   const streamRef = useRef("");
 
   const mutation = useMutation({
@@ -66,27 +78,49 @@ export function useSendMessage(
       if (!conversationId) throw new Error("no conversation selected");
       streamRef.current = "";
       setStreamText("");
+      setToolEvents([]);
       const channel = new Channel<AiDelta>();
       channel.onmessage = (delta) => {
         if (delta.kind === "text") {
           streamRef.current += delta.data.text;
           setStreamText(streamRef.current);
+        } else if (delta.kind === "toolCall") {
+          const { id, name, input } = delta.data;
+          setToolEvents((events) => [...events, { id, name, input }]);
+        } else if (delta.kind === "toolResult") {
+          const { id, ok, summary } = delta.data;
+          setToolEvents((events) =>
+            events.map((e) => (e.id === id ? { ...e, ok, summary } : e)),
+          );
         }
       };
-      return ipc.aiSend(conversationId, content, projectPath, channel);
+      return ipc.aiSend(
+        conversationId,
+        content,
+        projectPath,
+        toolsEnabled,
+        channel,
+      );
     },
     onSettled: () => {
       if (conversationId) {
         void queryClient
           .invalidateQueries({ queryKey: aiKeys.messages(conversationId) })
-          .then(() => setStreamText(null));
+          .then(() => {
+            setStreamText(null);
+            setToolEvents([]);
+          });
       } else {
         setStreamText(null);
+        setToolEvents([]);
       }
       void queryClient.invalidateQueries({ queryKey: aiKeys.conversations });
     },
   });
 
-  const reset = useCallback(() => setStreamText(null), []);
-  return { ...mutation, streamText, resetStream: reset };
+  const reset = useCallback(() => {
+    setStreamText(null);
+    setToolEvents([]);
+  }, []);
+  return { ...mutation, streamText, toolEvents, resetStream: reset };
 }

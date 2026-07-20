@@ -125,12 +125,14 @@ export const ipc = {
     conversationId: string,
     content: string,
     projectPath: string | null,
+    toolsEnabled: boolean,
     onDelta: Channel<AiDelta>,
   ) =>
     call<ChatMessage>("ai_send", {
       conversationId,
       content,
       projectPath,
+      toolsEnabled,
       onDelta,
     }),
   aiCommitMessage: (path: string, provider: string, model: string) =>

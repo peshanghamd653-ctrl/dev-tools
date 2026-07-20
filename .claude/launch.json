@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "devos",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set PATH=%USERPROFILE%\\.cargo\\bin;%PATH% && pnpm tauri dev"
+      ],
+      "port": 1420
+    }
+  ]
+}

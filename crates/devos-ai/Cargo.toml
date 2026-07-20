@@ -1,0 +1,25 @@
+[package]
+name = "devos-ai"
+description = "DevOS AI layer: provider abstraction, streaming chat, conversation persistence"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+devos-kernel = { path = "../devos-kernel" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+ts-rs.workspace = true
+async-trait.workspace = true
+reqwest.workspace = true
+futures-util.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

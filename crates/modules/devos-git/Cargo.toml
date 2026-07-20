@@ -1,0 +1,18 @@
+[package]
+name = "devos-git"
+description = "DevOS git module: repository operations via the git CLI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+devos-kernel = { path = "../../devos-kernel" }
+tokio = { workspace = true, features = ["process", "io-util"] }
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

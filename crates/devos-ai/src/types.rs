@@ -1,0 +1,51 @@
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct Conversation {
+    pub id: String,
+    pub title: String,
+    pub provider: String,
+    pub model: String,
+    #[ts(type = "number")]
+    pub created_at: i64,
+    #[ts(type = "number")]
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessage {
+    pub id: String,
+    pub conversation_id: String,
+    /// "user" | "assistant"
+    pub role: String,
+    pub content: String,
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
+/// Frames streamed to the frontend while a reply is being generated.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/shared/ipc/bindings/")]
+#[serde(
+    tag = "kind",
+    content = "data",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum AiDelta {
+    Text { text: String },
+    Done,
+    Error { message: String },
+}
+
+/// One turn of the conversation, provider-neutral.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChatTurn {
+    pub role: String,
+    pub content: String,
+}

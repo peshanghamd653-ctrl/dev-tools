@@ -1,0 +1,29 @@
+[package]
+name = "devos-desktop"
+description = "DevOS desktop shell: Tauri app wiring the kernel and modules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+# The `_lib` suffix avoids a lib/bin name conflict on Windows.
+name = "devos_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+devos-kernel = { path = "../crates/devos-kernel" }
+devos-terminal = { path = "../crates/modules/devos-terminal" }
+devos-git = { path = "../crates/modules/devos-git" }
+devos-ai = { path = "../crates/devos-ai" }
+devos-secrets = { path = "../crates/devos-secrets" }
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

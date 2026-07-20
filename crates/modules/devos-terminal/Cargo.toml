@@ -1,0 +1,18 @@
+[package]
+name = "devos-terminal"
+description = "DevOS terminal module: pty session management and streaming"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+devos-kernel = { path = "../../devos-kernel" }
+portable-pty = "0.9"
+tokio.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+ts-rs.workspace = true

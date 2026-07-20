@@ -19,6 +19,9 @@ pub async fn term_create(
     let shell_setting = repo::get_setting(&state.kernel.pool, "terminal.shell")
         .await
         .map_err(|e| e.to_string())?;
+    let integration_setting = repo::get_setting(&state.kernel.pool, "terminal.integration")
+        .await
+        .map_err(|e| e.to_string())?;
 
     let handle = state
         .terminal
@@ -27,6 +30,7 @@ pub async fn term_create(
             cwd,
             cols,
             rows,
+            shell_integration: integration_setting.as_deref() != Some("off"),
         })
         .map_err(|e| e.to_string())?;
 

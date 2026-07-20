@@ -64,9 +64,51 @@ pub fn run() {
 
             let startup_ms = start.elapsed().as_millis() as i64;
             tracing::info!(startup_ms, "devos kernel ready");
+            let terminal = Arc::new(TerminalManager::new());
+
+            // The failure watcher: OSC 133 markers from shell integration
+            // become persistent notifications, throttled per session so a
+            // rapid-fire failing loop can't flood the bell.
+            if let Some(mut failures) = terminal.take_failure_receiver() {
+                let watch_kernel = kernel.clone();
+                let watch_terminal = terminal.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut last_notified: std::collections::HashMap<String, std::time::Instant> =
+                        std::collections::HashMap::new();
+                    while let Some(failure) = failures.recv().await {
+                        let now = std::time::Instant::now();
+                        let throttled = last_notified
+                            .get(&failure.session_id)
+                            .is_some_and(|t| now.duration_since(*t).as_secs() < 30);
+                        if throttled {
+                            continue;
+                        }
+                        last_notified.insert(failure.session_id.clone(), now);
+                        let tail = watch_terminal.tail(&failure.session_id).unwrap_or_default();
+                        let snippet: String = tail
+                            .trim_end()
+                            .chars()
+                            .rev()
+                            .take(400)
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev()
+                            .collect();
+                        let _ = watch_kernel
+                            .notify(
+                                "terminal",
+                                "warning",
+                                &format!("Command failed (exit {})", failure.exit_code),
+                                Some(snippet.trim()),
+                            )
+                            .await;
+                    }
+                });
+            }
+
             app.manage(AppState {
                 kernel,
-                terminal: Arc::new(TerminalManager::new()),
+                terminal,
                 secrets,
                 ai: Arc::new(AiRegistry::new()),
                 approvals: Arc::new(approvals::ApprovalRegistry::default()),

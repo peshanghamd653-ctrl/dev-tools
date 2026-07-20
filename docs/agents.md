@@ -95,18 +95,30 @@ Deliberately transparent: there is no hidden summarization or automatic
 distillation — every remembered fact was either saved by the model in a
 visible tool call or typed by the user, and each is one click from deletion.
 
-## Background agents — infrastructure ready, first agent partially manual
+## Background agents — first watcher implemented
 
-The pieces an agent needs all exist now: durable jobs (`JobRunner`), the
-event bus, the gated tool executor, and a persistent reporting surface
+The pieces an agent needs all exist: durable jobs (`JobRunner`), the event
+bus, the gated tool executor, and a persistent reporting surface
 (`Kernel::notify` → Notification Center bell).
 
-The build-failure watcher ships today in its **manual** form: the terminal
-keeps a 32 KB backend ring buffer per session, and "Diagnose with AI" sends
-the ANSI-stripped tail into a fresh chat. The **automatic** form needs OSC
-133 shell integration (so the manager can see command boundaries and exit
-codes in the output stream) — then: non-zero exit → agent job reads the
-same buffer → diagnosis → `notify()`. Never auto-applies a change.
+The **build-failure watcher is live** for PowerShell sessions:
+
+```
+prompt hook (OSC 133;D;<exit-code>, injected via -EncodedCommand,
+chains the user's own prompt)          →  ConPTY output stream
+→ cross-chunk OscScanner in the pty reader thread
+→ CommandFailure channel out of TerminalManager
+→ desktop consumer (30s/session throttle)
+→ Kernel::notify("terminal", "warning", …, output snippet)  →  bell
+```
+
+Detection is deterministic (real exit codes, no output-pattern heuristics)
+and free; **AI diagnosis stays one click away** (the terminal's sparkle
+button feeds the same ring buffer into a chat) rather than auto-running on
+every failure — a deliberate cost/noise decision. Opt out entirely with
+setting `terminal.integration=off`. cmd.exe and other shells are not
+instrumented (no reliable prompt hook); they keep manual diagnosis only.
+The watcher never applies changes.
 
 ## Project indexing / RAG — lexical half implemented
 

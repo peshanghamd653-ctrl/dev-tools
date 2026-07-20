@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::mpsc;
 
+use crate::integration::{encoded_prompt_hook, supports_integration, CommandFailure, OscScanner};
 use crate::types::{TermEvent, TermSessionInfo};
 
 #[derive(Debug, thiserror::Error)]
@@ -24,6 +25,9 @@ pub struct CreateSessionOptions {
     pub cwd: Option<String>,
     pub cols: u16,
     pub rows: u16,
+    /// Inject the OSC 133 prompt hook (PowerShell family only). The user
+    /// can disable this via the `terminal.integration` setting.
+    pub shell_integration: bool,
 }
 
 /// Returned from [`TerminalManager::create`]: session metadata plus the
@@ -46,14 +50,35 @@ const TAIL_CAP_BYTES: usize = 32 * 1024;
 
 /// Owns every live pty. Sessions survive UI route changes because they live
 /// here, not in the webview.
-#[derive(Default)]
 pub struct TerminalManager {
     sessions: Arc<Mutex<HashMap<String, Arc<Session>>>>,
+    failure_tx: mpsc::UnboundedSender<CommandFailure>,
+    failure_rx: Mutex<Option<mpsc::UnboundedReceiver<CommandFailure>>>,
+}
+
+impl Default for TerminalManager {
+    fn default() -> Self {
+        let (failure_tx, failure_rx) = mpsc::unbounded_channel();
+        Self {
+            sessions: Arc::default(),
+            failure_tx,
+            failure_rx: Mutex::new(Some(failure_rx)),
+        }
+    }
 }
 
 impl TerminalManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The stream of non-zero command exits detected via OSC 133 markers.
+    /// Yields once; the desktop shell consumes it at startup.
+    pub fn take_failure_receiver(&self) -> Option<mpsc::UnboundedReceiver<CommandFailure>> {
+        self.failure_rx
+            .lock()
+            .expect("failure receiver lock poisoned")
+            .take()
     }
 
     pub fn create(&self, opts: CreateSessionOptions) -> TermResult<SessionHandle> {
@@ -78,6 +103,14 @@ impl TerminalManager {
 
         let mut cmd = CommandBuilder::new(&shell);
         cmd.cwd(&cwd);
+        if opts.shell_integration && supports_integration(&shell) {
+            cmd.args([
+                "-NoLogo",
+                "-NoExit",
+                "-EncodedCommand",
+                &encoded_prompt_hook(),
+            ]);
+        }
         let mut child = pair
             .slave
             .spawn_command(cmd)
@@ -115,10 +148,13 @@ impl TerminalManager {
         // through the unbounded channel (send is sync-safe).
         let out_tx = tx.clone();
         let read_buffer = Arc::clone(&buffer);
+        let failure_tx = self.failure_tx.clone();
+        let reader_session_id = id.clone();
         std::thread::Builder::new()
             .name(format!("pty-read-{id}"))
             .spawn(move || {
                 let mut buf = [0u8; 8192];
+                let mut scanner = OscScanner::default();
                 loop {
                     match reader.read(&mut buf) {
                         Ok(0) | Err(_) => break,
@@ -130,6 +166,14 @@ impl TerminalManager {
                                 if tail.len() > TAIL_CAP_BYTES {
                                     let excess = tail.len() - TAIL_CAP_BYTES;
                                     tail.drain(..excess);
+                                }
+                            }
+                            for code in scanner.feed(&buf[..n]) {
+                                if code != 0 {
+                                    let _ = failure_tx.send(CommandFailure {
+                                        session_id: reader_session_id.clone(),
+                                        exit_code: code,
+                                    });
                                 }
                             }
                             if out_tx
@@ -265,7 +309,7 @@ fn strip_ansi(input: &str) -> String {
     while let Some(c) = chars.next() {
         if c == '\u{1b}' {
             match chars.peek() {
-                // CSI: ESC [ …params… final-byte (@ through ~)
+                // CSI: ESC [ â€¦paramsâ€¦ final-byte (@ through ~)
                 Some('[') => {
                     chars.next();
                     for n in chars.by_ref() {
@@ -274,7 +318,7 @@ fn strip_ansi(input: &str) -> String {
                         }
                     }
                 }
-                // OSC: ESC ] …payload… (BEL or ESC \)
+                // OSC: ESC ] â€¦payloadâ€¦ (BEL or ESC \)
                 Some(']') => {
                     chars.next();
                     while let Some(n) = chars.next() {
@@ -350,6 +394,7 @@ mod tests {
                 cwd: None,
                 cols: 80,
                 rows: 24,
+                shell_integration: false,
             })
             .expect("create session");
         let id = handle.info.id.clone();
@@ -408,6 +453,64 @@ mod tests {
         assert!(manager.list().is_empty());
     }
 
+    /// End-to-end proof of the watcher chain: PowerShell + injected prompt
+    /// hook → OSC 133 marker through ConPTY → scanner → CommandFailure.
+    #[tokio::test]
+    async fn powershell_integration_reports_failed_commands() {
+        let manager = Arc::new(TerminalManager::new());
+        let mut failures = manager.take_failure_receiver().expect("first take");
+        assert!(manager.take_failure_receiver().is_none(), "yields once");
+
+        let handle = manager
+            .create(CreateSessionOptions {
+                shell: Some("powershell.exe".into()),
+                cwd: None,
+                cols: 120,
+                rows: 30,
+                shell_integration: true,
+            })
+            .expect("create powershell session");
+        let id = handle.info.id.clone();
+
+        // Emulate xterm: answer ConPTY's cursor-position probes so output
+        // keeps flowing (same handshake as the cmd.exe test).
+        let responder_manager = Arc::clone(&manager);
+        let responder_id = id.clone();
+        let mut events = handle.events;
+        tokio::spawn(async move {
+            while let Some(event) = events.recv().await {
+                if let TermEvent::Output { bytes } = event {
+                    if bytes.windows(4).any(|w| w == b"\x1b[6n") {
+                        let _ = responder_manager.write(&responder_id, b"\x1b[1;1R");
+                    }
+                }
+            }
+        });
+
+        // Give PowerShell a moment to boot, then run a failing command.
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        manager
+            .write(&id, b"cmd /c exit 5\r")
+            .expect("write command");
+
+        let failure = tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                let failure = failures.recv().await.expect("failure channel open");
+                // The hook may emit a spurious exit-1 while PowerShell warms
+                // up; wait for the code we actually produced.
+                if failure.exit_code == 5 {
+                    return failure;
+                }
+            }
+        })
+        .await
+        .expect("command failure detected within 30s");
+        assert_eq!(failure.session_id, id);
+        assert_eq!(failure.exit_code, 5);
+
+        manager.kill(&id).expect("kill session");
+    }
+
     #[test]
     fn strip_ansi_removes_csi_osc_and_carriage_returns() {
         assert_eq!(strip_ansi("\u{1b}[32mgreen\u{1b}[0m"), "green");
@@ -426,6 +529,7 @@ mod tests {
                 cwd: None,
                 cols: 80,
                 rows: 24,
+                shell_integration: false,
             })
             .expect("create session");
         manager.resize(&handle.info.id, 120, 40).expect("resize");

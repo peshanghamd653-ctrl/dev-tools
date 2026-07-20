@@ -4,9 +4,11 @@
 //! never kills a shell. Output flows through a tokio channel the desktop
 //! layer bridges onto a Tauri IPC channel.
 
+mod integration;
 mod manager;
 mod types;
 
+pub use integration::CommandFailure;
 pub use manager::{CreateSessionOptions, SessionHandle, TerminalManager};
 pub use types::{TermEvent, TermSessionInfo};
 

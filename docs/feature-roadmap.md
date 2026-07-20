@@ -58,10 +58,15 @@ Deferred to M1.5: project templates, repository cloning, file explorer.
   the manual core of the build-failure watcher — the automatic version
   needs OSC 133 shell integration for command boundaries, and will build on
   this same buffer.
+- ✅ **Automatic failure watcher**: PowerShell sessions get an OSC 133
+  prompt hook (injected via `-EncodedCommand`, chaining the user's existing
+  prompt); the pty reader scans for `133;D;<code>` markers; non-zero exits
+  become Notification Center entries with an output snippet, throttled to
+  one per session per 30s. Opt out with setting `terminal.integration=off`.
+  AI diagnosis stays one click away (the sparkle button) rather than
+  auto-running — detection is free, diagnosis costs tokens.
 - Planned: vector half of retrieval (tree-sitter symbols + `sqlite-vec`
-  embeddings layered on the same tables); automatic build-failure watcher
-  (OSC 133 shell integration → detect non-zero command exits → auto-diagnose
-  → notify).
+  embeddings layered on the same tables).
 
 ### M3 — Ops tools
 - Docker module via `bollard` (containers, images, logs, compose)

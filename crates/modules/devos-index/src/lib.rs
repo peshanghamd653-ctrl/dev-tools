@@ -8,12 +8,25 @@
 
 mod indexer;
 
-pub use indexer::{init, project_key, reindex_project, search, stats, IndexError, SearchHit};
+pub use indexer::{
+    init, project_files, project_key, reindex_project, search, stats, IndexError, SearchHit,
+};
 
 use devos_kernel::module::{Module, ModuleCtx};
 use devos_kernel::types::CommandDescriptor;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+/// One content-search hit, UI-facing (see `search` for the internal type).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct IndexHit {
+    pub file: String,
+    #[ts(type = "number")]
+    pub start_line: i64,
+    pub snippet: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../../src/shared/ipc/bindings/")]

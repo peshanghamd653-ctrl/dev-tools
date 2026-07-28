@@ -28,7 +28,10 @@ in-app.
 - **Secrets**: `devos-secrets` — OS-keystore master key + AES-256-GCM,
   redaction-by-type at the IPC boundary.
 
-Deferred to M1.5: project templates, repository cloning, file explorer.
+M1.5 status: ✅ **file explorer** (`/files`, Ctrl+6 — lazy directory tree,
+mono preview with line numbers, filename search + FTS content search, all
+paths through the shared `pathsafe` containment guard). Still deferred:
+project templates, repository cloning.
 
 ### M2 — AI depth (in progress)
 - ✅ AI commit-message generation (staged diff → conventional-commit message)

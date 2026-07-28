@@ -13,6 +13,7 @@ import { Route as TerminalRouteImport } from './routes/terminal'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as GitRouteImport } from './routes/git'
+import { Route as FilesRouteImport } from './routes/files'
 import { Route as AiRouteImport } from './routes/ai'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -36,6 +37,11 @@ const GitRoute = GitRouteImport.update({
   path: '/git',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FilesRoute = FilesRouteImport.update({
+  id: '/files',
+  path: '/files',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AiRoute = AiRouteImport.update({
   id: '/ai',
   path: '/ai',
@@ -50,6 +56,7 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
+  '/files': typeof FilesRoute
   '/git': typeof GitRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
+  '/files': typeof FilesRoute
   '/git': typeof GitRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
+  '/files': typeof FilesRoute
   '/git': typeof GitRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
@@ -74,16 +83,25 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/ai' | '/git' | '/projects' | '/settings' | '/terminal'
+  fullPaths:
+    '/' | '/ai' | '/files' | '/git' | '/projects' | '/settings' | '/terminal'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/ai' | '/git' | '/projects' | '/settings' | '/terminal'
+  to: '/' | '/ai' | '/files' | '/git' | '/projects' | '/settings' | '/terminal'
   id:
-    '__root__' | '/' | '/ai' | '/git' | '/projects' | '/settings' | '/terminal'
+    | '__root__'
+    | '/'
+    | '/ai'
+    | '/files'
+    | '/git'
+    | '/projects'
+    | '/settings'
+    | '/terminal'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AiRoute: typeof AiRoute
+  FilesRoute: typeof FilesRoute
   GitRoute: typeof GitRoute
   ProjectsRoute: typeof ProjectsRoute
   SettingsRoute: typeof SettingsRoute
@@ -120,6 +138,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GitRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/files': {
+      id: '/files'
+      path: '/files'
+      fullPath: '/files'
+      preLoaderRoute: typeof FilesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ai': {
       id: '/ai'
       path: '/ai'
@@ -140,6 +165,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AiRoute: AiRoute,
+  FilesRoute: FilesRoute,
   GitRoute: GitRoute,
   ProjectsRoute: ProjectsRoute,
   SettingsRoute: SettingsRoute,

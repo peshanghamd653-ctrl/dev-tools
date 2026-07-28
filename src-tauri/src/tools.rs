@@ -171,17 +171,9 @@ impl ProjectTools {
         self
     }
 
-    /// Join + canonicalize + verify containment.
+    /// Join + canonicalize + verify containment (shared guard).
     fn resolve(&self, relative: &str) -> Result<PathBuf, String> {
-        let root = std::fs::canonicalize(&self.root)
-            .map_err(|_| "project root does not exist".to_string())?;
-        let target = self.root.join(relative);
-        let canonical =
-            std::fs::canonicalize(&target).map_err(|_| format!("path not found: {relative}"))?;
-        if !canonical.starts_with(&root) {
-            return Err(format!("path escapes the project: {relative}"));
-        }
-        Ok(canonical)
+        crate::pathsafe::resolve_in_root(&self.root, relative)
     }
 
     fn read_file(&self, input: &Value) -> Result<String, String> {

@@ -15,7 +15,10 @@ import type { GitBranch } from "./bindings/GitBranch";
 import type { GitCommit } from "./bindings/GitCommit";
 import type { GitFileEntry } from "./bindings/GitFileEntry";
 import type { GitRepoInfo } from "./bindings/GitRepoInfo";
+import type { FilePreview } from "./bindings/FilePreview";
+import type { FsEntry } from "./bindings/FsEntry";
 import type { GitStatus } from "./bindings/GitStatus";
+import type { IndexHit } from "./bindings/IndexHit";
 import type { IndexStats } from "./bindings/IndexStats";
 import type { JobInfo } from "./bindings/JobInfo";
 import type { KernelEvent } from "./bindings/KernelEvent";
@@ -36,7 +39,10 @@ export type {
   GitCommit,
   GitFileEntry,
   GitRepoInfo,
+  FilePreview,
+  FsEntry,
   GitStatus,
+  IndexHit,
   IndexStats,
   JobInfo,
   KernelEvent,
@@ -155,6 +161,15 @@ export const ipc = {
 
   indexProject: (path: string) => call<string>("index_project", { path }),
   indexStats: (path: string) => call<IndexStats>("index_stats", { path }),
+  indexSearch: (path: string, query: string) =>
+    call<IndexHit[]>("index_search", { path, query }),
+
+  fsListDir: (projectPath: string, relative: string) =>
+    call<FsEntry[]>("fs_list_dir", { projectPath, relative }),
+  fsReadFile: (projectPath: string, relative: string) =>
+    call<FilePreview>("fs_read_file", { projectPath, relative }),
+  fsFind: (projectPath: string, query: string) =>
+    call<string[]>("fs_find", { projectPath, query }),
 
   aiMemoryList: (projectPath: string) =>
     call<MemoryEntry[]>("ai_memory_list", { projectPath }),

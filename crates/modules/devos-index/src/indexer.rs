@@ -67,6 +67,14 @@ pub async fn init(pool: &SqlitePool) -> IndexResult<()> {
     Ok(())
 }
 
+/// All indexable file paths in a project (relative, `/`-separated), using
+/// the same walk rules as the indexer. Used by filename search in the UI.
+pub fn project_files(root: &Path) -> Vec<String> {
+    let mut disk: Vec<(String, i64, i64)> = Vec::new();
+    walk_files(root, root, 0, &mut disk);
+    disk.into_iter().map(|(path, _, _)| path).collect()
+}
+
 /// Bring the index in line with the project directory. Unchanged files
 /// (same mtime + size) are skipped; deleted files are pruned.
 pub async fn reindex_project(pool: &SqlitePool, project_path: &str) -> IndexResult<IndexStats> {

@@ -120,6 +120,15 @@ Used by:
 |---|---|---|---|
 | `index_project` | `path` | `string` (job id) | runs as a kernel job; completion arrives via `jobUpdated` |
 | `index_stats` | `path` | `IndexStats` | files/chunks/lastIndexed for the project |
+| `index_search` | `path, query` | `IndexHit[]` (≤30) | FTS content search for the file explorer |
+
+### Files (M1.5)
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `fs_list_dir` | `projectPath, relative` | `FsEntry[]` (dirs first, ≤1000) | path-contained via pathsafe |
+| `fs_read_file` | `projectPath, relative` | `FilePreview` | 512 KB cap, binary sniffing |
+| `fs_find` | `projectPath, query` | `string[]` (≤200 relative paths) | same walk rules as the indexer |
 
 ## Event catalog
 

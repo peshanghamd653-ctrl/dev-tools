@@ -115,6 +115,29 @@ pub struct NotificationDto {
     pub created_at: i64,
 }
 
+/// One entry of a project directory listing (file explorer).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct FsEntry {
+    pub name: String,
+    pub is_dir: bool,
+    #[ts(type = "number")]
+    pub size: i64,
+}
+
+/// Text preview of a project file (file explorer).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct FilePreview {
+    pub content: String,
+    pub truncated: bool,
+    pub binary: bool,
+    #[ts(type = "number")]
+    pub size: i64,
+}
+
 /// Events broadcast on the kernel event bus and forwarded to the frontend
 /// on the `devos://event` channel.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

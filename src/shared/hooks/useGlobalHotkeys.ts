@@ -46,6 +46,10 @@ export function useGlobalHotkeys() {
           e.preventDefault();
           void navigate({ to: "/ai" });
           break;
+        case "6":
+          e.preventDefault();
+          void navigate({ to: "/files" });
+          break;
         case ",":
           e.preventDefault();
           void navigate({ to: "/settings" });

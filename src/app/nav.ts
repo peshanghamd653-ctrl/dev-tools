@@ -2,6 +2,7 @@ import {
   Container,
   Database,
   FolderKanban,
+  FolderTree,
   GitBranch,
   LayoutDashboard,
   Send,
@@ -24,6 +25,7 @@ export const primaryNav: NavItem[] = [
   { to: "/terminal", label: "Terminal", icon: Terminal, shortcut: "Ctrl+3" },
   { to: "/git", label: "Git", icon: GitBranch, shortcut: "Ctrl+4" },
   { to: "/ai", label: "AI Assistant", icon: Sparkles, shortcut: "Ctrl+5" },
+  { to: "/files", label: "Files", icon: FolderTree, shortcut: "Ctrl+6" },
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+," },
 ];
 

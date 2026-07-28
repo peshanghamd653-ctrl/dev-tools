@@ -2,8 +2,10 @@ mod ai_commands;
 mod approvals;
 mod commands;
 mod core_module;
+mod fs_commands;
 mod git_commands;
 mod index_commands;
+mod pathsafe;
 mod state;
 mod term_commands;
 mod tools;
@@ -166,6 +168,10 @@ pub fn run() {
             ai_commands::ai_memory_delete,
             index_commands::index_project,
             index_commands::index_stats,
+            index_commands::index_search,
+            fs_commands::fs_list_dir,
+            fs_commands::fs_read_file,
+            fs_commands::fs_find,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

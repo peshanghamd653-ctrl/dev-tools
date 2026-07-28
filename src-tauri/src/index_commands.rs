@@ -38,3 +38,23 @@ pub async fn index_stats(state: State<'_, AppState>, path: String) -> Result<Ind
         .await
         .map_err(|e| e.to_string())
 }
+
+/// Content search over the FTS index, for the file explorer's search panel.
+#[tauri::command]
+pub async fn index_search(
+    state: State<'_, AppState>,
+    path: String,
+    query: String,
+) -> Result<Vec<devos_index::IndexHit>, String> {
+    let hits = devos_index::search(&state.kernel.pool, &path, &query, 30)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(hits
+        .into_iter()
+        .map(|h| devos_index::IndexHit {
+            file: h.file,
+            start_line: h.start_line,
+            snippet: h.snippet,
+        })
+        .collect())
+}

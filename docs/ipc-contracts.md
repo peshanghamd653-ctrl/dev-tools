@@ -130,6 +130,26 @@ Used by:
 | `fs_read_file` | `projectPath, relative` | `FilePreview` | 512 KB cap, binary sniffing |
 | `fs_find` | `projectPath, query` | `string[]` (≤200 relative paths) | same walk rules as the indexer |
 
+### Docker (M3)
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `docker_ping` | — | `string` (version) | error prefixed `unavailable:` when the daemon is down |
+| `docker_containers` | — | `DockerContainer[]` (all, incl. stopped) | |
+| `docker_images` | — | `DockerImage[]` | dangling tags filtered |
+| `docker_start` / `docker_stop` / `docker_restart` | `id` | `()` | 10s stop timeout |
+| `docker_logs` | `id` | `string` | last 200 lines, 256 KB cap |
+
+### API client (M3)
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `api_send` | `spec: ApiRequestSpec` | `ApiResponse` | 30s timeout, 1 MB body cap; records history |
+| `api_save` | `name, collection, spec` | `SavedRequest` | blank collection → "Default" |
+| `api_requests` | — | `SavedRequest[]` | ordered by collection, name |
+| `api_request_delete` | `id` | `()` | |
+| `api_history` | — | `ApiHistoryEntry[]` (last 50) | table pruned to 100 |
+
 ## Event catalog
 
 `KernelEvent` is a tagged union `{ kind, data? }`:

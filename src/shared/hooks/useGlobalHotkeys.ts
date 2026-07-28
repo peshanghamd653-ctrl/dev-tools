@@ -50,6 +50,14 @@ export function useGlobalHotkeys() {
           e.preventDefault();
           void navigate({ to: "/files" });
           break;
+        case "7":
+          e.preventDefault();
+          void navigate({ to: "/docker" });
+          break;
+        case "8":
+          e.preventDefault();
+          void navigate({ to: "/api" });
+          break;
         case ",":
           e.preventDefault();
           void navigate({ to: "/settings" });

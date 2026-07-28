@@ -7,10 +7,16 @@ import { invoke, type Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { AiDelta } from "./bindings/AiDelta";
+import type { ApiHeader } from "./bindings/ApiHeader";
+import type { ApiHistoryEntry } from "./bindings/ApiHistoryEntry";
+import type { ApiRequestSpec } from "./bindings/ApiRequestSpec";
+import type { ApiResponse } from "./bindings/ApiResponse";
 import type { AppInfo } from "./bindings/AppInfo";
 import type { ChatMessage } from "./bindings/ChatMessage";
 import type { CommandDescriptor } from "./bindings/CommandDescriptor";
 import type { Conversation } from "./bindings/Conversation";
+import type { DockerContainer } from "./bindings/DockerContainer";
+import type { DockerImage } from "./bindings/DockerImage";
 import type { GitBranch } from "./bindings/GitBranch";
 import type { GitCommit } from "./bindings/GitCommit";
 import type { GitFileEntry } from "./bindings/GitFileEntry";
@@ -26,15 +32,23 @@ import type { MemoryEntry } from "./bindings/MemoryEntry";
 import type { NotificationDto } from "./bindings/NotificationDto";
 import type { Project } from "./bindings/Project";
 import type { TermEvent } from "./bindings/TermEvent";
+import type { SavedRequest } from "./bindings/SavedRequest";
 import type { TermSessionInfo } from "./bindings/TermSessionInfo";
 import type { Workspace } from "./bindings/Workspace";
 
 export type {
   AiDelta,
+  ApiHeader,
+  ApiHistoryEntry,
+  ApiRequestSpec,
+  ApiResponse,
   AppInfo,
+  SavedRequest,
   ChatMessage,
   CommandDescriptor,
   Conversation,
+  DockerContainer,
+  DockerImage,
   GitBranch,
   GitCommit,
   GitFileEntry,
@@ -170,6 +184,21 @@ export const ipc = {
     call<FilePreview>("fs_read_file", { projectPath, relative }),
   fsFind: (projectPath: string, query: string) =>
     call<string[]>("fs_find", { projectPath, query }),
+
+  dockerPing: () => call<string>("docker_ping"),
+  dockerContainers: () => call<DockerContainer[]>("docker_containers"),
+  dockerImages: () => call<DockerImage[]>("docker_images"),
+  dockerStart: (id: string) => call<void>("docker_start", { id }),
+  dockerStop: (id: string) => call<void>("docker_stop", { id }),
+  dockerRestart: (id: string) => call<void>("docker_restart", { id }),
+  dockerLogs: (id: string) => call<string>("docker_logs", { id }),
+
+  apiSend: (spec: ApiRequestSpec) => call<ApiResponse>("api_send", { spec }),
+  apiSave: (name: string, collection: string, spec: ApiRequestSpec) =>
+    call<SavedRequest>("api_save", { name, collection, spec }),
+  apiRequests: () => call<SavedRequest[]>("api_requests"),
+  apiRequestDelete: (id: string) => call<void>("api_request_delete", { id }),
+  apiHistory: () => call<ApiHistoryEntry[]>("api_history"),
 
   aiMemoryList: (projectPath: string) =>
     call<MemoryEntry[]>("ai_memory_list", { projectPath }),

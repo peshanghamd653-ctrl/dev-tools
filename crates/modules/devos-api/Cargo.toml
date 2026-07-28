@@ -1,0 +1,23 @@
+[package]
+name = "devos-api"
+description = "DevOS API client module: REST requests, saved collections, history"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+devos-kernel = { path = "../../devos-kernel" }
+reqwest.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

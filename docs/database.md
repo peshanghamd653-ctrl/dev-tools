@@ -49,14 +49,21 @@ WAL mode, foreign keys on, opened via SQLx. All timestamps are Unix epoch
 | `index_files` | Per-file index state | `PRIMARY KEY (project, file)`, mtime+size for incremental skip |
 | `index_chunks` | FTS5 virtual table | `content` indexed; `project`/`file`/`start_line` UNINDEXED; bm25 + snippet() at query time |
 
+## API tables (`devos-api`, implemented)
+
+| Table | Purpose | Notes |
+|---|---|---|
+| `api_requests` | Saved requests | collection is a plain grouping string; headers stored as JSON |
+| `api_history` | Sent-request log | pruned to the newest 100 on every insert |
+
 ## Planned per milestone
 
 - **M2 (remainder)** `sqlite-vec` virtual table for embeddings alongside
   `index_chunks` · agent definitions/runs · `term_sessions` if session
   metadata needs to survive a full app restart (today sessions are
   in-memory only, tracked via `TerminalManager`)
-- **M3** `api_collections`, `api_requests`, `api_environments` ·
-  `db_connections` (credentials referenced from `secrets`)
+- **M3 (remainder)** `api_environments` (variables) · `db_connections`
+  (credentials referenced from `secrets`)
 - **M4** `monitors`, `monitor_checks` (uptime/perf history) · `deployments`
 - **M5** `plugins` (installed, version, permission grants) · `snippets`,
   `docs_pages`

@@ -1,0 +1,17 @@
+[package]
+name = "devos-docker"
+description = "DevOS docker module: containers, images, lifecycle, logs via the Docker Engine API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+devos-kernel = { path = "../../devos-kernel" }
+bollard = "0.17"
+tokio.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+ts-rs.workspace = true
+futures-util.workspace = true

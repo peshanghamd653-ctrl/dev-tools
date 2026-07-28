@@ -21,6 +21,8 @@ devos-git = { path = "../crates/modules/devos-git" }
 devos-ai = { path = "../crates/devos-ai" }
 devos-secrets = { path = "../crates/devos-secrets" }
 devos-index = { path = "../crates/modules/devos-index" }
+devos-docker = { path = "../crates/modules/devos-docker" }
+devos-api = { path = "../crates/modules/devos-api" }
 sqlx.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"

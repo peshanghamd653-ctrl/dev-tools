@@ -71,9 +71,18 @@ project templates, repository cloning.
 - Planned: vector half of retrieval (tree-sitter symbols + `sqlite-vec`
   embeddings layered on the same tables).
 
-### M3 — Ops tools
-- Docker module via `bollard` (containers, images, logs, compose)
-- API client: REST/GraphQL/WS, collections, environments
+### M3 — Ops tools (in progress)
+- ✅ **Docker module** (`/docker`, Ctrl+7): containers (state, ports,
+  start/stop/restart, last-200-line logs dialog) and images via `bollard`
+  over the Engine API named pipe; graceful "Docker isn't running" state
+  with auto-reconnect polling. Deferred within the module: volumes,
+  compose, live stats, image pull/remove.
+- ✅ **API client** (`/api`, Ctrl+8): REST requests with headers/body
+  editor, response viewer (status, timing, size, pretty JSON, headers),
+  saved requests grouped into collections, automatic history (last 100,
+  auto-pruned). Custom HTTP token methods allowed. Deferred within the
+  module: GraphQL helpers, WebSockets, environments/variables, auth
+  helpers, code generation.
 - Database manager: SQLite/Postgres/MySQL; schema explorer, SQL editor
 - Secret manager UI (the store exists; a dedicated management screen doesn't yet)
 

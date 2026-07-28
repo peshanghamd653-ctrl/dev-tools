@@ -1,7 +1,9 @@
 mod ai_commands;
+mod api_commands;
 mod approvals;
 mod commands;
 mod core_module;
+mod docker_commands;
 mod fs_commands;
 mod git_commands;
 mod index_commands;
@@ -39,6 +41,8 @@ pub fn run() {
             kernel.register_module(&devos_git::GitModule);
             kernel.register_module(&devos_ai::AiModule);
             kernel.register_module(&devos_index::IndexModule);
+            kernel.register_module(&devos_docker::DockerModule);
+            kernel.register_module(&devos_api::ApiModule);
             let kernel = Arc::new(kernel);
 
             let secrets = tauri::async_runtime::block_on(SecretStore::init(kernel.pool.clone()))?;
@@ -46,6 +50,8 @@ pub fn run() {
                 .map_err(|e| format!("ai tables: {e}"))?;
             tauri::async_runtime::block_on(devos_index::init(&kernel.pool))
                 .map_err(|e| format!("index tables: {e}"))?;
+            tauri::async_runtime::block_on(devos_api::init(&kernel.pool))
+                .map_err(|e| format!("api tables: {e}"))?;
 
             // Forward every kernel event to the webview on one channel.
             let mut rx = kernel.events.subscribe();
@@ -172,6 +178,18 @@ pub fn run() {
             fs_commands::fs_list_dir,
             fs_commands::fs_read_file,
             fs_commands::fs_find,
+            docker_commands::docker_ping,
+            docker_commands::docker_containers,
+            docker_commands::docker_images,
+            docker_commands::docker_start,
+            docker_commands::docker_stop,
+            docker_commands::docker_restart,
+            docker_commands::docker_logs,
+            api_commands::api_send,
+            api_commands::api_save,
+            api_commands::api_requests,
+            api_commands::api_request_delete,
+            api_commands::api_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

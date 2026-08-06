@@ -1,6 +1,8 @@
-//! Incremental FTS5 indexing plus the vector half: chunk embeddings stored
-//! as BLOBs, brute-force cosine at query time, and reciprocal-rank fusion of
-//! the two rankings behind the unchanged `search` entry point.
+//! Incremental FTS5 indexing plus the two rankings layered over it: chunk
+//! embeddings stored as BLOBs and scored by brute-force cosine, and
+//! tree-sitter symbols scored by how exactly the query names them. All three
+//! are merged by reciprocal-rank fusion behind the unchanged `search` entry
+//! point.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -11,6 +13,7 @@ use sqlx::{Row, SqlitePool};
 use crate::embeddings::{
     Embedder, OllamaEmbedder, DEFAULT_EMBED_MODEL, DEFAULT_OLLAMA_URL, INDEX_TIMEOUT, QUERY_TIMEOUT,
 };
+use crate::symbols::{self, Symbol};
 use crate::vector::{
     cosine_similarity, decode_vector, encode_vector, reciprocal_rank_fusion, RRF_K,
 };
@@ -36,6 +39,19 @@ const EMBED_BATCH: usize = 16;
 const MAX_EMBED_PER_RUN: usize = 4_000;
 /// Characters of leading chunk text shown for a vector-only hit.
 const EXCERPT_CHARS: usize = 160;
+
+/// What `symbols::extract` currently produces. Bumping it makes the next
+/// reindex of each project re-extract its symbols — see `reindex_project_with`
+/// for why that is a symbol-only pass and not a full reindex.
+const SYMBOLS_VERSION: i64 = 1;
+const META_SYMBOLS_VERSION: &str = "symbols.version";
+/// Identifiers taken from one query. Past a handful, extra terms are noise
+/// from a natural-language question rather than a name someone is looking for.
+const MAX_SYMBOL_TERMS: usize = 8;
+/// Rows fetched per term before ranking. Generous — the tiers below discard
+/// most of them — but bounded so a one-letter prefix cannot scan a whole
+/// project's symbol table into memory.
+const SYMBOL_CANDIDATES_PER_TERM: i64 = 8;
 
 /// Set to `off` to disable embeddings entirely (indexing and search stay
 /// lexical, and nothing ever contacts Ollama).
@@ -109,6 +125,48 @@ pub async fn init(pool: &SqlitePool) -> IndexResult<()> {
     )
     .execute(pool)
     .await?;
+    // Definitions extracted by tree-sitter. Deliberately no primary key: one
+    // file legitimately declares the same name more than once (`fn new` in
+    // two `impl` blocks, an overload pair in TypeScript), and collapsing
+    // those would lose the line that distinguishes them.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS index_symbols (
+            project    TEXT NOT NULL,
+            file       TEXT NOT NULL,
+            name       TEXT NOT NULL,
+            kind       TEXT NOT NULL,
+            start_line INTEGER NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS index_symbols_by_name
+         ON index_symbols (project, name)",
+    )
+    .execute(pool)
+    .await?;
+    // Every write path is "replace this file's symbols", so the delete needs
+    // to be as cheap as the lookup.
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS index_symbols_by_file
+         ON index_symbols (project, file)",
+    )
+    .execute(pool)
+    .await?;
+    // Per-project format markers. A module-owned table rather than the
+    // kernel's `settings` because the index has to work against a pool that
+    // has no `settings` table at all — which is exactly what the tests use.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS index_meta (
+            project TEXT NOT NULL,
+            key     TEXT NOT NULL,
+            value   TEXT NOT NULL,
+            PRIMARY KEY (project, key)
+        )",
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -164,46 +222,81 @@ pub async fn reindex_project_with(
         })
         .collect();
 
+    // An index written before symbol extraction existed has correct chunks
+    // and correct embeddings but no symbols — and every one of its files
+    // passes the mtime/size skip, so nothing would ever extract them. A
+    // stored format version turns that into exactly one extra pass, and
+    // deliberately *not* a reindex: symbols live in their own table keyed the
+    // way chunks always were, so chunks and the embeddings hanging off them
+    // are never invalidated and nothing is re-embedded.
+    let backfill_symbols = symbols_version(pool, &project).await != Some(SYMBOLS_VERSION);
+
     let mut changed = 0usize;
+    let mut extracted = 0usize;
     for (file, mtime, size) in &disk {
         let unchanged = indexed
             .remove(file)
             .is_some_and(|(m, s)| m == *mtime && s == *size);
-        if unchanged {
+        if unchanged && !backfill_symbols {
             continue;
         }
-        let Some(content) = read_text(&root.join(file)) else {
-            // Binary/unreadable: make sure nothing stale remains.
-            remove_file(pool, &project, file).await?;
+        let path = root.join(file);
+        if unchanged && !symbols::is_supported(&path) {
+            // Backfill pass over a file no grammar can read. There is nothing
+            // to extract, so skip the read entirely — but still drop any rows
+            // an older format version left behind, which is the only way a
+            // future version that *narrows* the language set stays correct.
+            remove_symbols(pool, &project, file).await?;
             continue;
-        };
-        remove_chunks(pool, &project, file).await?;
-        for (start_line, chunk) in chunk_lines(&content, CHUNK_LINES) {
+        }
+        let content = read_text(&path);
+        if !unchanged {
+            let Some(content) = content.as_deref() else {
+                // Binary/unreadable: make sure nothing stale remains.
+                remove_file(pool, &project, file).await?;
+                continue;
+            };
+            remove_chunks(pool, &project, file).await?;
+            for (start_line, chunk) in chunk_lines(content, CHUNK_LINES) {
+                sqlx::query(
+                    "INSERT INTO index_chunks (content, project, file, start_line)
+                     VALUES (?1, ?2, ?3, ?4)",
+                )
+                .bind(chunk)
+                .bind(&project)
+                .bind(file)
+                .bind(start_line as i64)
+                .execute(pool)
+                .await?;
+            }
             sqlx::query(
-                "INSERT INTO index_chunks (content, project, file, start_line)
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO index_files (project, file, mtime, size, indexed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(project, file) DO UPDATE SET
+                   mtime = excluded.mtime, size = excluded.size, indexed_at = excluded.indexed_at",
             )
-            .bind(chunk)
             .bind(&project)
             .bind(file)
-            .bind(start_line as i64)
+            .bind(mtime)
+            .bind(size)
+            .bind(now)
             .execute(pool)
             .await?;
+            changed += 1;
         }
-        sqlx::query(
-            "INSERT INTO index_files (project, file, mtime, size, indexed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(project, file) DO UPDATE SET
-               mtime = excluded.mtime, size = excluded.size, indexed_at = excluded.indexed_at",
-        )
-        .bind(&project)
-        .bind(file)
-        .bind(mtime)
-        .bind(size)
-        .bind(now)
-        .execute(pool)
-        .await?;
-        changed += 1;
+        // Reached only for a file that changed, or on the one-time backfill
+        // pass. `extract` returns nothing for a file it has no grammar for
+        // and nothing it cannot parse, so this is where degradation happens:
+        // silently, per file, with the lexical index already written above.
+        //
+        // An unchanged file that suddenly cannot be read during the backfill
+        // keeps the symbols it already has rather than being wiped — it was
+        // valid a moment ago and the mtime/size pass did not object.
+        if let Some(content) = content.as_deref() {
+            let found = symbols::extract(&path, content);
+            extracted += found.len();
+            replace_symbols(pool, &project, file, &found).await?;
+        }
     }
 
     // Anything left in `indexed` no longer exists on disk.
@@ -222,14 +315,20 @@ pub async fn reindex_project_with(
         None => 0,
     };
 
+    // Last, so a run that failed part-way retries the backfill next time
+    // instead of recording work it did not finish.
+    if backfill_symbols {
+        set_symbols_version(pool, &project, SYMBOLS_VERSION).await?;
+    }
+
     let result = stats(pool, project_path).await?;
-    tracing::info!(project = %project, changed, embedded, files = result.files, chunks = result.chunks, "index updated");
+    tracing::info!(project = %project, changed, embedded, symbols = extracted, files = result.files, chunks = result.chunks, "index updated");
     Ok(result)
 }
 
-/// Hybrid content search: bm25-ranked FTS5 hits fused with vector-similarity
-/// hits. Falls back to lexical-only results whenever embeddings are
-/// unavailable, which is the common case.
+/// Hybrid content search: bm25-ranked FTS5 hits fused with symbol-name hits
+/// and vector-similarity hits. Falls back to lexical-only results whenever
+/// the other two legs have nothing to say, which is the common case.
 pub async fn search(
     pool: &SqlitePool,
     project_path: &str,
@@ -260,14 +359,17 @@ pub async fn search_with(
     // The lexical leg runs first and its errors still propagate — an empty
     // or unusable query is a caller mistake, not a degradation.
     let lexical = lexical_search(pool, &project, query, limit).await?;
-    let Some(embedder) = embedder else {
-        return Ok(lexical);
+    let symbolic = symbol_search(pool, &project, query, limit).await;
+    let semantic = match embedder {
+        Some(embedder) => semantic_search(pool, &project, query, limit, embedder).await,
+        None => Vec::new(),
     };
-    let semantic = semantic_search(pool, &project, query, limit, embedder).await;
-    if semantic.is_empty() {
+    // Nothing to fuse: hand back bm25 order untouched, byte for byte what
+    // this function returned before either extra leg existed.
+    if symbolic.is_empty() && semantic.is_empty() {
         return Ok(lexical);
     }
-    Ok(fuse(lexical, semantic, limit))
+    Ok(fuse(vec![lexical, symbolic, semantic], limit))
 }
 
 pub async fn stats(pool: &SqlitePool, project_path: &str) -> IndexResult<IndexStats> {
@@ -297,6 +399,45 @@ pub async fn embedded_chunk_count(pool: &SqlitePool, project_path: &str) -> Inde
         .fetch_one(pool)
         .await?;
     Ok(row.get("n"))
+}
+
+/// How many symbols a project's files currently declare. Diagnostic, same as
+/// [`embedded_chunk_count`]: no command exposes it.
+pub async fn symbol_count(pool: &SqlitePool, project_path: &str) -> IndexResult<i64> {
+    let row = sqlx::query("SELECT COUNT(*) AS n FROM index_symbols WHERE project = ?1")
+        .bind(project_key(project_path))
+        .fetch_one(pool)
+        .await?;
+    Ok(row.get("n"))
+}
+
+/// Every symbol declared by one file, in `(name, kind, start_line)` form and
+/// document order. Diagnostic; also what makes extraction assertable end to
+/// end rather than only at the parser.
+pub async fn file_symbols(
+    pool: &SqlitePool,
+    project_path: &str,
+    file: &str,
+) -> IndexResult<Vec<(String, String, i64)>> {
+    let rows = sqlx::query(
+        "SELECT name, kind, start_line FROM index_symbols
+         WHERE project = ?1 AND file = ?2
+         ORDER BY start_line, name",
+    )
+    .bind(project_key(project_path))
+    .bind(file)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                r.get::<String, _>("name"),
+                r.get::<String, _>("kind"),
+                r.get::<i64, _>("start_line"),
+            )
+        })
+        .collect())
 }
 
 // ---- embeddings backend selection ----
@@ -478,6 +619,70 @@ async fn store_embedding(
     Ok(())
 }
 
+// ---- symbols, indexing side ----
+
+/// Swap a file's symbols for a freshly extracted set. Always deletes first,
+/// including when `found` is empty: a file that stopped parsing, or stopped
+/// declaring anything, must stop contributing to ranking immediately.
+async fn replace_symbols(
+    pool: &SqlitePool,
+    project: &str,
+    file: &str,
+    found: &[Symbol],
+) -> IndexResult<()> {
+    remove_symbols(pool, project, file).await?;
+    for symbol in found {
+        sqlx::query(
+            "INSERT INTO index_symbols (project, file, name, kind, start_line)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )
+        .bind(project)
+        .bind(file)
+        .bind(&symbol.name)
+        .bind(symbol.kind.as_str())
+        .bind(symbol.start_line)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
+async fn remove_symbols(pool: &SqlitePool, project: &str, file: &str) -> IndexResult<()> {
+    sqlx::query("DELETE FROM index_symbols WHERE project = ?1 AND file = ?2")
+        .bind(project)
+        .bind(file)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// The symbol format this project's rows were written by, if any. Any read
+/// failure reports `None`, which costs one backfill pass and never a wrong
+/// answer.
+async fn symbols_version(pool: &SqlitePool, project: &str) -> Option<i64> {
+    sqlx::query("SELECT value FROM index_meta WHERE project = ?1 AND key = ?2")
+        .bind(project)
+        .bind(META_SYMBOLS_VERSION)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|row| row.get::<String, _>("value").parse().ok())
+}
+
+async fn set_symbols_version(pool: &SqlitePool, project: &str, version: i64) -> IndexResult<()> {
+    sqlx::query(
+        "INSERT INTO index_meta (project, key, value) VALUES (?1, ?2, ?3)
+         ON CONFLICT(project, key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(project)
+    .bind(META_SYMBOLS_VERSION)
+    .bind(version.to_string())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 // ---- search side ----
 
 async fn lexical_search(
@@ -507,6 +712,168 @@ async fn lexical_search(
             snippet: r.get("snip"),
         })
         .collect())
+}
+
+/// Structural leg: chunks that *declare* something the query names.
+///
+/// This is the whole point of extracting symbols. bm25 cannot tell a
+/// definition from a mention, so a file that says `verify_token` three times
+/// in comments outranks the file that actually contains
+/// `fn verify_token`. Matching the query's identifiers against declared names
+/// produces a second ranking where the definition is first, and fusion lets
+/// that correct the lexical order without overriding it.
+///
+/// Soft-failing like the vector leg: an unreadable symbol table costs
+/// ranking quality, never results.
+async fn symbol_search(
+    pool: &SqlitePool,
+    project: &str,
+    query: &str,
+    limit: i64,
+) -> Vec<SearchHit> {
+    let terms = identifier_terms(query);
+    if terms.is_empty() || limit <= 0 {
+        return Vec::new();
+    }
+
+    let mut candidates: Vec<(u8, usize, ChunkKey)> = Vec::new();
+    for term in &terms {
+        // `LIKE` is case-insensitive for ASCII in SQLite, so one query covers
+        // the exact, case-folded and prefix cases; `match_tier` separates
+        // them afterwards. Escaping matters more than it looks: `_` is a
+        // single-character wildcard, and snake_case names are full of it.
+        //
+        // The `ESCAPE` clause does cost the LIKE-prefix index optimization —
+        // SQLite disables it whenever one is present — so this walks the
+        // `(project, name)` index entries for one project rather than seeking
+        // straight to them. That is a few thousand rows per term against a
+        // correct answer, and cheaper than the cosine scan already running
+        // beside it; matching `verify_token` literally is not negotiable.
+        let rows = sqlx::query(
+            "SELECT file, name, start_line FROM index_symbols
+             WHERE project = ?1 AND name LIKE ?2 ESCAPE '\\'
+             LIMIT ?3",
+        )
+        .bind(project)
+        .bind(format!("{}%", escape_like(term)))
+        .bind(limit.saturating_mul(SYMBOL_CANDIDATES_PER_TERM))
+        .fetch_all(pool)
+        .await;
+        let rows = match rows {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::debug!(project, error = %e, "symbol lookup failed; ranking without it");
+                return Vec::new();
+            }
+        };
+        for row in rows {
+            let name: String = row.get("name");
+            let tier = match_tier(&name, term);
+            candidates.push((
+                tier,
+                name.chars().count(),
+                (
+                    row.get::<String, _>("file"),
+                    chunk_start_for(row.get::<i64, _>("start_line")),
+                ),
+            ));
+        }
+    }
+
+    // Exact beats case-folded beats prefix; inside a tier the shorter name is
+    // the closer match (`token` before `token_bucket_refill_interval`). File
+    // and line settle the rest so the ranking is reproducible run to run.
+    candidates.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+
+    let mut hits: Vec<SearchHit> = Vec::new();
+    let mut seen: HashSet<ChunkKey> = HashSet::new();
+    for (_, _, key) in candidates {
+        if hits.len() as i64 >= limit {
+            break;
+        }
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        let (file, start_line) = key;
+        match chunk_content(pool, project, &file, start_line).await {
+            // A declaration has no matched *term* to mark up — the query may
+            // not even share a token with it — so this reads like a vector
+            // hit: leading text, no »« markers.
+            Ok(Some(content)) => hits.push(SearchHit {
+                file,
+                start_line,
+                snippet: excerpt(&content, EXCERPT_CHARS),
+            }),
+            // The chunk went away between the two queries; skip it.
+            Ok(None) => {}
+            Err(e) => {
+                tracing::debug!(project, error = %e, "reading chunk for a symbol hit failed");
+                break;
+            }
+        }
+    }
+    hits
+}
+
+/// Identifier-shaped tokens in a query, in order, deduplicated.
+///
+/// Splitting on everything that cannot appear *inside* an identifier is what
+/// makes `ProjectTools::execute`, `store.verify_token(x)` and
+/// `where is verify_token` all yield the same lookups.
+fn identifier_terms(query: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for token in query.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')) {
+        // One-character tokens and anything starting with a digit are not
+        // names worth looking up; they only add noise to the ranking.
+        if token.chars().nth(1).is_none()
+            || !token.starts_with(|c: char| c.is_alphabetic() || c == '_' || c == '$')
+        {
+            continue;
+        }
+        if !out.iter().any(|existing| existing == token) {
+            out.push(token.to_string());
+        }
+        if out.len() == MAX_SYMBOL_TERMS {
+            break;
+        }
+    }
+    out
+}
+
+/// 0 = exact, 1 = same name in another case, 2 = the query is a prefix of it.
+/// Anything else never reaches here: the `LIKE` guarantees at least a prefix.
+fn match_tier(name: &str, term: &str) -> u8 {
+    if name == term {
+        0
+    } else if name.eq_ignore_ascii_case(term) {
+        1
+    } else {
+        2
+    }
+}
+
+/// Neutralize SQL `LIKE` metacharacters so a name is matched literally.
+fn escape_like(term: &str) -> String {
+    let mut out = String::with_capacity(term.len() + 8);
+    for ch in term.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// The 1-based start line of the fixed-size chunk that contains `line`.
+///
+/// Must agree with [`chunk_lines`] exactly: symbols are stored at their own
+/// declaration line, and mapping that back onto a chunk boundary is what lets
+/// the symbol ranking share a key space with the other two legs — so fusion
+/// can merge them at all.
+fn chunk_start_for(line: i64) -> i64 {
+    let line = line.max(1);
+    let size = CHUNK_LINES as i64;
+    (line - 1) / size * size + 1
 }
 
 /// Vector leg. Returns an empty list — never an error — for every kind of
@@ -622,23 +989,26 @@ async fn nearest_chunks(
     Ok(hits)
 }
 
-/// Merge the two rankings with reciprocal-rank fusion.
+/// Merge the legs with reciprocal-rank fusion, most-authoritative first.
 ///
-/// Lexical snippets win on collision: they carry the »« match markers the
-/// file explorer renders, which a vector hit has no way to produce.
-fn fuse(lexical: Vec<SearchHit>, semantic: Vec<SearchHit>, limit: i64) -> Vec<SearchHit> {
-    let lexical_ranking: Vec<ChunkKey> = lexical.iter().map(hit_key).collect();
-    let semantic_ranking: Vec<ChunkKey> = semantic.iter().map(hit_key).collect();
+/// Leg order decides two things and only two. RRF ties keep first-seen order,
+/// so the earlier leg wins a tie; and the earlier leg's *snippet* wins a
+/// collision, which is why lexical goes first — it carries the »« match
+/// markers the file explorer renders, and neither other leg can produce them.
+fn fuse(legs: Vec<Vec<SearchHit>>, limit: i64) -> Vec<SearchHit> {
+    let rankings: Vec<Vec<ChunkKey>> = legs
+        .iter()
+        .map(|leg| leg.iter().map(hit_key).collect())
+        .collect();
 
     let mut by_key: HashMap<ChunkKey, SearchHit> = HashMap::new();
-    for hit in semantic {
-        by_key.insert(hit_key(&hit), hit);
-    }
-    for hit in lexical {
-        by_key.insert(hit_key(&hit), hit);
+    for leg in legs.into_iter().rev() {
+        for hit in leg {
+            by_key.insert(hit_key(&hit), hit);
+        }
     }
 
-    reciprocal_rank_fusion(&[lexical_ranking, semantic_ranking], RRF_K)
+    reciprocal_rank_fusion(&rankings, RRF_K)
         .into_iter()
         .take(limit.max(0) as usize)
         .filter_map(|(key, _)| by_key.remove(&key))
@@ -712,6 +1082,9 @@ async fn remove_chunks(pool: &SqlitePool, project: &str, file: &str) -> IndexRes
 
 async fn remove_file(pool: &SqlitePool, project: &str, file: &str) -> IndexResult<()> {
     remove_chunks(pool, project, file).await?;
+    // A symbol outliving the file that declared it would keep steering
+    // ranking towards a definition that no longer exists.
+    remove_symbols(pool, project, file).await?;
     sqlx::query("DELETE FROM index_files WHERE project = ?1 AND file = ?2")
         .bind(project)
         .bind(file)
@@ -951,9 +1324,81 @@ mod tests {
             snippet: "plain excerpt".into(),
             ..shared()
         }];
-        let fused = fuse(lexical, semantic, 10);
-        assert_eq!(fused.len(), 1, "the same chunk must not appear twice");
+        let symbolic = vec![SearchHit {
+            snippet: "declaration excerpt".into(),
+            ..shared()
+        }];
+        let fused = fuse(vec![lexical, symbolic, semantic], 10);
+        assert_eq!(
+            fused.len(),
+            1,
+            "the same chunk must not appear once per leg"
+        );
         assert_eq!(fused[0].snippet, "»match«");
+    }
+
+    #[test]
+    fn chunk_start_agrees_with_the_chunker() {
+        // Fusion only works because a symbol's line maps onto the exact
+        // `start_line` the chunker stored. If these two ever disagree, symbol
+        // hits silently become keys that match no chunk.
+        let content = (1..=140)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let starts: Vec<i64> = chunk_lines(&content, CHUNK_LINES)
+            .iter()
+            .map(|(start, _)| *start as i64)
+            .collect();
+        assert_eq!(starts, vec![1, 51, 101]);
+        for line in 1..=140i64 {
+            let start = chunk_start_for(line);
+            assert!(starts.contains(&start), "line {line} mapped to {start}");
+            assert!(start <= line && line < start + CHUNK_LINES as i64);
+        }
+        // Defensive, not reachable from stored data: lines are 1-based.
+        assert_eq!(chunk_start_for(0), 1);
+        assert_eq!(chunk_start_for(-7), 1);
+    }
+
+    #[test]
+    fn identifier_terms_reads_names_out_of_code_shaped_queries() {
+        assert_eq!(identifier_terms("verify_token"), vec!["verify_token"]);
+        assert_eq!(
+            identifier_terms("ProjectTools::execute(arg)"),
+            vec!["ProjectTools", "execute", "arg"]
+        );
+        assert_eq!(
+            identifier_terms("store.verify_token(x) // verify_token again"),
+            vec!["store", "verify_token", "again"],
+            "duplicates collapse and single characters are dropped"
+        );
+        // Nothing identifier-shaped means the leg never runs at all.
+        assert!(identifier_terms("   ").is_empty());
+        assert!(identifier_terms("42 + 7 == 9").is_empty());
+        assert_eq!(identifier_terms("a b c d e f g h i j").len(), 0);
+        assert_eq!(
+            identifier_terms("t1 t2 t3 t4 t5 t6 t7 t8 t9 t10").len(),
+            MAX_SYMBOL_TERMS,
+            "term count is capped"
+        );
+    }
+
+    #[test]
+    fn like_wildcards_in_identifiers_are_escaped() {
+        // `_` is a single-character LIKE wildcard and snake_case is full of
+        // it: unescaped, `verify_token%` would also match `verifyXtoken`.
+        assert_eq!(escape_like("verify_token"), r"verify\_token");
+        assert_eq!(escape_like("pct%"), r"pct\%");
+        assert_eq!(escape_like(r"back\slash"), r"back\\slash");
+        assert_eq!(escape_like("plain"), "plain");
+    }
+
+    #[test]
+    fn match_tiers_order_exact_before_case_folded_before_prefix() {
+        assert_eq!(match_tier("verifyToken", "verifyToken"), 0);
+        assert_eq!(match_tier("verifytoken", "verifyToken"), 1);
+        assert_eq!(match_tier("verifyTokenLater", "verifyToken"), 2);
     }
 
     #[tokio::test]
@@ -1347,5 +1792,396 @@ mod tests {
             .unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(stale.count(), 0, "no query embedded against an empty space");
+    }
+
+    // ---- symbols ----
+
+    /// Extraction reaching the database, in both supported language families,
+    /// and staying in step with the file that produced it.
+    #[tokio::test]
+    async fn symbols_land_in_the_index_and_follow_their_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::write(
+            project.join("src/store.rs"),
+            "pub struct TokenStore {\n    inner: u8,\n}\n\n\
+             impl TokenStore {\n    pub fn revoke_token(&self) -> bool {\n        true\n    }\n}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            project.join("src/Panel.tsx"),
+            "export interface PanelProps {\n  title: string;\n}\n\n\
+             export class PanelController {\n  refreshPanel() {\n    return 1;\n  }\n}\n\n\
+             export const PanelView = ({ title }: PanelProps) => <div>{title}</div>;\n",
+        )
+        .unwrap();
+
+        let pool = test_pool(dir.path()).await;
+        let project_str = project.to_string_lossy().into_owned();
+        reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+
+        let rust = file_symbols(&pool, &project_str, "src/store.rs")
+            .await
+            .unwrap();
+        assert_eq!(
+            rust,
+            vec![
+                ("TokenStore".into(), "struct".into(), 1),
+                // The method case: a `fn` inside an `impl`, not a top-level one.
+                ("revoke_token".into(), "method".into(), 6),
+            ]
+        );
+
+        let tsx = file_symbols(&pool, &project_str, "src/Panel.tsx")
+            .await
+            .unwrap();
+        assert_eq!(
+            tsx,
+            vec![
+                ("PanelProps".into(), "interface".into(), 1),
+                ("PanelController".into(), "class".into(), 5),
+                // A method inside a class...
+                ("refreshPanel".into(), "method".into(), 6),
+                // ...and the arrow-const form React components actually use.
+                ("PanelView".into(), "function".into(), 11),
+            ]
+        );
+
+        // Editing a file replaces its symbols rather than accumulating them.
+        std::fs::write(
+            project.join("src/store.rs"),
+            "pub struct TokenStore {\n    inner: u8,\n}\n\n\
+             impl TokenStore {\n    pub fn expire_token(&self) -> bool {\n        true\n    }\n}\n",
+        )
+        .unwrap();
+        filetime_touch(&project.join("src/store.rs"));
+        reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+        let rust = file_symbols(&pool, &project_str, "src/store.rs")
+            .await
+            .unwrap();
+        assert_eq!(rust.len(), 2, "the old method must not linger: {rust:?}");
+        assert!(rust.iter().any(|(name, ..)| name == "expire_token"));
+
+        // Deleting a file takes its symbols with it.
+        std::fs::remove_file(project.join("src/Panel.tsx")).unwrap();
+        reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+        assert!(file_symbols(&pool, &project_str, "src/Panel.tsx")
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(symbol_count(&pool, &project_str).await.unwrap(), 2);
+    }
+
+    /// A project of languages this crate has no grammar for must index and
+    /// search exactly as it did before symbols existed.
+    #[tokio::test]
+    async fn unsupported_extensions_index_normally_with_zero_symbols() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            project.join("service.py"),
+            "def verify_token(token):\n    return token == 'zebra_secret'\n",
+        )
+        .unwrap();
+        std::fs::write(project.join("notes.md"), "# Plans\nthe flamingo module\n").unwrap();
+        std::fs::write(
+            project.join("Cargo.toml"),
+            "[package]\nname = \"pangolin\"\n",
+        )
+        .unwrap();
+
+        let pool = test_pool(dir.path()).await;
+        let project_str = project.to_string_lossy().into_owned();
+        let stats = reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+
+        assert_eq!(stats.files, 3);
+        assert_eq!(
+            symbol_count(&pool, &project_str).await.unwrap(),
+            0,
+            "no grammar means no symbols, not a failure"
+        );
+        for path in ["service.py", "notes.md", "Cargo.toml"] {
+            assert_eq!(symbols::parse_count(&project.join(path)), 0);
+        }
+
+        // Lexical retrieval is completely unaffected.
+        let hits = search_with(&pool, &project_str, "zebra_secret", 10, None)
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].file, "service.py");
+        assert!(hits[0].snippet.contains("»zebra_secret«"));
+        // Even a query that names the Python function still works — it just
+        // gets no structural boost.
+        assert_eq!(
+            search_with(&pool, &project_str, "verify_token", 10, None)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            search_with(&pool, &project_str, "pangolin", 10, None)
+                .await
+                .unwrap()[0]
+                .file,
+            "Cargo.toml"
+        );
+    }
+
+    /// Genuinely broken source, in both grammars. tree-sitter is handed the
+    /// file (asserted, so this cannot pass by silently skipping it) and the
+    /// index run must still succeed with the file fully searchable.
+    #[tokio::test]
+    async fn a_syntactically_broken_file_never_fails_the_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            project.join("wreck.rs"),
+            "fn (((  unterminated_zebra <<< ,,, {{{\n\
+             impl impl impl for for {\n\
+             struct 42Nonsense }}}\n\
+             let ) = ; ; ;\n",
+        )
+        .unwrap();
+        std::fs::write(
+            project.join("wreck.tsx"),
+            "export function ( { { const = = =>\n\
+             class {{{ <div flamingo_marker\n",
+        )
+        .unwrap();
+        std::fs::write(
+            project.join("ok.rs"),
+            "pub fn healthy_walrus() -> u8 {\n 1\n}\n",
+        )
+        .unwrap();
+
+        let pool = test_pool(dir.path()).await;
+        let project_str = project.to_string_lossy().into_owned();
+
+        let stats = reindex_project_with(&pool, &project_str, None)
+            .await
+            .expect("a malformed file must not fail the run");
+        assert_eq!(stats.files, 3);
+
+        // The parser really was invoked on the broken files — recovery, not
+        // an extension check, is what kept the run alive.
+        assert_eq!(symbols::parse_count(&project.join("wreck.rs")), 1);
+        assert_eq!(symbols::parse_count(&project.join("wreck.tsx")), 1);
+
+        // Both broken files are indexed lexically, exactly as before.
+        let hits = search_with(&pool, &project_str, "unterminated_zebra", 10, None)
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].file, "wreck.rs");
+        assert_eq!(
+            search_with(&pool, &project_str, "flamingo_marker", 10, None)
+                .await
+                .unwrap()[0]
+                .file,
+            "wreck.tsx"
+        );
+
+        // And the healthy file next to them still contributes symbols.
+        assert_eq!(
+            file_symbols(&pool, &project_str, "ok.rs").await.unwrap(),
+            vec![("healthy_walrus".into(), "function".into(), 1)]
+        );
+    }
+
+    /// The incremental guarantee, measured where it matters: tree-sitter is
+    /// handed a file's contents once, and not again until the file changes.
+    #[tokio::test]
+    async fn unchanged_files_are_never_re_parsed() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        write_sample_project(&project);
+        let pool = test_pool(dir.path()).await;
+        let project_str = project.to_string_lossy().into_owned();
+        let source = project.join("src/auth.rs");
+        let markdown = project.join("notes.md");
+
+        reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+        assert_eq!(symbols::parse_count(&source), 1);
+        assert_eq!(symbols::parse_count(&markdown), 0, "no grammar, no parse");
+        assert_eq!(symbol_count(&pool, &project_str).await.unwrap(), 1);
+
+        // Nothing changed on disk: not a single re-parse across two runs.
+        reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+        reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+        assert_eq!(symbols::parse_count(&source), 1);
+        assert_eq!(symbols::parse_count(&markdown), 0);
+
+        // Touching the file parses it again — once.
+        std::fs::write(
+            &source,
+            "fn verify_token(token: &str) -> bool {\n    token == \"walrus_secret\"\n}\n",
+        )
+        .unwrap();
+        filetime_touch(&source);
+        reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+        assert_eq!(symbols::parse_count(&source), 2);
+        assert_eq!(symbols::parse_count(&markdown), 0);
+
+        // ...and then stops again.
+        reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+        assert_eq!(symbols::parse_count(&source), 2);
+    }
+
+    /// The payoff, and the only assertion that proves the feature does
+    /// anything: bm25 puts the file that *mentions* a name first, and the
+    /// symbol leg puts the file that *declares* it first instead.
+    #[tokio::test]
+    async fn a_declaration_outranks_a_comment_that_mentions_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+
+        // Short, and says the name five times without defining it — exactly
+        // the shape bm25 rewards most.
+        std::fs::write(
+            project.join("mentions.rs"),
+            "// verify_token is called from here.\n\
+             // see verify_token for the rules.\n\
+             fn caller() {\n\
+             \x20   // verify_token verify_token verify_token\n\
+             }\n",
+        )
+        .unwrap();
+
+        // Long, and says the name once — in the declaration itself.
+        let mut auth = String::from("//! Session verification.\n\n");
+        for i in 0..30 {
+            auth.push_str(&format!("// housekeeping note {i} about sessions\n"));
+        }
+        auth.push_str("pub struct Session {\n    id: u64,\n}\n\n");
+        auth.push_str("pub fn verify_token(token: &str) -> bool {\n    !token.is_empty()\n}\n");
+        std::fs::write(project.join("auth.rs"), &auth).unwrap();
+
+        let pool = test_pool(dir.path()).await;
+        let project_str = project.to_string_lossy().into_owned();
+        reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+
+        // Guard: without symbols, the comment file genuinely wins. If this
+        // assertion ever flips, the test below is proving nothing.
+        let lexical = lexical_search(&pool, &project_key(&project_str), "verify_token", 10)
+            .await
+            .unwrap();
+        let lexical_order: Vec<&str> = lexical.iter().map(|h| h.file.as_str()).collect();
+        assert_eq!(
+            lexical_order,
+            vec!["mentions.rs", "auth.rs"],
+            "bm25 cannot tell a definition from a mention"
+        );
+
+        // With symbols consulted, the declaration comes first — and no
+        // embeddings backend was involved in the correction.
+        let fused = search_with(&pool, &project_str, "verify_token", 10, None)
+            .await
+            .unwrap();
+        let fused_order: Vec<&str> = fused.iter().map(|h| h.file.as_str()).collect();
+        assert_eq!(fused_order, vec!["auth.rs", "mentions.rs"]);
+
+        // The reordering did not cost recall: both files are still returned,
+        // and the lexical snippet survives the swap.
+        assert!(fused[1].snippet.contains("»verify_token«"));
+
+        // A name nothing declares leaves bm25 order completely alone.
+        let untouched = search_with(&pool, &project_str, "housekeeping", 10, None)
+            .await
+            .unwrap();
+        assert_eq!(untouched.len(), 1);
+        assert_eq!(untouched[0].file, "auth.rs");
+    }
+
+    /// An index written before symbol extraction existed passes the
+    /// mtime/size skip on every file, so symbols would never appear. The
+    /// stored format version turns that into one extraction pass — and it
+    /// must not re-embed anything, because chunks did not move.
+    #[tokio::test]
+    async fn an_index_predating_symbols_backfills_without_re_embedding() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        write_sample_project(&project);
+        let pool = test_pool(dir.path()).await;
+        let project_str = project.to_string_lossy().into_owned();
+        let project = project_key(&project_str);
+        let embedder = KeywordEmbedder::new(&["token", "flamingo"]);
+
+        let before = reindex_project_with(&pool, &project_str, Some(&embedder))
+            .await
+            .unwrap();
+        let symbols_before = symbol_count(&pool, &project_str).await.unwrap();
+        assert_eq!(symbols_before, 1);
+        assert_eq!(embedder.count(), 2);
+        assert_eq!(embedded_chunk_count(&pool, &project_str).await.unwrap(), 2);
+
+        // Roll the index back to what an older build would have left behind:
+        // chunks and embeddings intact, no symbols, no version marker.
+        sqlx::query("DELETE FROM index_symbols WHERE project = ?1")
+            .bind(&project)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM index_meta WHERE project = ?1")
+            .bind(&project)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let after = reindex_project_with(&pool, &project_str, Some(&embedder))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            symbol_count(&pool, &project_str).await.unwrap(),
+            symbols_before,
+            "the backfill must reach files the mtime/size pass skipped"
+        );
+        // The expensive halves were left alone: same chunks, same vectors,
+        // and not one extra call to the embedder.
+        assert_eq!(after.chunks, before.chunks);
+        assert_eq!(after.files, before.files);
+        assert_eq!(embedder.count(), 2, "nothing may be re-embedded");
+        assert_eq!(embedded_chunk_count(&pool, &project_str).await.unwrap(), 2);
+
+        // And it happens exactly once: the marker is now current.
+        let parses = symbols::parse_count(&PathBuf::from(&project_str).join("src/auth.rs"));
+        reindex_project_with(&pool, &project_str, Some(&embedder))
+            .await
+            .unwrap();
+        assert_eq!(
+            symbols::parse_count(&PathBuf::from(&project_str).join("src/auth.rs")),
+            parses,
+            "a second run must not re-parse anything"
+        );
+        assert_eq!(
+            symbols_version(&pool, &project).await,
+            Some(SYMBOLS_VERSION)
+        );
     }
 }

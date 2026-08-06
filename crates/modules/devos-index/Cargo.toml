@@ -20,6 +20,14 @@ ts-rs.workspace = true
 # nothing to do with the streaming-chat provider trait.
 reqwest.workspace = true
 async-trait.workspace = true
+# Symbol extraction. Deliberately three crates and no more: every grammar is
+# a generated C parser recompiled on every clean build, and
+# `tree-sitter-typescript` covers TS, TSX, JS and JSX on its own. Declared
+# here rather than in the workspace manifest because no other crate parses
+# source code. See `src/symbols.rs` for why the language set stops here.
+tree-sitter = "0.25"
+tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23"
 
 [dev-dependencies]
 tokio.workspace = true

@@ -48,6 +48,8 @@ WAL mode, foreign keys on, opened via SQLx. All timestamps are Unix epoch
 |---|---|---|
 | `index_files` | Per-file index state | `PRIMARY KEY (project, file)`, mtime+size for incremental skip |
 | `index_chunks` | FTS5 virtual table | `content` indexed; `project`/`file`/`start_line` UNINDEXED; bm25 + snippet() at query time |
+| `index_symbols` | Declarations found by tree-sitter | `project`/`file`/`name`/`kind`/`start_line`; consulted as a third ranking leg so a declaration outranks a comment mentioning it. Rows follow their file and are dropped with its chunks |
+| `index_meta` | Per-project index markers | `PRIMARY KEY (project, key)`. Holds `symbols.version`, which backfills symbols into an index built before they existed — the mtime/size skip would otherwise mean they never appear. Lives here rather than kernel `settings` because the index must work against a pool that has no `settings` table |
 | `index_embeddings` | Chunk vectors | `PRIMARY KEY (project, file, start_line)` so they key to chunks and inherit the mtime/size skip; `f32` BLOBs in `sqlite-vec`'s little-endian layout, plus `model` and `dim` so a model switch re-embeds instead of mixing vector spaces |
 
 ## API tables (`devos-api`, implemented)

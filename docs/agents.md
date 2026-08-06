@@ -188,5 +188,18 @@ check precedes any network call), indexing costs exactly one refused
 connection rather than one per chunk, and search returns its lexical results
 unchanged. `index.embeddings=off` disables the whole path.
 
-Still planned: **tree-sitter symbol extraction**, which the roadmap bundles
-into the same line item. This change is chunk-level embeddings only.
+**Tree-sitter symbol extraction** completes the picture. Rust, TypeScript
+and TSX grammars (JS/JSX ride the TSX parser) pull declarations into
+`index_symbols`, which `search` fuses as a third RRF leg. The effect worth
+naming: bm25 rewards a short file that mentions a name five times in
+comments over the file that actually declares it, and the symbol leg
+corrects that ordering. A file with no grammar is never parsed and indexes
+lexically exactly as before; a file whose syntax is broken degrades to the
+same path rather than failing the run.
+
+Deliberately *not* done: chunking on symbol boundaries. It would re-key
+every `index_chunks` and `index_embeddings` row and hand the embedder
+whatever size the author wrote — a 400-line component becomes one chunk
+that silently overflows `nomic-embed-text`'s input window, while a
+one-line getter becomes its own. Fixed 50-line windows happen to suit the
+model that actually runs here.

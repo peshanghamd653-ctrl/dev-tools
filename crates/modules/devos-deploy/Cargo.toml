@@ -1,0 +1,16 @@
+[package]
+name = "devos-deploy"
+description = "DevOS deployments module: read-only Vercel project and deployment visibility"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+devos-kernel = { path = "../../devos-kernel" }
+reqwest.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true

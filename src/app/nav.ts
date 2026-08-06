@@ -6,6 +6,7 @@ import {
   FolderTree,
   GitBranch,
   LayoutDashboard,
+  Rocket,
   Send,
   Settings,
   Sparkles,
@@ -31,6 +32,8 @@ export const primaryNav: NavItem[] = [
   { to: "/api", label: "API Client", icon: Send, shortcut: "Ctrl+8" },
   { to: "/database", label: "Database", icon: Database, shortcut: "Ctrl+9" },
   { to: "/monitors", label: "Monitors", icon: Activity, shortcut: "Ctrl+0" },
+  // The digits ran out at Monitors; Deployments takes a shift-modified key.
+  { to: "/deploy", label: "Deployments", icon: Rocket, shortcut: "Ctrl+Shift+D" },
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+," },
 ];
 

@@ -7,7 +7,7 @@ import { useUiStore } from "@/shared/stores/ui";
  * App-wide keyboard shortcuts. Registered once in the shell.
  *   Ctrl+K  command palette      Ctrl+B  toggle sidebar
  *   Ctrl+1  dashboard            Ctrl+2  projects
- *   Ctrl+,  settings
+ *   Ctrl+Shift+D  deployments    Ctrl+,  settings
  */
 export function useGlobalHotkeys() {
   const navigate = useNavigate();
@@ -17,6 +17,21 @@ export function useGlobalHotkeys() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey)) return;
+
+      // Shift-modified bindings are matched on the physical key and an
+      // explicit `shiftKey` check, never on `e.key`: with Shift held the
+      // browser reports "D", but so does a plain Ctrl+D with Caps Lock on —
+      // keying off "D" alone would fire this on Ctrl+D. Returning here also
+      // leaves the unmodified bindings below exactly as they were, since
+      // Shift already changed `e.key` ("K", "!", "<") past every case.
+      if (e.shiftKey) {
+        if (e.code === "KeyD") {
+          e.preventDefault();
+          void navigate({ to: "/deploy" });
+        }
+        return;
+      }
+
       switch (e.key) {
         case "k":
           e.preventDefault();

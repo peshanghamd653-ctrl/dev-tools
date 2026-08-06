@@ -19,6 +19,8 @@ import type { DbColumn } from "./bindings/DbColumn";
 import type { DbConnection } from "./bindings/DbConnection";
 import type { DbSchema } from "./bindings/DbSchema";
 import type { DbTable } from "./bindings/DbTable";
+import type { DeployProject } from "./bindings/DeployProject";
+import type { Deployment } from "./bindings/Deployment";
 import type { DockerContainer } from "./bindings/DockerContainer";
 import type { DockerImage } from "./bindings/DockerImage";
 import type { GitBranch } from "./bindings/GitBranch";
@@ -62,6 +64,8 @@ export type {
   DbConnection,
   DbSchema,
   DbTable,
+  DeployProject,
+  Deployment,
   DockerContainer,
   DockerImage,
   GitBranch,
@@ -249,6 +253,11 @@ export const ipc = {
   monitorToggle: (id: string, enabled: boolean) =>
     call<Monitor>("monitor_toggle", { id, enabled }),
   monitorCheckNow: (id: string) => call<MonitorCheck>("monitor_check_now", { id }),
+
+  deployConfigured: () => call<boolean>("deploy_configured"),
+  deployProjects: () => call<DeployProject[]>("deploy_projects"),
+  deployList: (projectId: string) =>
+    call<Deployment[]>("deploy_list", { projectId }),
 };
 
 /** Subscribe to the kernel event stream. Returns an unsubscribe function. */

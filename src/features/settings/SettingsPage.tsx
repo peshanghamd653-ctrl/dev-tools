@@ -3,6 +3,7 @@ import { Check, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAppInfo } from "@/features/app/hooks";
+import { SecretsSection } from "@/features/secrets/SecretsSection";
 import {
   useDeleteWorkspace,
   useRenameWorkspace,
@@ -42,6 +43,8 @@ export function SettingsPage() {
           <WorkspaceList />
         </CardContent>
       </Card>
+
+      <SecretsSection />
 
       <Card>
         <CardHeader>

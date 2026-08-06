@@ -16,6 +16,7 @@ import { Route as MonitorsRouteImport } from './routes/monitors'
 import { Route as GitRouteImport } from './routes/git'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as DockerRouteImport } from './routes/docker'
+import { Route as DeployRouteImport } from './routes/deploy'
 import { Route as DatabaseRouteImport } from './routes/database'
 import { Route as ApiRouteImport } from './routes/api'
 import { Route as AiRouteImport } from './routes/ai'
@@ -56,6 +57,11 @@ const DockerRoute = DockerRouteImport.update({
   path: '/docker',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DeployRoute = DeployRouteImport.update({
+  id: '/deploy',
+  path: '/deploy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DatabaseRoute = DatabaseRouteImport.update({
   id: '/database',
   path: '/database',
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/ai': typeof AiRoute
   '/api': typeof ApiRoute
   '/database': typeof DatabaseRoute
+  '/deploy': typeof DeployRoute
   '/docker': typeof DockerRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
@@ -95,6 +102,7 @@ export interface FileRoutesByTo {
   '/ai': typeof AiRoute
   '/api': typeof ApiRoute
   '/database': typeof DatabaseRoute
+  '/deploy': typeof DeployRoute
   '/docker': typeof DockerRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
@@ -109,6 +117,7 @@ export interface FileRoutesById {
   '/ai': typeof AiRoute
   '/api': typeof ApiRoute
   '/database': typeof DatabaseRoute
+  '/deploy': typeof DeployRoute
   '/docker': typeof DockerRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
@@ -124,6 +133,7 @@ export interface FileRouteTypes {
     | '/ai'
     | '/api'
     | '/database'
+    | '/deploy'
     | '/docker'
     | '/files'
     | '/git'
@@ -137,6 +147,7 @@ export interface FileRouteTypes {
     | '/ai'
     | '/api'
     | '/database'
+    | '/deploy'
     | '/docker'
     | '/files'
     | '/git'
@@ -150,6 +161,7 @@ export interface FileRouteTypes {
     | '/ai'
     | '/api'
     | '/database'
+    | '/deploy'
     | '/docker'
     | '/files'
     | '/git'
@@ -164,6 +176,7 @@ export interface RootRouteChildren {
   AiRoute: typeof AiRoute
   ApiRoute: typeof ApiRoute
   DatabaseRoute: typeof DatabaseRoute
+  DeployRoute: typeof DeployRoute
   DockerRoute: typeof DockerRoute
   FilesRoute: typeof FilesRoute
   GitRoute: typeof GitRoute
@@ -224,6 +237,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DockerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/deploy': {
+      id: '/deploy'
+      path: '/deploy'
+      fullPath: '/deploy'
+      preLoaderRoute: typeof DeployRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/database': {
       id: '/database'
       path: '/database'
@@ -260,6 +280,7 @@ const rootRouteChildren: RootRouteChildren = {
   AiRoute: AiRoute,
   ApiRoute: ApiRoute,
   DatabaseRoute: DatabaseRoute,
+  DeployRoute: DeployRoute,
   DockerRoute: DockerRoute,
   FilesRoute: FilesRoute,
   GitRoute: GitRoute,

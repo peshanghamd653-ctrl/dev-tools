@@ -37,15 +37,16 @@ shipping anything would produce a broad shell of empty screens — the
 opposite of the goal.
 
 So DevOS is built in **vertical milestones**. Each milestone is a real
-improvement to daily use, not a stub. Planned-but-not-built modules are
-visible in the sidebar (disabled, tagged with their milestone) so the
-roadmap is honest without faking functionality. See
+improvement to daily use, not a stub. The sidebar can show
+planned-but-not-built modules as disabled, milestone-tagged entries so the
+roadmap is honest without faking functionality; that list is **currently
+empty**, because every module it advertised has since shipped. See
 [feature-roadmap.md](feature-roadmap.md) for the current milestone state.
 
 ## Non-goals (for now)
 
 - A general Chrome DevTools replacement inside the app (WebView2 can't do
-  this credibly — see [architecture.md](architecture.md#deliberate-deviations)).
+  this credibly — see [architecture.md](architecture.md#deliberate-deviations-from-the-original-brief)).
 - A sandboxed arbitrary-JS plugin runtime (security tradeoff — see
   [plugin-api.md](plugin-api.md)).
 - Cross-platform parity from day one. Windows is the primary target during

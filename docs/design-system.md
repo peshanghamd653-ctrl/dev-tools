@@ -44,7 +44,8 @@ Color tokens (`background`, `foreground`, `card`, `popover`, `primary`,
 
 - Sidebar collapses to an icon rail (`Ctrl+B`). Planned modules render
   disabled with a milestone `Badge` — the roadmap is visible without faking
-  a screen.
+  a screen. The list is empty as of M4 and the section hides entirely when
+  it is, rather than leaving a header over nothing.
 - Topbar hosts the workspace switcher and the palette trigger (with its
   shortcut shown inline).
 

@@ -158,7 +158,7 @@ raises a notification. It takes no remedial action, and it does not call
 the AI — detection is deterministic and free, and there is little for a
 model to add to a status code and a transport error string.
 
-## Project indexing / RAG — lexical half implemented
+## Project indexing / RAG — hybrid retrieval implemented
 
 `devos-index` provides the lexical side of the documented hybrid-retrieval
 plan: FTS5 chunks (50 lines, 1-based start lines) indexed incrementally by
@@ -166,6 +166,27 @@ mtime/size, pruned on delete, searched with bm25 ranking and snippets.
 Reindexing runs through the kernel `JobRunner` — the first real background
 job — so progress and completion surface via standard `jobUpdated` events.
 
-Still planned: the vector half — tree-sitter symbol extraction + chunk
-embeddings (`sqlite-vec`, Ollama or API embeddings) layered onto the same
-tables, then hybrid lexical+vector retrieval with cited answers.
+The vector half now exists too, behind the same `index_search` entry point —
+no command changed shape. Chunk embeddings come from **Ollama**
+(`nomic-embed-text` by default, reusing the AI module's `ai.ollama.url`), are
+stored as `f32` BLOBs in `index_embeddings`, and are merged with the bm25
+ranking by **reciprocal-rank fusion** so two rankings combine without tuning
+score scales against each other.
+
+**`sqlite-vec` was evaluated and rejected**, and the blocker was
+architectural rather than a Windows packaging problem: sqlx loads SQLite
+extensions only at connect time, the pool is built once in the kernel where
+`devos-index` has no say, and sqlx deliberately re-disables extension loading
+after connecting — so there is no runtime escape hatch. Brute-force cosine
+over BLOBs is fast enough at one project's scale, needs no native artifact,
+and the BLOB layout deliberately matches what `sqlite-vec` expects, so
+swapping it in later is a query change rather than a re-index.
+
+**Degradation is the important property**: most users will not run Ollama.
+A project with no stored vectors never contacts it at all (a cheap `EXISTS`
+check precedes any network call), indexing costs exactly one refused
+connection rather than one per chunk, and search returns its lexical results
+unchanged. `index.embeddings=off` disables the whole path.
+
+Still planned: **tree-sitter symbol extraction**, which the roadmap bundles
+into the same line item. This change is chunk-level embeddings only.

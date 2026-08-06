@@ -48,6 +48,7 @@ WAL mode, foreign keys on, opened via SQLx. All timestamps are Unix epoch
 |---|---|---|
 | `index_files` | Per-file index state | `PRIMARY KEY (project, file)`, mtime+size for incremental skip |
 | `index_chunks` | FTS5 virtual table | `content` indexed; `project`/`file`/`start_line` UNINDEXED; bm25 + snippet() at query time |
+| `index_embeddings` | Chunk vectors | `PRIMARY KEY (project, file, start_line)` so they key to chunks and inherit the mtime/size skip; `f32` BLOBs in `sqlite-vec`'s little-endian layout, plus `model` and `dim` so a model switch re-embeds instead of mixing vector spaces |
 
 ## API tables (`devos-api`, implemented)
 
@@ -88,10 +89,11 @@ is uptime *across the checks that ran*, not true uptime.
 
 ## Planned per milestone
 
-- **M2 (remainder)** `sqlite-vec` virtual table for embeddings alongside
-  `index_chunks` · agent definitions/runs · `term_sessions` if session
+- **M2 (remainder)** agent definitions/runs · `term_sessions` if session
   metadata needs to survive a full app restart (today sessions are
-  in-memory only, tracked via `TerminalManager`)
+  in-memory only, tracked via `TerminalManager`). Embeddings now exist as
+  `index_embeddings` (see above) — `sqlite-vec` was evaluated and rejected,
+  so no virtual table is planned.
 - **M3 (remainder)** `api_environments` (variables) · the credential-bearing
   shape of `db_connections`. The table itself now exists, but only in its
   SQLite form (name + path); server drivers add a `secret_id` referencing
@@ -103,5 +105,34 @@ is uptime *across the checks that ran*, not true uptime.
 - **M5** `plugins` (installed, version, permission grants) · `snippets`,
   `docs_pages`
 
-Backups: automatic pre-migration copy + daily rotating copy of the DB file
-— planned for M4, not yet implemented.
+## Backups — implemented
+
+Automatic, silent, and run from `Kernel::boot` (`devos-kernel/src/backup.rs`).
+Files land in `backups/` beside the live DB, named so that lexical order is
+chronological order:
+
+| Kind | Name | When |
+|---|---|---|
+| Pre-migration | `devos-premigration-YYYYMMDD-HHMMSS-vNNNN.db` | only when migrations have run before *and* an embedded migration is pending — not on first run, not on an up-to-date boot |
+| Daily | `devos-daily-YYYY-MM-DD.db` | at most one per calendar day, newest `DAILY_RETENTION = 7` kept |
+
+**The WAL problem is the reason this is not a file copy.** In WAL mode
+(ADR-0004) copying `devos.db` alone yields a backup missing the most recent
+committed transactions. Snapshots therefore use `VACUUM INTO`, which runs in
+a read transaction, includes uncheckpointed WAL frames, produces a
+self-contained file, and never mutates or checkpoints the live database. A
+`PRAGMA wal_checkpoint(TRUNCATE)` + file-set copy path exists as a fallback
+for SQLite older than 3.27; the linked version is asserted in a test so the
+assumption fails loudly rather than degrading in silence. There is also a
+test proving a naive `fs::copy` loses a just-committed row — the failure
+this design exists to prevent.
+
+**A backup failure never breaks boot**: both entry points return `None` on
+error and log a warning. Two honest gaps follow from that, neither closed:
+
+- A failing backup is visible only in the log. If backups are ever to be
+  *trusted*, "silently failing for three months" is the failure mode to
+  close, and a warning notification is the cheapest fix.
+- **There is no restore path.** Recovery means quitting the app and copying
+  a file by hand. In-app restore is a real design question because it has
+  to happen before the pool opens.

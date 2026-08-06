@@ -43,3 +43,4 @@ superseded — supersede with a new number and a note in both files.
 | [0006](0006-terminal-sessions-live-in-rust.md) | Terminal sessions live in the Rust process, not the webview |
 | [0007](0007-sqlite-only-database-manager-first.md) | Database manager ships SQLite-only behind a driver-shaped abstraction |
 | [0008](0008-in-process-watchers-notify-on-transitions.md) | Background watchers run in-process and notify on state transitions |
+| [0009](0009-deployments-read-only-no-write-actions.md) | Deployment integration ships read-only, with no write actions |

@@ -920,8 +920,22 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
  "ts-rs",
  "uuid",
+]
+
+[[package]]
+name = "devos-deploy"
+version = "0.1.0"
+dependencies = [
+ "devos-kernel",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "ts-rs",
 ]
 
 [[package]]
@@ -932,6 +946,7 @@ dependencies = [
  "devos-ai",
  "devos-api",
  "devos-db",
+ "devos-deploy",
  "devos-docker",
  "devos-git",
  "devos-index",
@@ -984,9 +999,12 @@ dependencies = [
 name = "devos-index"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "devos-kernel",
+ "reqwest 0.12.28",
  "serde",
+ "serde_json",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",

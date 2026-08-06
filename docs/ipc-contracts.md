@@ -18,8 +18,11 @@
 - **Events, not polling**, for kernel state changes. Mutating commands emit
   a `KernelEvent`; the desktop shell forwards every event on one channel,
   `devos://event`; `useKernelEventBridge` maps events → TanStack Query
-  invalidations and toasts. (Git status is the one deliberate polling
-  exception — see [performance.md](performance.md).)
+  invalidations and toasts. Polling is reserved for state DevOS does not
+  own and therefore cannot be notified about — git status (the working tree
+  changes underneath us), Docker, system metrics, and the monitor list,
+  each with an interval matched to how fast that state actually moves. A
+  kernel-owned change should never need a poll.
 
 ## Streaming (implemented pattern: terminal, AI)
 
@@ -160,7 +163,7 @@ SQLite only — see [ADR-0007](adr/0007-sqlite-only-database-manager-first.md).
 | `db_connect` | `name, path` | `DbConnection` | canonicalizes the path before storing; no credentials involved |
 | `db_connection_delete` | `id` | `()` | |
 | `db_schema` | `id` | `DbSchema` | `DbTable[]` (`kind`: `table`/`view`, `rowCount`, `DbColumn[]`), plus the file's `sizeBytes` |
-| `db_query` | `id, sql, allowWrite` | `QueryResult` | write statements refused unless `allowWrite`; the read path runs under `PRAGMA query_only = ON`. See [security.md](security.md) |
+| `db_query` | `id, sql, allowWrite` | `QueryResult` | one statement per call (a `;`-separated list is rejected); write statements refused unless `allowWrite`; the read path runs on a `SQLITE_OPEN_READONLY` connection. See [security.md](security.md) |
 | `db_table_rows` | `id, table, limit` | `QueryResult` | identifier quoted (embedded quotes doubled), never formatted into SQL |
 
 `QueryResult` is `{ columns, rows: (string \| null)[][], rowCount,
@@ -202,6 +205,40 @@ background scheduler (~15s tick), which reaches the UI the same way any
 other background work does: `Kernel::notify` → `notificationAdded`, and
 only on an ok↔fail transition. See [agents.md](agents.md) and
 [ADR-0008](adr/0008-in-process-watchers-notify-on-transitions.md).
+
+### Deployments (M4)
+
+Read-only — see [ADR-0009](adr/0009-deployments-read-only-no-write-actions.md).
+There is no command to trigger, promote, roll back, or delete a deployment.
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `deploy_configured` | — | `boolean` | whether a `vercel_token` secret is stored; the token itself never crosses |
+| `deploy_projects` | — | `DeployProject[]` | |
+| `deploy_list` | `projectId` | `Deployment[]` | recent deployments for one project |
+
+`DeployProject` is `{ id, name, framework, updatedAt }` (`framework`
+nullable) and `Deployment` is `{ id, name, url, state, target, createdAt,
+commitMessage }`, with `target` and `commitMessage` nullable. `state` is
+Vercel's own uppercase string — `READY` · `ERROR` · `BUILDING` · `QUEUED` ·
+`CANCELED` — passed through rather than remapped, so a value we haven't
+seen still reaches the UI.
+
+Field mapping is defensive because Vercel's shapes don't match ours: the
+deployment id arrives as `uid`, the timestamp as `created`, and the commit
+message nested at `meta.githubCommitMessage`, which is absent entirely for
+CLI deploys.
+
+Errors distinguish **not-configured** (no token stored) from
+**auth-rejected** (401/403 — a token is present but bad or expired) from a
+generic API/transport failure, so the UI can say which one happened rather
+than showing an empty list three ways.
+
+The crate takes `(token, base_url, …)` and never reads the secret store
+itself; the command layer resolves the token from app state. `base_url`
+being injectable is what lets every test run against a local one-shot
+server instead of `api.vercel.com`. **Nothing is persisted** — each command
+is a live read, the same as Docker.
 
 ## Event catalog
 

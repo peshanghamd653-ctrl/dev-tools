@@ -2,9 +2,11 @@
 
 Honest framing: the full DevOS vision is a multi-year product. Development
 is organized in vertical milestones — each one ships something used daily,
-never a broad shell of empty screens. Planned modules appear in the sidebar
-as disabled entries with their milestone tag, so the roadmap is visible
-in-app.
+never a broad shell of empty screens. Planned modules can appear in the
+sidebar as disabled entries with their milestone tag, so the roadmap is
+visible in-app — that list is empty as of M4, since everything it once
+advertised has shipped, and the section hides itself rather than rendering
+an empty header.
 
 ## Milestones
 
@@ -68,8 +70,16 @@ project templates, repository cloning.
   one per session per 30s. Opt out with setting `terminal.integration=off`.
   AI diagnosis stays one click away (the sparkle button) rather than
   auto-running — detection is free, diagnosis costs tokens.
-- Planned: vector half of retrieval (tree-sitter symbols + `sqlite-vec`
-  embeddings layered on the same tables).
+- ✅ **Vector half of retrieval** (added 2026-08-06): chunk embeddings via
+  Ollama stored as `f32` BLOBs in `index_embeddings`, fused with bm25 by
+  reciprocal-rank fusion behind the unchanged `index_search` command. A
+  project with no stored vectors never contacts Ollama, and search degrades
+  to lexical-only rather than failing when it is absent. `sqlite-vec` was
+  evaluated and rejected — sqlx loads extensions only at connect time and
+  re-disables loading afterwards, so a module crate cannot reach it. See
+  [agents.md](agents.md).
+- Still planned: **tree-sitter symbol extraction**, the other half of this
+  line item. Not started.
 
 ### M3 — Ops tools ✅
 - ✅ **Docker module** (`/docker`, Ctrl+7): containers (state, ports,
@@ -89,7 +99,8 @@ project templates, repository cloning.
   and a read-only result grid capped at 500 rows with an explicit
   `truncated` flag. Writes are refused unless a toggle that is **off by
   default** is turned on, and the read path additionally sets
-  `PRAGMA query_only = ON` so the engine backs up the classifier — see
+  runs on a read-only connection and accepts one statement per call, so the
+  engine rather than the classifier carries the guarantee — see
   [security.md](security.md). Postgres and MySQL are deferred: the
   `driver` column exists so they slot in behind the same DTOs, but their
   sqlx driver features were deliberately not enabled — see
@@ -107,9 +118,9 @@ M3 status: ✅ — all three ops modules shipped (Docker, API client, database
 manager), plus the Notification Center pulled forward from M4. Carried
 forward rather than quietly dropped:
 
-- **Secret manager UI** — the store and its `secret_*` commands exist, but
-  the dedicated management screen listed under M3 still doesn't. Not
-  scheduled; the first candidate to pull into M4.
+- **Secret manager UI** — ✅ **shipped in M4** (Settings page), on top of
+  the `secret_*` commands that already existed. Listed here because it was
+  carried rather than dropped; see the M4 entry below.
 - **Postgres/MySQL drivers** and the credential flow they need
   (ADR-0007).
 - **Per-module deferrals** listed above: Docker volumes/compose/live
@@ -143,16 +154,71 @@ forward rather than quietly dropped:
   Slack), status-page export, TLS-certificate-expiry checks,
   response-content assertions (it checks that a site answers, not that it
   answers *correctly*), and multi-region checking.
-- **Screenshot → GitHub issue** — not built.
-- **Deployments (Vercel first)** — not built. `deployments` is still the
-  one M4 table that doesn't exist.
+- ✅ **Deployments** (`/deploy`, Ctrl+Shift+D) — **read-only Vercel
+  visibility.** `devos-deploy` lists projects and their recent deployments
+  (state, target, URL, commit message, timestamp) straight from the Vercel
+  API; the token lives in the encrypted secret store as `vercel_token` and
+  the crate never reads that store itself — it takes `(token, base_url, …)`
+  so `base_url` can be pointed at a local one-shot server in tests. Errors
+  distinguish not-configured from auth-rejected (401/403) from a generic
+  API failure. **No deploy triggering, promotion, rollback, or deletion** —
+  deliberately, and that decision is
+  [ADR-0009](adr/0009-deployments-read-only-no-write-actions.md); DevOS
+  does not replace the Vercel dashboard. **Deviation from the M4 plan: no
+  `deployments` table was created.** The plan listed one; deployment data
+  turned out to be worth reading live per request the way the Docker module
+  does, so nothing is persisted and nothing is cached. Also deferred:
+  Vercel only — no Netlify, Fly, Railway, or Cloudflare.
+- ✅ **Secret manager UI** (Settings page) — carried forward from M3 and
+  now shipped. Lists stored secret **names**, adds or overwrites a value,
+  deletes behind a confirmation, all over the existing `secret_set` /
+  `secret_list` / `secret_delete` commands — no new backend. There is no
+  reveal button and there cannot be one: values never cross the IPC
+  boundary outward, so there is nothing to reveal. The UI says that plainly
+  instead of looking like it forgot a feature — see
+  [security.md](security.md).
+- **Screenshot → GitHub issue** — not built. Researched 2026-08-06, and the
+  research changed the intended shape, so recording it here rather than
+  losing it:
+  - **GitHub documents no API for attaching an image to an issue.** Release
+    assets are documented and are a different thing. An undocumented
+    endpoint (`uploads.github.com/user-attachments/assets`) was demonstrated
+    working on 2026-08-03, but the only credential ever shown against it is
+    the `gh` CLI's OAuth token — no source has tested a PAT. Reading another
+    application's credential store is not an acceptable fallback for this
+    project.
+  - Dead ends, verified rather than assumed: base64 data URIs (GitHub's
+    sanitizer strips the `src`), gists (files are stored as text), and
+    linking `raw.githubusercontent.com` (camo cannot authenticate to
+    private repos, so it breaks for exactly the users most likely to care).
+    `github.com/user-attachments/assets/<uuid>` is the only URL form that
+    renders regardless of repo visibility.
+  - **Intended shape:** capture + annotate + file a context-rich issue, with
+    the image handed off via the clipboard for the user to paste. Every
+    network call is then documented, and it upgrades to real attachment
+    later without rework. Same reasoning as
+    [ADR-0009](adr/0009-deployments-read-only-no-write-actions.md): merging
+    a documented half with an undocumented one makes the whole feature
+    inherit the reliability of its worst component.
+  - **Two security constraints, not afterthoughts.** A desktop screenshot
+    routinely contains `.env` contents, and the terminal ring buffer is
+    exactly where an exported `API_KEY=` lands — so redaction is required
+    scope and terminal context must be opt-in and visible. Filing an issue
+    would also be DevOS's **first outward-facing write**, so it needs the
+    existing per-call approval gate, showing the full generated body
+    verbatim — the user is approving text they did not write.
+  - Capture crate: `xcap` (Apache-2.0, actively maintained, Windows window
+    and region capture). The older `screenshots` crate is deprecated by its
+    own author in favour of it.
 
-M4 status: **partially done** — both monitoring items shipped (only one of
-them, the website monitor, is an actual background watcher; system metrics
-are a live readout with no loop behind them), and neither the screenshot
-nor the deployment item was started, so the milestone stays open. Also
-still outstanding under M4: automatic DB backups (pre-migration + daily
-rotating), listed in [database.md](database.md) and
+M4 status: **partially done** — monitoring (both items), deployments, and
+the secret manager UI shipped; **screenshot → GitHub issue was not
+started**, so the milestone stays open. Two qualifications on what
+"shipped" means here: of the monitoring pair only the website monitor is an
+actual background watcher (system metrics are a live readout with no loop
+behind them), and deployments is read-only visibility, not deployment
+control. Also still outstanding under M4: automatic DB backups
+(pre-migration + daily rotating), listed in [database.md](database.md) and
 [security.md](security.md) and not yet implemented.
 
 ### M5 — Extensibility & polish

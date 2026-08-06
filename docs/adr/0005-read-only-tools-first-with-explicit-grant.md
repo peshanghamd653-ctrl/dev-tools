@@ -1,6 +1,6 @@
 # 0005 — AI tool calling ships read-only-first, gated by explicit grant
 
-Status: accepted
+Status: accepted — amended 2026-08-06, see [Update](#update-2026-08-06)
 Date: 2026-07-20
 
 ## Context
@@ -36,9 +36,10 @@ just a standing conversation-level grant.
 
 ## Consequences
 
-- The riskiest capabilities (write, execute) simply don't exist yet — there
-  is no code path to audit for "what if the model decides to delete
-  something," because deletion isn't possible through this surface at all.
+- At the time of this decision the riskiest capabilities (write, execute)
+  did not exist — there was no code path to audit for "what if the model
+  decides to delete something," because deletion was not possible through
+  this surface at all. **This is no longer true; see the Update below.**
 - The approval UX precedent (standing grant for read-only, per-call
   approval once write/execute exist) is now the model M3+ tool work is
   expected to extend from — see [security.md](../security.md) and
@@ -47,3 +48,30 @@ just a standing conversation-level grant.
   success/failure) — transparency substitutes for per-call friction on
   the read-only path specifically because the action is safe to have
   already happened by the time the user sees it.
+
+## Update (2026-08-06)
+
+The deferred capabilities shipped later in M2, along the path this ADR
+planned. The decision was not reversed — it was completed — but the
+consequence above described a state of the world that no longer holds, and
+an ADR that understates the current attack surface is worse than no ADR.
+What exists today:
+
+- `edit_file`, `write_file` and `run_command` are implemented in
+  `src-tauri/src/tools.rs`, alongside the original read tools (which also
+  gained `search_code` and `save_memory`).
+- They sit behind a **second** standing grant, separate from the read
+  chip — the user turns on "Edits & commands" deliberately, so granting
+  reads still never implies granting writes.
+- **Every individual call is additionally gated by per-call approval**
+  (`src-tauri/src/approvals.rs`): the model's request is surfaced with its
+  arguments, and the call blocks on the user's answer, with a timeout that
+  denies rather than allows. That is the per-call dialog this ADR named as
+  a precondition, and it was not skipped.
+- The path-containment guard is shared with the file explorer
+  (`src-tauri/src/pathsafe.rs`), so the traversal property cannot drift
+  apart between the two surfaces.
+
+There *is* now a code path to audit for destructive action. See
+[security.md](../security.md) and [agents.md](../agents.md), which have
+described the write tier correctly throughout.

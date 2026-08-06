@@ -34,11 +34,20 @@ inventing a new one.
 ## TypeScript / React
 
 - **One folder per feature under `src/features/`.** Each has a `hooks.ts`
-  (TanStack Query hooks) and page component(s). Features never import from
-  each other directly — go through `shared/` or kernel events. (The one
-  sanctioned exception so far: `GitPage` reads `useAiStore` to know which
-  provider/model to request a commit message from — a UI-level convenience,
-  not a data dependency.)
+  (TanStack Query hooks) and page component(s). Prefer `shared/` or kernel
+  events over importing another feature. Where that isn't practical, the
+  convention that has actually emerged is narrower than "never":
+  - Importing a **foundational feature's `hooks.ts` or store** is fine —
+    `workspaces`, `projects` and `app` are effectively shared state that
+    happens to live under `features/`, and several pages read them.
+  - Importing another feature's **component** is rare and should stay that
+    way; `dashboard` rendering `system/SystemMetrics` is the current case,
+    and it is a composition of a widget, not a dependency on internals.
+  - **Mutual imports are the actual failure mode.** `ai` and `git` import
+    each other's stores (`AiPage` → `git/store`, `GitPage` → `ai/store`).
+    That is a wart, not a precedent — new code should not add a second one.
+  - Nothing should reach into another feature's internal components or
+    non-exported helpers.
 - **`shared/ipc/client.ts` is the only place `invoke`/`listen`/`Channel` are
   called.** Every new backend command gets one function in the `ipc` object
   here, typed against the generated binding.

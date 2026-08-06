@@ -3,6 +3,7 @@ mod api_commands;
 mod approvals;
 mod commands;
 mod core_module;
+mod db_commands;
 mod docker_commands;
 mod fs_commands;
 mod git_commands;
@@ -15,6 +16,7 @@ mod tools;
 use std::sync::Arc;
 
 use devos_ai::AiRegistry;
+use devos_db::DbManager;
 use devos_kernel::Kernel;
 use devos_secrets::SecretStore;
 use devos_terminal::TerminalManager;
@@ -43,6 +45,7 @@ pub fn run() {
             kernel.register_module(&devos_index::IndexModule);
             kernel.register_module(&devos_docker::DockerModule);
             kernel.register_module(&devos_api::ApiModule);
+            kernel.register_module(&devos_db::DbModule);
             let kernel = Arc::new(kernel);
 
             let secrets = tauri::async_runtime::block_on(SecretStore::init(kernel.pool.clone()))?;
@@ -52,6 +55,8 @@ pub fn run() {
                 .map_err(|e| format!("index tables: {e}"))?;
             tauri::async_runtime::block_on(devos_api::init(&kernel.pool))
                 .map_err(|e| format!("api tables: {e}"))?;
+            tauri::async_runtime::block_on(devos_db::init(&kernel.pool))
+                .map_err(|e| format!("db tables: {e}"))?;
 
             // Forward every kernel event to the webview on one channel.
             let mut rx = kernel.events.subscribe();
@@ -117,6 +122,7 @@ pub fn run() {
             app.manage(AppState {
                 kernel,
                 terminal,
+                db: Arc::new(DbManager::new()),
                 secrets,
                 ai: Arc::new(AiRegistry::new()),
                 approvals: Arc::new(approvals::ApprovalRegistry::default()),
@@ -190,6 +196,12 @@ pub fn run() {
             api_commands::api_requests,
             api_commands::api_request_delete,
             api_commands::api_history,
+            db_commands::db_connections,
+            db_commands::db_connect,
+            db_commands::db_connection_delete,
+            db_commands::db_schema,
+            db_commands::db_query,
+            db_commands::db_table_rows,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

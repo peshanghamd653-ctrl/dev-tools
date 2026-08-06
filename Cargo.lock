@@ -909,12 +909,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "devos-db"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "devos-kernel",
+ "futures-util",
+ "serde",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
 name = "devos-desktop"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "devos-ai",
  "devos-api",
+ "devos-db",
  "devos-docker",
  "devos-git",
  "devos-index",

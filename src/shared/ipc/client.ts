@@ -15,6 +15,10 @@ import type { AppInfo } from "./bindings/AppInfo";
 import type { ChatMessage } from "./bindings/ChatMessage";
 import type { CommandDescriptor } from "./bindings/CommandDescriptor";
 import type { Conversation } from "./bindings/Conversation";
+import type { DbColumn } from "./bindings/DbColumn";
+import type { DbConnection } from "./bindings/DbConnection";
+import type { DbSchema } from "./bindings/DbSchema";
+import type { DbTable } from "./bindings/DbTable";
 import type { DockerContainer } from "./bindings/DockerContainer";
 import type { DockerImage } from "./bindings/DockerImage";
 import type { GitBranch } from "./bindings/GitBranch";
@@ -31,6 +35,7 @@ import type { KernelEvent } from "./bindings/KernelEvent";
 import type { MemoryEntry } from "./bindings/MemoryEntry";
 import type { NotificationDto } from "./bindings/NotificationDto";
 import type { Project } from "./bindings/Project";
+import type { QueryResult } from "./bindings/QueryResult";
 import type { TermEvent } from "./bindings/TermEvent";
 import type { SavedRequest } from "./bindings/SavedRequest";
 import type { TermSessionInfo } from "./bindings/TermSessionInfo";
@@ -47,6 +52,10 @@ export type {
   ChatMessage,
   CommandDescriptor,
   Conversation,
+  DbColumn,
+  DbConnection,
+  DbSchema,
+  DbTable,
   DockerContainer,
   DockerImage,
   GitBranch,
@@ -63,6 +72,7 @@ export type {
   MemoryEntry,
   NotificationDto,
   Project,
+  QueryResult,
   TermEvent,
   TermSessionInfo,
   Workspace,
@@ -199,6 +209,16 @@ export const ipc = {
   apiRequests: () => call<SavedRequest[]>("api_requests"),
   apiRequestDelete: (id: string) => call<void>("api_request_delete", { id }),
   apiHistory: () => call<ApiHistoryEntry[]>("api_history"),
+
+  dbConnections: () => call<DbConnection[]>("db_connections"),
+  dbConnect: (name: string, path: string) =>
+    call<DbConnection>("db_connect", { name, path }),
+  dbConnectionDelete: (id: string) => call<void>("db_connection_delete", { id }),
+  dbSchema: (id: string) => call<DbSchema>("db_schema", { id }),
+  dbQuery: (id: string, sql: string, allowWrite: boolean) =>
+    call<QueryResult>("db_query", { id, sql, allowWrite }),
+  dbTableRows: (id: string, table: string, limit: number) =>
+    call<QueryResult>("db_table_rows", { id, table, limit }),
 
   aiMemoryList: (projectPath: string) =>
     call<MemoryEntry[]>("ai_memory_list", { projectPath }),

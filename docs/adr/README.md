@@ -41,3 +41,4 @@ superseded — supersede with a new number and a note in both files.
 | [0004](0004-single-sqlite-file-with-wal.md) | Single SQLite file (WAL) as the only persistence layer |
 | [0005](0005-read-only-tools-first-with-explicit-grant.md) | AI tool calling ships read-only-first, gated by explicit grant |
 | [0006](0006-terminal-sessions-live-in-rust.md) | Terminal sessions live in the Rust process, not the webview |
+| [0007](0007-sqlite-only-database-manager-first.md) | Database manager ships SQLite-only behind a driver-shaped abstraction |

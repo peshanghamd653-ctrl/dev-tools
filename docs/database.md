@@ -56,14 +56,28 @@ WAL mode, foreign keys on, opened via SQLx. All timestamps are Unix epoch
 | `api_requests` | Saved requests | collection is a plain grouping string; headers stored as JSON |
 | `api_history` | Sent-request log | pruned to the newest 100 on every insert |
 
+## Database manager tables (`devos-db`, implemented)
+
+| Table | Purpose | Notes |
+|---|---|---|
+| `db_connections` | Saved connections for the database manager | `driver` is `sqlite` on every row today — the column exists so Postgres/MySQL slot in behind the same DTOs ([ADR-0007](adr/0007-sqlite-only-database-manager-first.md)). `path` is canonicalized on connect. **No credentials stored**: SQLite needs none, and when server drivers land the credential goes in `secrets` and is referenced by id, never inlined here. |
+
+Created idempotently at boot, same `CREATE TABLE IF NOT EXISTS` pattern as
+`api_*`. Note that this is a table *about* databases inside DevOS's own
+database — the user's own SQLite files are opened as separate connections
+and are never touched by kernel migrations.
+
 ## Planned per milestone
 
 - **M2 (remainder)** `sqlite-vec` virtual table for embeddings alongside
   `index_chunks` · agent definitions/runs · `term_sessions` if session
   metadata needs to survive a full app restart (today sessions are
   in-memory only, tracked via `TerminalManager`)
-- **M3 (remainder)** `api_environments` (variables) · `db_connections`
-  (credentials referenced from `secrets`)
+- **M3 (remainder)** `api_environments` (variables) · the credential-bearing
+  shape of `db_connections`. The table itself now exists, but only in its
+  SQLite form (name + path); server drivers add a `secret_id` referencing
+  `secrets` plus host/port/user/database columns when they land
+  ([ADR-0007](adr/0007-sqlite-only-database-manager-first.md))
 - **M4** `monitors`, `monitor_checks` (uptime/perf history) · `deployments`
 - **M5** `plugins` (installed, version, permission grants) · `snippets`,
   `docs_pages`

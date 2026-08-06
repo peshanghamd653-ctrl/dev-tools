@@ -28,6 +28,7 @@ export const primaryNav: NavItem[] = [
   { to: "/files", label: "Files", icon: FolderTree, shortcut: "Ctrl+6" },
   { to: "/docker", label: "Docker", icon: Container, shortcut: "Ctrl+7" },
   { to: "/api", label: "API Client", icon: Send, shortcut: "Ctrl+8" },
+  { to: "/database", label: "Database", icon: Database, shortcut: "Ctrl+9" },
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+," },
 ];
 
@@ -37,10 +38,12 @@ export interface UpcomingItem {
   milestone: string;
 }
 
-/** Planned modules, shown disabled so the roadmap is visible but honest. */
-export const upcomingNav: UpcomingItem[] = [
-  { label: "Database", icon: Database, milestone: "M3" },
-];
+/**
+ * Planned modules, shown disabled so the roadmap is visible but honest.
+ * Empty as of M3 — every planned module has shipped. The sidebar hides the
+ * whole "Coming soon" section while this is empty.
+ */
+export const upcomingNav: UpcomingItem[] = [];
 
 export function navItemForPath(path: string): NavItem | undefined {
   return primaryNav.find((item) => item.to === path);

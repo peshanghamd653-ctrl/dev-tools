@@ -150,6 +150,25 @@ Used by:
 | `api_request_delete` | `id` | `()` | |
 | `api_history` | — | `ApiHistoryEntry[]` (last 50) | table pruned to 100 |
 
+### Database (M3)
+
+SQLite only — see [ADR-0007](adr/0007-sqlite-only-database-manager-first.md).
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `db_connections` | — | `DbConnection[]` | `driver` is `sqlite` on every row today |
+| `db_connect` | `name, path` | `DbConnection` | canonicalizes the path before storing; no credentials involved |
+| `db_connection_delete` | `id` | `()` | |
+| `db_schema` | `id` | `DbSchema` | `DbTable[]` (`kind`: `table`/`view`, `rowCount`, `DbColumn[]`), plus the file's `sizeBytes` |
+| `db_query` | `id, sql, allowWrite` | `QueryResult` | write statements refused unless `allowWrite`; the read path runs under `PRAGMA query_only = ON`. See [security.md](security.md) |
+| `db_table_rows` | `id, table, limit` | `QueryResult` | identifier quoted (embedded quotes doubled), never formatted into SQL |
+
+`QueryResult` is `{ columns, rows: (string \| null)[][], rowCount,
+rowsAffected, durationMs, truncated, readOnly }` — every cell crosses as a
+string so no driver's native type set leaks into the contract. Rows are
+capped at 500; `truncated` says so explicitly rather than the UI implying
+a complete result set.
+
 ## Event catalog
 
 `KernelEvent` is a tagged union `{ kind, data? }`:

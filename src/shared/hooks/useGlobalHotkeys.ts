@@ -58,6 +58,10 @@ export function useGlobalHotkeys() {
           e.preventDefault();
           void navigate({ to: "/api" });
           break;
+        case "9":
+          e.preventDefault();
+          void navigate({ to: "/database" });
+          break;
         case ",":
           e.preventDefault();
           void navigate({ to: "/settings" });

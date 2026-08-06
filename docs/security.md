@@ -4,8 +4,9 @@
 
 Protects against: secrets leaking via the DB file, backups, or logs;
 a malicious/compromised plugin (future); an AI tool call reading outside
-the granted project; injection through webview content. Out of scope: an
-attacker with full control of the user's OS account.
+the granted project; an unintended destructive write through the SQL
+editor; injection through webview content. Out of scope: an attacker with
+full control of the user's OS account.
 
 ## Secrets — implemented
 
@@ -60,6 +61,43 @@ The riskiest new surface as of M2: giving an LLM read access to files.
   results — all enforced before the content reaches the model or the UI.
 - **Every tool call is visible** in the chat UI in real time (name,
   arguments, success/failure) — no silent tool use.
+
+## Database query execution — implemented (M3)
+
+The database manager runs user-authored SQL against a user-chosen SQLite
+file. The gate is two-tier, deliberately the same shape as the AI
+tool-grant model above: a standing toggle for the dangerous class, plus a
+mechanism that doesn't depend on DevOS having classified correctly.
+
+- **Writes are opt-in, off by default.** Statements are classified by
+  leading keyword after comment stripping — `SELECT`/`WITH`/`EXPLAIN`/
+  `PRAGMA` are reads, anything else is a write. A write is refused unless
+  the caller passes `allowWrite: true`, which is driven by a UI toggle
+  that starts off. Reading a table and dropping it are not the same
+  gesture.
+- **Classification is not trusted on its own.** The read path also sets
+  `PRAGMA query_only = ON` on the connection it executes against, so
+  SQLite itself refuses the write even if the keyword check were fooled.
+  The parser being wrong is a bug; the parser being wrong *and* the
+  database accepting the write is the incident. Note this specific defence
+  is SQLite-only and would have to be re-established as a read-only
+  transaction if Postgres lands — see
+  [ADR-0007](adr/0007-sqlite-only-database-manager-first.md).
+- **Identifiers are quoted, not interpolated.** `db_table_rows` quotes the
+  table name by doubling embedded quotes rather than string-formatting a
+  caller-supplied identifier into the statement.
+- **Results are bounded**: 500 rows, with an explicit `truncated` flag in
+  `QueryResult` so the UI says the set was cut rather than presenting a
+  partial result as complete. The grid is read-only — there is no
+  edit-cell path to audit, because editing rows isn't implemented.
+- **Not reachable from AI tool calling.** Connections are user-initiated
+  only; there is no database tool in the model's tool set at any grant
+  level, so the blast radius of a prompt injection does not extend to the
+  user's data files.
+- **No credentials stored.** `db_connections` holds a canonicalized file
+  path and nothing else, because SQLite needs nothing else. Server
+  drivers, when added, put the credential in `secrets` and reference it by
+  id.
 
 ## IPC & webview
 

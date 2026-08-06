@@ -71,7 +71,7 @@ project templates, repository cloning.
 - Planned: vector half of retrieval (tree-sitter symbols + `sqlite-vec`
   embeddings layered on the same tables).
 
-### M3 — Ops tools (in progress)
+### M3 — Ops tools ✅
 - ✅ **Docker module** (`/docker`, Ctrl+7): containers (state, ports,
   start/stop/restart, last-200-line logs dialog) and images via `bollard`
   over the Engine API named pipe; graceful "Docker isn't running" state
@@ -83,13 +83,39 @@ project templates, repository cloning.
   auto-pruned). Custom HTTP token methods allowed. Deferred within the
   module: GraphQL helpers, WebSockets, environments/variables, auth
   helpers, code generation.
-- Database manager: SQLite/Postgres/MySQL; schema explorer, SQL editor
-- Secret manager UI (the store exists; a dedicated management screen doesn't yet)
+- ✅ **Database manager** (`/database`, Ctrl+9): **SQLite only.** Named
+  connections storing a canonicalized file path, schema explorer
+  (tables/views with columns, plus the file's size on disk), SQL editor,
+  and a read-only result grid capped at 500 rows with an explicit
+  `truncated` flag. Writes are refused unless a toggle that is **off by
+  default** is turned on, and the read path additionally sets
+  `PRAGMA query_only = ON` so the engine backs up the classifier — see
+  [security.md](security.md). Postgres and MySQL are deferred: the
+  `driver` column exists so they slot in behind the same DTOs, but their
+  sqlx driver features were deliberately not enabled — see
+  [ADR-0007](adr/0007-sqlite-only-database-manager-first.md). Also deferred
+  within the module: query history, saved queries, ER diagrams, CSV/JSON
+  export, and row editing (the grid inspects and queries; it does not edit
+  cells).
 
 - ✅ **Notification Center** (pulled forward from M4): `Kernel::notify`
   persists + broadcasts; failed jobs auto-notify; index completions notify;
   topbar bell with unread badge, level dots, mark-read/mark-all-read. This
   is the reporting surface background agents will use.
+
+M3 status: ✅ — all three ops modules shipped (Docker, API client, database
+manager), plus the Notification Center pulled forward from M4. Carried
+forward rather than quietly dropped:
+
+- **Secret manager UI** — the store and its `secret_*` commands exist, but
+  the dedicated management screen listed under M3 still doesn't. Not
+  scheduled; the first candidate to pull into M4.
+- **Postgres/MySQL drivers** and the credential flow they need
+  (ADR-0007).
+- **Per-module deferrals** listed above: Docker volumes/compose/live
+  stats/image pull+remove · API GraphQL, WebSockets, environments and
+  variables, auth helpers, code generation · database query history, saved
+  queries, ER diagrams, CSV/JSON export, row editing.
 
 ### M4 — Watchers & deploys
 - System monitoring (`sysinfo`), website monitor, screenshot → GitHub

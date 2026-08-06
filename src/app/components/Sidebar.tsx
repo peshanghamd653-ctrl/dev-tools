@@ -65,40 +65,46 @@ export function Sidebar() {
           </Tooltip>
         ))}
 
-        <Separator className="my-2" />
+        {upcomingNav.length > 0 && (
+          <>
+            <Separator className="my-2" />
 
-        {!collapsed && (
-          <p className="px-2 pb-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-            Coming soon
-          </p>
-        )}
-        {upcomingNav.map((item) => (
-          <Tooltip key={item.label} disableHoverableContent>
-            <TooltipTrigger asChild>
-              <div
-                aria-disabled
-                className={cn(
-                  "flex h-8 cursor-default items-center gap-2.5 rounded-md px-2 text-sm text-sidebar-foreground/35",
-                  collapsed && "justify-center px-0",
-                )}
-              >
-                <item.icon className="size-4 shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-                {!collapsed && (
-                  <Badge
-                    variant="outline"
-                    className="ml-auto h-4 px-1 text-[9px] text-muted-foreground"
+            {!collapsed && (
+              <p className="px-2 pb-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                Coming soon
+              </p>
+            )}
+            {upcomingNav.map((item) => (
+              <Tooltip key={item.label} disableHoverableContent>
+                <TooltipTrigger asChild>
+                  <div
+                    aria-disabled
+                    className={cn(
+                      "flex h-8 cursor-default items-center gap-2.5 rounded-md px-2 text-sm text-sidebar-foreground/35",
+                      collapsed && "justify-center px-0",
+                    )}
                   >
-                    {item.milestone}
-                  </Badge>
-                )}
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              {item.label} — planned for {item.milestone}
-            </TooltipContent>
-          </Tooltip>
-        ))}
+                    <item.icon className="size-4 shrink-0" />
+                    {!collapsed && (
+                      <span className="truncate">{item.label}</span>
+                    )}
+                    {!collapsed && (
+                      <Badge
+                        variant="outline"
+                        className="ml-auto h-4 px-1 text-[9px] text-muted-foreground"
+                      >
+                        {item.milestone}
+                      </Badge>
+                    )}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  {item.label} — planned for {item.milestone}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </>
+        )}
       </nav>
 
       <div className={cn("p-2", collapsed && "flex justify-center")}>

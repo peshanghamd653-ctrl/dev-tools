@@ -120,6 +120,27 @@ mod tests {
     use crate::repo;
     use crate::types::KernelEvent;
 
+    /// Generous — this bounds a hang, it does not measure anything, so it only
+    /// has to be longer than any legitimate wait on a loaded machine.
+    const EVENT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+    /// Await one kernel event, failing loudly instead of hanging.
+    ///
+    /// A bare `rx.recv().await` in a test is a trap: cargo applies no per-test
+    /// timeout, so any regression that stops an event being emitted turns into
+    /// a CI run stuck at 0% CPU forever rather than a red test. Every wait on
+    /// the bus in this module goes through here.
+    ///
+    /// Note this does not rescue a *subscribe-after-emit* mistake — the bus is
+    /// a `tokio::sync::broadcast`, so an event sent before `subscribe()` is
+    /// gone for good. Subscribe before triggering the thing you want to see.
+    async fn next_event(rx: &mut tokio::sync::broadcast::Receiver<KernelEvent>) -> KernelEvent {
+        tokio::time::timeout(EVENT_TIMEOUT, rx.recv())
+            .await
+            .expect("timed out waiting for a kernel event")
+            .expect("event bus closed while waiting")
+    }
+
     async fn test_kernel() -> (tempfile::TempDir, Kernel) {
         let dir = tempfile::tempdir().expect("tempdir");
         let kernel = Kernel::boot(&dir.path().join("test.db"))
@@ -205,7 +226,7 @@ mod tests {
         let (_dir, kernel) = test_kernel().await;
         let mut rx = kernel.events.subscribe();
         kernel.events.emit(KernelEvent::WorkspacesChanged);
-        let event = rx.recv().await.unwrap();
+        let event = next_event(&mut rx).await;
         assert!(matches!(event, KernelEvent::WorkspacesChanged));
     }
 
@@ -224,7 +245,7 @@ mod tests {
             .unwrap();
 
         // notify() broadcasts the full DTO.
-        match rx.recv().await.unwrap() {
+        match next_event(&mut rx).await {
             KernelEvent::NotificationAdded { notification } => {
                 assert_eq!(notification.id, first.id);
                 assert_eq!(notification.title, "Pushed");
@@ -272,7 +293,7 @@ mod tests {
             .unwrap();
         // Wait until the failure notification arrives.
         loop {
-            if let KernelEvent::NotificationAdded { notification } = rx.recv().await.unwrap() {
+            if let KernelEvent::NotificationAdded { notification } = next_event(&mut rx).await {
                 assert_eq!(notification.module, "index");
                 assert_eq!(notification.level, "error");
                 assert_eq!(notification.title, "reindex failed");
@@ -305,20 +326,14 @@ mod tests {
             .submit("test", "bad", async { Err("boom".to_string()) })
             .await
             .unwrap();
-        // Belt and braces: if the events never arrive, fail loudly instead of
-        // hanging a CI run until someone notices.
-        tokio::time::timeout(std::time::Duration::from_secs(30), async {
-            let mut finished = 0;
-            while finished < 2 {
-                if let Ok(KernelEvent::JobUpdated { job }) = rx.recv().await {
-                    if job.finished_at.is_some() {
-                        finished += 1;
-                    }
+        let mut finished = 0;
+        while finished < 2 {
+            if let KernelEvent::JobUpdated { job } = next_event(&mut rx).await {
+                if job.finished_at.is_some() {
+                    finished += 1;
                 }
             }
-        })
-        .await
-        .expect("both jobs should reach a terminal state");
+        }
         let jobs = kernel.jobs.list_recent(10).await.unwrap();
         let ok_job = jobs.iter().find(|j| j.id == ok).unwrap();
         let bad_job = jobs.iter().find(|j| j.id == bad).unwrap();

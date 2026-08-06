@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Instant;
 
 use sqlx::SqlitePool;
 
@@ -8,6 +9,7 @@ use crate::error::KernelResult;
 use crate::events::EventBus;
 use crate::jobs::JobRunner;
 use crate::module::{Module, ModuleCtx};
+use crate::timing::BootTimings;
 
 /// The DevOS runtime. One instance per app process; shared behind an `Arc`.
 pub struct Kernel {
@@ -16,36 +18,81 @@ pub struct Kernel {
     pub commands: CommandRegistry,
     pub jobs: JobRunner,
     module_ids: Vec<&'static str>,
+    timings: BootTimings,
 }
 
 impl Kernel {
     pub async fn boot(db_path: &Path) -> KernelResult<Self> {
-        let pool = db::open_pool(db_path).await?;
+        let boot_started = Instant::now();
+        let mut timings = BootTimings::default();
+
+        let phase = Instant::now();
+        let pool = db::connect(db_path).await?;
+        timings.pool_open = phase.elapsed();
+
+        // Snapshot before migrations touch anything, so a bad one is
+        // recoverable. Best effort — a failed backup must never stop the app
+        // from starting. See [`crate::backup`].
+        crate::backup::run_pre_migration_backup(&pool, db_path, &db::migrator()).await;
+
+        let phase = Instant::now();
+        db::run_migrations(&pool).await?;
+        timings.migrations = phase.elapsed();
+
+        // At most one rotating copy per calendar day; also best effort.
+        crate::backup::run_daily_backup(&pool, db_path).await;
+
         let events = EventBus::default();
         let jobs = JobRunner::new(pool.clone(), events.clone());
-        let kernel = Self {
+        let mut kernel = Self {
             pool,
             events,
             commands: CommandRegistry::new(),
             jobs,
             module_ids: Vec::new(),
+            timings,
         };
+
+        let phase = Instant::now();
         crate::repo::ensure_default_workspace(&kernel.pool).await?;
+        kernel.timings.default_workspace = phase.elapsed();
+
+        kernel.timings.boot = boot_started.elapsed();
+        tracing::info!(
+            boot_ms = kernel.timings.boot.as_millis() as u64,
+            pool_open_us = kernel.timings.pool_open.as_micros() as u64,
+            migrations_us = kernel.timings.migrations.as_micros() as u64,
+            default_workspace_us = kernel.timings.default_workspace.as_micros() as u64,
+            "kernel boot phases"
+        );
         Ok(kernel)
     }
 
     /// Register a module's contributions. Call before sharing the kernel.
     pub fn register_module(&mut self, module: &dyn Module) {
+        let started = Instant::now();
         module.register(&ModuleCtx {
             commands: &self.commands,
             events: &self.events,
         });
         self.module_ids.push(module.id());
-        tracing::info!(module = module.id(), "module registered");
+        let elapsed = started.elapsed();
+        self.timings.record_module(elapsed);
+        tracing::info!(
+            module = module.id(),
+            elapsed_us = elapsed.as_micros() as u64,
+            "module registered"
+        );
     }
 
     pub fn module_ids(&self) -> &[&'static str] {
         &self.module_ids
+    }
+
+    /// Per-phase boot durations — see [`BootTimings`]. Cheap to copy; the
+    /// module-registration fields keep growing as modules register.
+    pub fn boot_timings(&self) -> BootTimings {
+        self.timings
     }
 
     /// Persist a notification and broadcast it — the standard way modules,
@@ -242,6 +289,12 @@ mod tests {
     #[tokio::test]
     async fn jobs_persist_success_and_failure() {
         let (_dir, kernel) = test_kernel().await;
+        // Subscribe *before* submitting. `submit` spawns the work immediately
+        // and the bus is a tokio broadcast channel, so a terminal `JobUpdated`
+        // emitted before this call is gone for good — and `recv()` would then
+        // wait forever, hanging the entire test binary, because cargo applies
+        // no per-test timeout.
+        let mut rx = kernel.events.subscribe();
         let ok = kernel
             .jobs
             .submit("test", "ok", async { Ok(serde_json::json!({"n": 1})) })
@@ -252,16 +305,20 @@ mod tests {
             .submit("test", "bad", async { Err("boom".to_string()) })
             .await
             .unwrap();
-        // Wait for both spawned jobs to finish.
-        let mut rx = kernel.events.subscribe();
-        let mut finished = 0;
-        while finished < 2 {
-            if let Ok(KernelEvent::JobUpdated { job }) = rx.recv().await {
-                if job.finished_at.is_some() {
-                    finished += 1;
+        // Belt and braces: if the events never arrive, fail loudly instead of
+        // hanging a CI run until someone notices.
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            let mut finished = 0;
+            while finished < 2 {
+                if let Ok(KernelEvent::JobUpdated { job }) = rx.recv().await {
+                    if job.finished_at.is_some() {
+                        finished += 1;
+                    }
                 }
             }
-        }
+        })
+        .await
+        .expect("both jobs should reach a terminal state");
         let jobs = kernel.jobs.list_recent(10).await.unwrap();
         let ok_job = jobs.iter().find(|j| j.id == ok).unwrap();
         let bad_job = jobs.iter().find(|j| j.id == bad).unwrap();

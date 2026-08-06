@@ -5,6 +5,7 @@
 //! through the [`module::Module`] trait and never depend on each other
 //! directly; they communicate via [`events::EventBus`].
 
+pub mod backup;
 pub mod commands;
 pub mod db;
 pub mod error;
@@ -13,7 +14,9 @@ pub mod jobs;
 pub mod kernel;
 pub mod module;
 pub mod repo;
+pub mod timing;
 pub mod types;
 
 pub use error::{KernelError, KernelResult};
 pub use kernel::Kernel;
+pub use timing::BootTimings;

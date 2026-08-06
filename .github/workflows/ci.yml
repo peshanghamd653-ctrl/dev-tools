@@ -1,36 +1,188 @@
 name: CI
 
+# These are the same gates a developer runs locally (see docs/testing.md);
+# nothing here is CI-only. The weekly schedule re-runs *only* the advisory
+# audit, because new advisories get published against lockfiles that never
+# changed — that is the one failure this repo can hit without a commit.
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays, 06:17 UTC
+  workflow_dispatch:
+
+# No job here writes anything or calls an authenticated API.
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes the older run. This matters most for
+# the Windows Rust job, which is the slowest and the most expensive leg.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm exec vite build
-
+  # ---------------------------------------------------------------------------
   rust:
+    name: Rust (fmt, clippy, test)
+    # windows-latest is a deliberate choice, not the default:
+    #
+    #   * devos-terminal's tests are `#[cfg(all(test, windows))]` — a real
+    #     ConPTY spawn/write/read/exit round trip. On Linux they are not
+    #     compiled at all, so an Ubuntu run would report green while never
+    #     exercising the most integration-heavy code in the workspace.
+    #   * Tauri on Linux needs webkit2gtk-4.1, librsvg, libappindicator and
+    #     patchelf installed from apt before anything compiles. That is both
+    #     slower and a recurring source of red builds unrelated to this code.
+    #   * DevOS is Windows-first on purpose (docs/release-process.md puts
+    #     macOS/Linux explicitly out of scope for now), and `tauri-driver` —
+    #     needed if e2e is ever added — does not support macOS.
+    #
+    # The cost is real: Windows runners are slower and bill at 2x minutes on
+    # private repos. Worth it to avoid a gate that passes without testing.
     runs-on: windows-latest
+    # Recompiling unchanged code every Monday buys nothing; only `audit` has a
+    # reason to run on a timer.
+    if: github.event_name != 'schedule'
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
+      # This action publishes no semver tags; `@stable` names the toolchain
+      # channel and is upstream's documented usage, so it is as pinned as this
+      # action gets. See ci-notes for the trade-off.
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
+      # Caches ~/.cargo/{registry,git} plus target/, keyed on Cargo.lock and the
+      # rustc version. It also prunes the workspace's own crates from the cache,
+      # which is what keeps a Tauri target/ dir under the 10 GB per-repo limit —
+      # the reason to use this rather than a hand-rolled actions/cache.
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # Also runs the ts-rs `export_bindings_*` tests, which regenerate
+      # src/shared/ipc/bindings/*.ts as a side effect. CI does not currently
+      # assert those are committed — see ci-notes.md.
+      - name: Tests
+        run: cargo test --workspace
+
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: Frontend (typecheck, lint, test, build)
+    # tsc / eslint / vitest / vite are OS-agnostic, so this runs on the cheaper
+    # and faster runner. Linux's case-sensitive filesystem is a small bonus: it
+    # catches import-casing mistakes that pass silently on the Windows dev box.
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm must be installed *before* setup-node, or `cache: pnpm` cannot
+      # locate the store.
+      #
+      # Major 11 is load-bearing, not incidental. pnpm 11 hard-fails an install
+      # on dependencies with unadjudicated build scripts, and the `allowBuilds:`
+      # map in pnpm-workspace.yaml is what adjudicates them: `esbuild: true` so
+      # the build works, `edgedriver`/`geckodriver: false` so CI does not
+      # download browser drivers the e2e suite never uses. A different major
+      # either would not read that map or would not agree on its shape.
+      # (Ideally package.json would carry `"packageManager": "pnpm@11.x"` and
+      # this input could be dropped — see ci-notes.md.)
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          # Lowest currently-supported major per the lockfile's engines fields
+          # (^20.19 || ^22.12 || >=24). Testing the floor rather than the dev
+          # machine's Node catches accidental use of newer-only APIs.
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
+
+      # `pnpm build` is `tsc && vite build`, so tsc runs a second time here.
+      # That repeat is deliberate: calling the real script means CI cannot
+      # silently diverge from what the build actually does, and it costs
+      # seconds. The separate Typecheck step above stays because it gives a
+      # clear, early failure signal instead of one buried in a build log.
+      - name: Production build
+        run: pnpm build
+
+  # ---------------------------------------------------------------------------
+  audit:
+    name: Audit (advisories)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      # Note there is no `pnpm install` and no store cache in this job:
+      # `pnpm audit` resolves the tree straight from pnpm-lock.yaml.
+
+      # Always print the full picture first, at every severity, even though this
+      # step cannot fail the build. This repo went from 10 advisories to zero
+      # via the overrides in pnpm-workspace.yaml; this is the step that shows
+      # when that drifts back, including at severities the gates below ignore.
+      - name: Advisory report (informational)
+        continue-on-error: true
+        run: |
+          {
+            echo '### pnpm audit'
+            echo ''
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          pnpm audit | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # Gate 1 — production dependencies only. These get bundled into dist/ and
+      # ship inside the desktop binary, so anything moderate-or-worse here
+      # reaches users. That tree is small (~244 packages) and slow-moving, so
+      # this threshold fires rarely and means something when it does.
+      - name: Fail on moderate+ in production dependencies
+        run: pnpm audit --prod --audit-level moderate --ignore-registry-errors
+
+      # Gate 2 — the whole tree, dev included, but only high/critical. The
+      # header comment in pnpm-workspace.yaml is right that "it's only a dev
+      # dependency" is how a build-time RCE goes unnoticed for a year, so dev is
+      # not exempt — just held to the severity that justifies blocking a PR that
+      # touched something else entirely.
+      #
+      # Deliberately NOT gated: low/moderate advisories in devDependencies.
+      # That bucket is dominated by ReDoS findings in the WDIO and Vite
+      # transitive chains, against inputs this repo never feeds untrusted data.
+      # Blocking on them produces a red build on a morning when nobody changed
+      # anything, which is exactly how a required check gets un-required and
+      # then ignored. They stay visible in the report step above.
+      - name: Fail on high/critical anywhere in the tree
+        run: pnpm audit --audit-level high --ignore-registry-errors
+
+      # `--ignore-registry-errors` on both gates: a registry outage is not a
+      # security regression and must not turn the build red.

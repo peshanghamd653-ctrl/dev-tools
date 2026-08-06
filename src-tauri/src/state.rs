@@ -23,4 +23,11 @@ pub struct AppState {
     pub system: Arc<SystemProbe>,
     /// Milliseconds from process start to kernel ready, for the startup budget.
     pub startup_ms: i64,
+    /// The database file this process actually opened.
+    ///
+    /// Carried rather than re-derived: `DEVOS_DATA_DIR` can move it, and a
+    /// second `app_data_dir()` call in a command would confidently report a
+    /// path nothing ever opened — the worst kind of diagnostic, since it looks
+    /// authoritative while pointing at the wrong file.
+    pub db_path: String,
 }

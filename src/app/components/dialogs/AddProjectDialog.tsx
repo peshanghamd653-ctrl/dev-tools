@@ -1,8 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+// Aliased: this component already binds `open` to the dialog's own visibility.
+import { open as openFolderPicker } from "@tauri-apps/plugin-dialog";
+import { FolderOpen } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import { folderNameFromPath } from "@/features/projects/path";
 import { useAddProject } from "@/features/projects/hooks";
 import { useActiveWorkspace } from "@/features/workspaces/hooks";
 import { useDialogStore } from "@/shared/stores/dialogs";
@@ -36,6 +40,31 @@ export function AddProjectDialog() {
     defaultValues: { name: "", path: "" },
   });
 
+  async function browseForFolder() {
+    try {
+      const picked = await openFolderPicker({
+        directory: true,
+        multiple: false,
+        title: "Select a project folder",
+      });
+      // `null` means the user cancelled — not an error, and not worth a toast.
+      if (typeof picked !== "string") return;
+
+      form.setValue("path", picked, { shouldValidate: true });
+
+      // Pre-fill the name from the folder, but never overwrite something the
+      // user has already typed.
+      if (!form.getValues("name").trim()) {
+        const derived = folderNameFromPath(picked);
+        if (derived) form.setValue("name", derived, { shouldValidate: true });
+      }
+    } catch (error) {
+      // The picker only exists inside the desktop shell; in a browser tab this
+      // throws rather than opening anything.
+      toast.error(`Could not open the folder picker: ${error}`);
+    }
+  }
+
   function onSubmit(values: FormValues) {
     addProject.mutate(values, {
       onSuccess: (project) => {
@@ -62,30 +91,40 @@ export function AddProjectDialog() {
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
+            <Label htmlFor="project-path">Folder</Label>
+            <div className="flex gap-2">
+              <Input
+                id="project-path"
+                placeholder="C:\code\my-project"
+                className="font-mono text-xs"
+                {...form.register("path")}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => void browseForFolder()}
+              >
+                <FolderOpen className="size-4" />
+                Browse…
+              </Button>
+            </div>
+            {form.formState.errors.path && (
+              <p className="text-xs text-destructive">
+                {form.formState.errors.path.message}
+              </p>
+            )}
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="project-name">Name</Label>
             <Input
               id="project-name"
               placeholder="e.g. devos"
-              autoFocus
               {...form.register("name")}
             />
             {form.formState.errors.name && (
               <p className="text-xs text-destructive">
                 {form.formState.errors.name.message}
-              </p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="project-path">Folder path</Label>
-            <Input
-              id="project-path"
-              placeholder="C:\code\my-project"
-              className="font-mono text-xs"
-              {...form.register("path")}
-            />
-            {form.formState.errors.path && (
-              <p className="text-xs text-destructive">
-                {form.formState.errors.path.message}
               </p>
             )}
           </div>

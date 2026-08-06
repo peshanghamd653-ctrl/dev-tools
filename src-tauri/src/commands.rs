@@ -3,7 +3,7 @@
 
 use devos_kernel::types::{AppInfo, CommandDescriptor, JobInfo, KernelEvent, Project, Workspace};
 use devos_kernel::{repo, KernelError};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::state::AppState;
 
@@ -13,15 +13,11 @@ fn err(e: KernelError) -> String {
 
 #[tauri::command]
 pub async fn app_info(app: AppHandle, state: State<'_, AppState>) -> Result<AppInfo, String> {
-    let db_path = app
-        .path()
-        .app_data_dir()
-        .map(|dir| dir.join("devos.db").display().to_string())
-        .unwrap_or_default();
     Ok(AppInfo {
         version: app.package_info().version.to_string(),
         startup_ms: state.startup_ms,
-        db_path,
+        // From state, not re-derived — see `AppState::db_path`.
+        db_path: state.db_path.clone(),
     })
 }
 

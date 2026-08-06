@@ -17,6 +17,7 @@ mod system_commands;
 mod term_commands;
 mod tools;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use devos_ai::AiRegistry;
@@ -30,6 +31,71 @@ use tokio::sync::broadcast::error::RecvError;
 
 use state::AppState;
 
+/// Environment override for the directory that holds `devos.db`.
+///
+/// This is a **test seam, not a feature.** It exists so the e2e suite (and a
+/// CI run, which has no `%APPDATA%` worth polluting) can boot a throwaway
+/// database instead of the developer's real one. Nothing in the UI sets it,
+/// reads it back, or persists it.
+///
+/// Security note, since an environment variable that relocates application
+/// data deserves one rather than a shrug:
+///
+///   * It does **not** move secret *values*. API keys are AES-256-GCM
+///     ciphertext in this database and the master key lives in the OS keystore
+///     (`devos-secrets`), so a redirected database is inert on its own.
+///   * It does move everything secrets-*adjacent*: secret names, saved API
+///     requests and their history, database connection entries, indexed file
+///     content, notifications. Pointing this at a synced or shared folder
+///     would put that data somewhere it was never meant to go.
+///   * It grants no privilege that isn't already held. Setting a variable in
+///     this process's environment requires being the user the app runs as, and
+///     that user can already read the default database directly. The footgun
+///     is misconfiguration (a stray value in a shortcut or a shell profile
+///     silently splitting the app's history in two), not escalation — which is
+///     why an unset variable must resolve to exactly today's path, and why
+///     the chosen path is logged at startup.
+const DATA_DIR_ENV: &str = "DEVOS_DATA_DIR";
+
+/// The override, if it actually says anything.
+///
+/// Blank counts as unset: `DEVOS_DATA_DIR=` left in a script must not resolve
+/// to `""` and drop the database in whatever the working directory happens to
+/// be — for a GUI app launched from Explorer that is `C:\Windows\System32`.
+/// Shared by [`data_dir`] and the startup log so the two can never disagree
+/// about whether an override was in force.
+fn effective_override(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|v| !v.is_empty())
+}
+
+/// Resolve the directory holding `devos.db`.
+///
+/// `override_value` is the raw `DEVOS_DATA_DIR` value; `default` produces the
+/// normal `app_data_dir()`. Split this way — value in, closure for the default
+/// — so the resolution rules are unit-testable without mutating the process
+/// environment (which is global, and would race the other tests in this
+/// binary).
+///
+/// When the override is absent or blank this returns `default()` untouched and
+/// performs no filesystem work, so the shipped default path is byte-for-byte
+/// what it was before this seam existed.
+fn data_dir(
+    override_value: Option<&str>,
+    default: impl FnOnce() -> tauri::Result<PathBuf>,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let Some(raw) = effective_override(override_value) else {
+        // No `create_dir_all` here on purpose: `devos_kernel::db::connect`
+        // already creates the parent of the database file, and this branch is
+        // meant to be indistinguishable from the code it replaced.
+        return Ok(default()?);
+    };
+
+    let dir = PathBuf::from(raw);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("{DATA_DIR_ENV}=\"{raw}\": cannot create data directory: {e}"))?;
+    Ok(dir)
+}
+
 pub fn run() {
     let start = std::time::Instant::now();
     tracing_subscriber::fmt()
@@ -40,8 +106,28 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // Native folder picker, used by "Add project". Only `dialog:allow-open`
+        // is granted in capabilities — no save dialogs, no message boxes.
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
-            let db_path = app.path().app_data_dir()?.join("devos.db");
+            let raw_override = std::env::var(DATA_DIR_ENV).ok();
+            let source = match effective_override(raw_override.as_deref()) {
+                Some(_) => DATA_DIR_ENV,
+                None => "app_data_dir",
+            };
+            let db_path =
+                data_dir(raw_override.as_deref(), || app.path().app_data_dir())?.join("devos.db");
+
+            // Logged *before* boot, and unconditionally: "which database am I
+            // looking at" is the first question a confusing e2e failure or a
+            // mysteriously empty workspace list raises, and a boot that dies in
+            // migrations should still have answered it.
+            tracing::info!(
+                db_path = %db_path.display(),
+                source,
+                "devos database selected"
+            );
+
             let mut kernel = tauri::async_runtime::block_on(Kernel::boot(&db_path))?;
             kernel.register_module(&core_module::CoreModule);
             kernel.register_module(&devos_terminal::TerminalModule);
@@ -145,6 +231,7 @@ pub fn run() {
                 approvals: Arc::new(approvals::ApprovalRegistry::default()),
                 system: Arc::new(SystemProbe::new()),
                 startup_ms,
+                db_path: db_path.display().to_string(),
             });
             Ok(())
         })
@@ -237,4 +324,83 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod data_dir_tests {
+    use super::*;
+
+    /// The guarantee that matters most: with the variable unset, the resolved
+    /// directory is `app_data_dir()` and nothing else. If this ever fails, an
+    /// existing user's database silently moved.
+    #[test]
+    fn unset_override_returns_app_data_dir_unchanged() {
+        let expected = PathBuf::from(r"C:\Users\someone\AppData\Roaming\com.peshang.devos");
+        let resolved = data_dir(None, || Ok(expected.clone())).unwrap();
+        assert_eq!(resolved, expected);
+    }
+
+    /// `DEVOS_DATA_DIR=` (or a value that is all whitespace) is a mistake, not
+    /// a request to use the process's working directory.
+    #[test]
+    fn blank_override_is_treated_as_unset() {
+        let expected = PathBuf::from(r"C:\real\app\data");
+        for blank in ["", "   ", "\t"] {
+            let resolved = data_dir(Some(blank), || Ok(expected.clone())).unwrap();
+            assert_eq!(resolved, expected, "{blank:?} should not override");
+        }
+        assert_eq!(effective_override(Some("  ")), None);
+        assert_eq!(effective_override(None), None);
+    }
+
+    /// A set override wins, is created if missing, and — asserted by the
+    /// closure that panics rather than by an equality check — the default is
+    /// never even computed, so no `%APPDATA%` lookup happens on a machine that
+    /// deliberately has none.
+    #[test]
+    fn override_replaces_default_and_creates_the_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("nested").join("data");
+        assert!(!target.exists());
+
+        let resolved = data_dir(Some(target.to_str().unwrap()), || {
+            unreachable!("app_data_dir() must not be consulted when the override is set")
+        })
+        .unwrap();
+
+        assert_eq!(resolved, target);
+        assert!(
+            target.is_dir(),
+            "override directory should have been created"
+        );
+    }
+
+    /// Surrounding whitespace is trimmed — quoting an env var in a shell
+    /// script is a common way to acquire a trailing space.
+    #[test]
+    fn override_is_trimmed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("padded");
+        let padded = format!("  {}  ", target.display());
+        let resolved = data_dir(Some(&padded), || unreachable!()).unwrap();
+        assert_eq!(resolved, target);
+    }
+
+    /// An unusable override fails loudly at startup instead of falling back to
+    /// the real database — silently writing to `%APPDATA%` when the caller
+    /// asked for isolation is the one outcome a test seam must never produce.
+    #[test]
+    fn unusable_override_is_an_error_not_a_fallback() {
+        let tmp = tempfile::tempdir().unwrap();
+        // A regular file where a directory was asked for.
+        let file = tmp.path().join("not-a-dir");
+        std::fs::write(&file, b"x").unwrap();
+        let target = file.join("child");
+
+        let err = data_dir(Some(target.to_str().unwrap()), || unreachable!()).unwrap_err();
+        assert!(
+            err.to_string().contains(DATA_DIR_ENV),
+            "error should name the variable, got: {err}"
+        );
+    }
 }

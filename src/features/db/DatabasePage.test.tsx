@@ -1,0 +1,252 @@
+/**
+ * The database page is the one screen in DevOS that can destroy user data, and
+ * the only thing standing between a typo and a dropped table is the read-only
+ * toggle. These tests are written so that they fail if that affordance is
+ * weakened: if the toggle ever defaults to "on", if the warning banner stops
+ * appearing, or if a refused write degrades into a raw error dump.
+ */
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/shared/ipc/client", async () => {
+  const { createClientMock } = await import("@/shared/test/ipc");
+  return createClientMock();
+});
+
+import {
+  ipc,
+  type DbConnection,
+  type DbSchema,
+  type QueryResult,
+} from "@/shared/ipc/client";
+import { resetClientMock, setDesktopShell } from "@/shared/test/ipc";
+import { renderWithClient } from "@/shared/test/render";
+import { DatabasePage } from "./DatabasePage";
+
+const CONNECTION: DbConnection = {
+  id: "c1",
+  name: "App database",
+  driver: "sqlite",
+  path: "C:/projects/app/data.db",
+  createdAt: 1_700_000_000_000,
+};
+
+const SCHEMA: DbSchema = { tables: [], sizeBytes: 4096 };
+
+function queryResult(over: Partial<QueryResult> = {}): QueryResult {
+  return {
+    columns: ["id", "email"],
+    rows: [["1", "ada@example.com"]],
+    rowCount: 1,
+    rowsAffected: 0,
+    durationMs: 3,
+    truncated: false,
+    readOnly: true,
+    ...over,
+  };
+}
+
+/**
+ * The real backend refuses a write with this exact shape: `DbError::WriteBlocked`
+ * formatted by thiserror, handed to the webview as a bare string by Tauri.
+ */
+const BLOCKED =
+  "write blocked: INSERT modifies the database; enable writes to run it";
+
+/** Mount the page and get to the state where the Run button is usable. */
+async function renderConnected() {
+  vi.mocked(ipc.dbConnections).mockResolvedValue([CONNECTION]);
+  vi.mocked(ipc.dbSchema).mockResolvedValue(SCHEMA);
+
+  renderWithClient(<DatabasePage />);
+
+  fireEvent.click(await screen.findByRole("button", { name: /^App database/ }));
+  await screen.findByText(/0 tables/);
+}
+
+function typeSql(sql: string) {
+  fireEvent.change(screen.getByPlaceholderText("SELECT * FROM sqlite_master;"), {
+    target: { value: sql },
+  });
+}
+
+function writeToggle() {
+  return screen.getByRole("button", { name: /^(Read-only|Writes enabled)$/ });
+}
+
+beforeEach(resetClientMock);
+afterEach(cleanup);
+
+describe("DatabasePage outside the desktop shell", () => {
+  it("explains itself instead of firing IPC that cannot work", async () => {
+    setDesktopShell(false);
+    renderWithClient(<DatabasePage />);
+
+    expect(
+      screen.getByText("The database manager needs the desktop shell"),
+    ).toBeInTheDocument();
+    expect(ipc.dbConnections).not.toHaveBeenCalled();
+  });
+});
+
+describe("DatabasePage write safety", () => {
+  it("starts read-only, with no warning on screen", async () => {
+    await renderConnected();
+
+    const toggle = writeToggle();
+    expect(toggle).toHaveTextContent("Read-only");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByText(/There is no undo/)).not.toBeInTheDocument();
+  });
+
+  it("sends allowWrite=false unless the user opts in", async () => {
+    await renderConnected();
+    vi.mocked(ipc.dbQuery).mockResolvedValue(queryResult());
+
+    typeSql("SELECT * FROM users");
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    await waitFor(() =>
+      expect(ipc.dbQuery).toHaveBeenCalledWith("c1", "SELECT * FROM users", false),
+    );
+  });
+
+  it("warns on screen once writes are enabled, and then sends allowWrite=true", async () => {
+    await renderConnected();
+    vi.mocked(ipc.dbQuery).mockResolvedValue(queryResult({ readOnly: false }));
+
+    fireEvent.click(writeToggle());
+
+    const toggle = writeToggle();
+    expect(toggle).toHaveTextContent("Writes enabled");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/There is no undo/)).toBeInTheDocument();
+
+    typeSql("DELETE FROM users");
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    await waitFor(() =>
+      expect(ipc.dbQuery).toHaveBeenCalledWith("c1", "DELETE FROM users", true),
+    );
+  });
+
+  it("turns the toggle back off, taking the warning with it", async () => {
+    await renderConnected();
+
+    fireEvent.click(writeToggle());
+    expect(screen.getByText(/There is no undo/)).toBeInTheDocument();
+
+    fireEvent.click(writeToggle());
+    expect(writeToggle()).toHaveTextContent("Read-only");
+    expect(screen.queryByText(/There is no undo/)).not.toBeInTheDocument();
+  });
+});
+
+describe("DatabasePage error rendering", () => {
+  it("explains a refused write and points at the toggle, keeping the raw message", async () => {
+    await renderConnected();
+    vi.mocked(ipc.dbQuery).mockRejectedValue(BLOCKED);
+
+    typeSql("INSERT INTO users VALUES (1)");
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    expect(
+      await screen.findByText(/this statement writes to the database/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Enable writes/ }),
+    ).toBeInTheDocument();
+    // The explanation replaces the raw dump as the headline, but does not hide it.
+    expect(screen.getByText(BLOCKED)).toBeInTheDocument();
+  });
+
+  it("offers a one-click way out of the blocked state", async () => {
+    await renderConnected();
+    vi.mocked(ipc.dbQuery).mockRejectedValue(BLOCKED);
+
+    typeSql("INSERT INTO users VALUES (1)");
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Enable writes/ }));
+
+    expect(writeToggle()).toHaveTextContent("Writes enabled");
+    expect(screen.getByText(/There is no undo/)).toBeInTheDocument();
+  });
+
+  it("does not dress an ordinary SQL error up as a permissions problem", async () => {
+    await renderConnected();
+    vi.mocked(ipc.dbQuery).mockRejectedValue(
+      "database error: no such table: usrs",
+    );
+
+    typeSql("SELECT * FROM usrs");
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    expect(await screen.findByText("Query failed")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Enable writes/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/this statement writes to the database/),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("DatabasePage results", () => {
+  it("spells a NULL out rather than leaving the cell blank", async () => {
+    await renderConnected();
+    vi.mocked(ipc.dbQuery).mockResolvedValue(
+      queryResult({ rows: [["1", null]], rowCount: 1 }),
+    );
+
+    typeSql("SELECT * FROM users");
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    // Singular "row", and a NULL that reads as NULL instead of an empty cell.
+    expect(await screen.findByText("1 row · 3 ms")).toBeInTheDocument();
+    const cells = within(screen.getByRole("table")).getAllByRole("cell");
+    expect(cells[0]).toHaveTextContent("1");
+    expect(cells[1]).toHaveTextContent("NULL");
+  });
+
+  it("reports a write as rows affected, badged as a write", async () => {
+    await renderConnected();
+    vi.mocked(ipc.dbQuery).mockResolvedValue(
+      queryResult({
+        columns: [],
+        rows: [],
+        rowCount: 0,
+        rowsAffected: 4,
+        readOnly: false,
+      }),
+    );
+
+    fireEvent.click(writeToggle());
+    typeSql("DELETE FROM users WHERE id > 10");
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    expect(await screen.findByText("write")).toBeInTheDocument();
+    expect(screen.getByText("4 rows affected")).toBeInTheDocument();
+  });
+
+  it("says when a result was capped rather than showing a silent partial", async () => {
+    await renderConnected();
+    vi.mocked(ipc.dbQuery).mockResolvedValue(
+      queryResult({
+        rows: Array.from({ length: 500 }, (_, i) => [String(i), null]),
+        rowCount: 500,
+        truncated: true,
+      }),
+    );
+
+    typeSql("SELECT * FROM events");
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    expect(await screen.findByText(/showing first 500 rows/)).toBeInTheDocument();
+  });
+});

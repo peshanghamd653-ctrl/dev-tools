@@ -1,2 +1,33 @@
+# Transitive advisories reached only through devDependencies (the WDIO e2e
+# stack and the Vite/PostCSS build chain) — none of this ships in the desktop
+# binary. Pinned forward rather than left outstanding, because "it's only a dev
+# dependency" is how a build-time RCE goes unnoticed for a year.
+# Re-check with `pnpm audit` whenever the e2e stack is upgraded.
+# Versions below come from `pnpm audit --json` (patched_versions), not from
+# memory — every one of these advisories was fixed later than expected, and
+# the brace-expansion/undici 1.x and 6.x lines were never affected at all, so
+# they are deliberately left unpinned rather than dragged forward for nothing.
+overrides:
+  "serialize-javascript": ">=7.0.5"
+  "brace-expansion@5": ">=5.0.9"
+  "postcss": ">=8.5.23"
+
+# Deliberately NOT pinned: undici — and do not add one.
+#
+# Re-resolution already lands undici 7.29.0, which is the patched version, so
+# a pin buys nothing. It also actively breaks the test suite: an explicit
+# `undici@7` override drags jsdom's separate undici copy forward too, and
+# jsdom 29.1.1 needs `undici/lib/handler/wrap-handler.js`, which that version
+# removes — every jsdom test worker then fails to start with MODULE_NOT_FOUND.
+# The undici 6.x also present in the tree was never in the advisory's range.
+#
+# This note exists so the next person does not add the pin and lose an hour
+# to the same failure.
+
 allowBuilds:
   esbuild: true
+  # Pulled in transitively by @wdio/cli for browser testing, which we do not do.
+  # The e2e suite drives the Tauri binary; @wdio/tauri-service fetches a
+  # WebView2-matched msedgedriver itself, so these postinstalls are dead weight.
+  edgedriver: false
+  geckodriver: false

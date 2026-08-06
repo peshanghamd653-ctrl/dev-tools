@@ -1,0 +1,22 @@
+[package]
+name = "devos-monitor"
+description = "DevOS uptime monitor module: scheduled website checks, history, and downtime alerts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+devos-kernel = { path = "../../devos-kernel" }
+reqwest.workspace = true
+tokio.workspace = true
+serde.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

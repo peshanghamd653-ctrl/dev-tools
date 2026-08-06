@@ -33,9 +33,15 @@ import type { IndexStats } from "./bindings/IndexStats";
 import type { JobInfo } from "./bindings/JobInfo";
 import type { KernelEvent } from "./bindings/KernelEvent";
 import type { MemoryEntry } from "./bindings/MemoryEntry";
+import type { Monitor } from "./bindings/Monitor";
+import type { MonitorCheck } from "./bindings/MonitorCheck";
+import type { MonitorStatus } from "./bindings/MonitorStatus";
 import type { NotificationDto } from "./bindings/NotificationDto";
 import type { Project } from "./bindings/Project";
 import type { QueryResult } from "./bindings/QueryResult";
+import type { DiskInfo } from "./bindings/DiskInfo";
+import type { ProcessInfo } from "./bindings/ProcessInfo";
+import type { SystemSnapshot } from "./bindings/SystemSnapshot";
 import type { TermEvent } from "./bindings/TermEvent";
 import type { SavedRequest } from "./bindings/SavedRequest";
 import type { TermSessionInfo } from "./bindings/TermSessionInfo";
@@ -70,9 +76,15 @@ export type {
   JobInfo,
   KernelEvent,
   MemoryEntry,
+  Monitor,
+  MonitorCheck,
+  MonitorStatus,
   NotificationDto,
   Project,
   QueryResult,
+  DiskInfo,
+  ProcessInfo,
+  SystemSnapshot,
   TermEvent,
   TermSessionInfo,
   Workspace,
@@ -227,6 +239,16 @@ export const ipc = {
   aiMemoryDelete: (id: string) => call<void>("ai_memory_delete", { id }),
   aiCommitMessage: (path: string, provider: string, model: string) =>
     call<string>("ai_commit_message", { path, provider, model }),
+
+  systemSnapshot: () => call<SystemSnapshot>("system_snapshot"),
+
+  monitorsList: () => call<MonitorStatus[]>("monitors_list"),
+  monitorCreate: (name: string, url: string, intervalSecs: number) =>
+    call<Monitor>("monitor_create", { name, url, intervalSecs }),
+  monitorDelete: (id: string) => call<void>("monitor_delete", { id }),
+  monitorToggle: (id: string, enabled: boolean) =>
+    call<Monitor>("monitor_toggle", { id, enabled }),
+  monitorCheckNow: (id: string) => call<MonitorCheck>("monitor_check_now", { id }),
 };
 
 /** Subscribe to the kernel event stream. Returns an unsubscribe function. */

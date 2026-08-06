@@ -169,6 +169,40 @@ string so no driver's native type set leaks into the contract. Rows are
 capped at 500; `truncated` says so explicitly rather than the UI implying
 a complete result set.
 
+### System (M4)
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `system_snapshot` | — | `SystemSnapshot` | live read, nothing persisted |
+
+`SystemSnapshot` is `{ cpuUsage, cpuCores, memTotal, memUsed, swapTotal,
+swapUsed, uptimeSecs, disks: DiskInfo[], topProcesses: ProcessInfo[] }`,
+with `DiskInfo { name, mount, total, available }` and `ProcessInfo { pid,
+name, cpuUsage, memory }`. Byte counts cross raw and are formatted in the
+UI — the DTO carries numbers, not "3.4 GB" strings. The command reads a
+single long-lived `SystemProbe` held in app state rather than constructing
+one per call: CPU usage is a delta between two samples, so a fresh probe
+would report 0% every time.
+
+### Monitors (M4)
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `monitors_list` | — | `MonitorStatus[]` | |
+| `monitor_create` | `name, url, intervalSecs` | `Monitor` | URL must parse with an `http`/`https` scheme; `intervalSecs` clamped to a 60s floor. See [security.md](security.md) |
+| `monitor_delete` | `id` | `()` | |
+| `monitor_toggle` | `id, enabled` | `Monitor` | disabled monitors are skipped by the scheduler |
+| `monitor_check_now` | `id` | `MonitorCheck` | one check immediately, off-schedule; recorded like any other |
+
+`MonitorStatus` is `{ monitor, lastCheck, uptimePct, avgMs, recent }` —
+`uptimePct` and `avgMs` are over the last 24h, `recent` is the newest 30
+checks, and `lastCheck` is null until a monitor has been checked once.
+Most checks are produced not by these commands but by the
+background scheduler (~15s tick), which reaches the UI the same way any
+other background work does: `Kernel::notify` → `notificationAdded`, and
+only on an ok↔fail transition. See [agents.md](agents.md) and
+[ADR-0008](adr/0008-in-process-watchers-notify-on-transitions.md).
+
 ## Event catalog
 
 `KernelEvent` is a tagged union `{ kind, data? }`:

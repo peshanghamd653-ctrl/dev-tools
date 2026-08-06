@@ -1,4 +1,5 @@
 import {
+  Activity,
   Container,
   Database,
   FolderKanban,
@@ -29,6 +30,7 @@ export const primaryNav: NavItem[] = [
   { to: "/docker", label: "Docker", icon: Container, shortcut: "Ctrl+7" },
   { to: "/api", label: "API Client", icon: Send, shortcut: "Ctrl+8" },
   { to: "/database", label: "Database", icon: Database, shortcut: "Ctrl+9" },
+  { to: "/monitors", label: "Monitors", icon: Activity, shortcut: "Ctrl+0" },
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+," },
 ];
 

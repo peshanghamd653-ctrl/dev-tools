@@ -62,6 +62,10 @@ export function useGlobalHotkeys() {
           e.preventDefault();
           void navigate({ to: "/database" });
           break;
+        case "0":
+          e.preventDefault();
+          void navigate({ to: "/monitors" });
+          break;
         case ",":
           e.preventDefault();
           void navigate({ to: "/settings" });

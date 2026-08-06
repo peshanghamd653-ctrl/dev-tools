@@ -117,9 +117,43 @@ forward rather than quietly dropped:
   variables, auth helpers, code generation · database query history, saved
   queries, ER diagrams, CSV/JSON export, row editing.
 
-### M4 — Watchers & deploys
-- System monitoring (`sysinfo`), website monitor, screenshot → GitHub
-  issue, deployments (Vercel first)
+### M4 — Watchers & deploys (in progress)
+- ✅ **System monitoring** (`devos-system`, via `sysinfo`): no page of its
+  own — it renders as a strip of metric cards on the Dashboard. One
+  command, `system_snapshot`: CPU usage and core count, memory and swap
+  used/total, uptime, per-disk total/available, and the top processes by
+  CPU. Byte counts cross the IPC boundary raw and are formatted in the UI.
+  A single long-lived `SystemProbe` is held in app state because CPU usage
+  is a delta between two samples — a fresh probe per call would report 0%
+  forever. **Nothing is persisted**: metrics are live-only, so there is no
+  history, no charting over time, and no alerting on a threshold.
+- ✅ **Website monitor** (`/monitors`, Ctrl+0): named HTTP monitors with a
+  per-monitor interval, stored in `monitors` / `monitor_checks` (see
+  [database.md](database.md)); 24h uptime percentage and average response
+  time, the newest 30 checks, enable/disable, and a manual "check now". A
+  background tokio task started at boot ticks every ~15s, checks monitors
+  whose newest check is older than their interval, and notifies **only on
+  state transitions** — ok→fail as a warning, fail→ok as an info, through
+  the Notification Center. **Monitoring only runs while DevOS is open**;
+  that limitation and what it would take to remove it are in
+  [ADR-0008](adr/0008-in-process-watchers-notify-on-transitions.md). URLs
+  are restricted to `http`/`https` and intervals clamped to a 60s floor —
+  see [security.md](security.md). Deferred within the module: alerting
+  anywhere but the in-app Notification Center (no email, webhook, or
+  Slack), status-page export, TLS-certificate-expiry checks,
+  response-content assertions (it checks that a site answers, not that it
+  answers *correctly*), and multi-region checking.
+- **Screenshot → GitHub issue** — not built.
+- **Deployments (Vercel first)** — not built. `deployments` is still the
+  one M4 table that doesn't exist.
+
+M4 status: **partially done** — both monitoring items shipped (only one of
+them, the website monitor, is an actual background watcher; system metrics
+are a live readout with no loop behind them), and neither the screenshot
+nor the deployment item was started, so the milestone stays open. Also
+still outstanding under M4: automatic DB backups (pre-migration + daily
+rotating), listed in [database.md](database.md) and
+[security.md](security.md) and not yet implemented.
 
 ### M5 — Extensibility & polish
 - WASM plugin runtime (Extism-style) + contribution manifests, plugin SDK,

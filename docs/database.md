@@ -67,6 +67,25 @@ Created idempotently at boot, same `CREATE TABLE IF NOT EXISTS` pattern as
 database — the user's own SQLite files are opened as separate connections
 and are never touched by kernel migrations.
 
+## Monitor tables (`devos-monitor`, implemented)
+
+| Table | Purpose | Notes |
+|---|---|---|
+| `monitors` | One row per website monitor | `name`, `url`, `interval_secs`, `enabled`, `created_at`. The URL is validated on write (scheme must be `http`/`https`) and the interval clamped to a 60s floor — see [security.md](security.md). User-created only; nothing else writes here. |
+| `monitor_checks` | Result of every check, scheduled or manual | `status` (HTTP code, absent when the request never completed), `ok`, `duration_ms`, `error` (transport error string), `checked_at`; `monitor_id` carries the owning monitor's id. Indexed on `(monitor_id, checked_at)` — every read is "this monitor, recently". Pruned to 7 days. **Response bodies are never stored** ([security.md](security.md)). |
+
+Created idempotently at boot, same `CREATE TABLE IF NOT EXISTS` pattern as
+`api_*` and `db_connections`. This is the first module whose tables are
+written by a background scheduler rather than only by user action — see
+[agents.md](agents.md) and
+[ADR-0008](adr/0008-in-process-watchers-notify-on-transitions.md). Since
+the scheduler only runs while the app is open, `monitor_checks` has gaps
+wherever DevOS was closed, and the 24h uptime percentage computed from it
+is uptime *across the checks that ran*, not true uptime.
+
+`devos-system` has no tables at all: system metrics are read live from
+`sysinfo` per call and never persisted, so there is no history to query.
+
 ## Planned per milestone
 
 - **M2 (remainder)** `sqlite-vec` virtual table for embeddings alongside
@@ -78,7 +97,9 @@ and are never touched by kernel migrations.
   SQLite form (name + path); server drivers add a `secret_id` referencing
   `secrets` plus host/port/user/database columns when they land
   ([ADR-0007](adr/0007-sqlite-only-database-manager-first.md))
-- **M4** `monitors`, `monitor_checks` (uptime/perf history) · `deployments`
+- **M4 (remainder)** `deployments`. `monitors` and `monitor_checks` now
+  exist (above); the deploy half of the milestone isn't built, so its table
+  isn't either
 - **M5** `plugins` (installed, version, permission grants) · `snippets`,
   `docs_pages`
 

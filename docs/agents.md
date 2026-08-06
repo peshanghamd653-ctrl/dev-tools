@@ -95,13 +95,17 @@ Deliberately transparent: there is no hidden summarization or automatic
 distillation — every remembered fact was either saved by the model in a
 visible tool call or typed by the user, and each is one click from deletion.
 
-## Background agents — first watcher implemented
+## Background watchers — two implemented
 
 The pieces an agent needs all exist: durable jobs (`JobRunner`), the event
 bus, the gated tool executor, and a persistent reporting surface
-(`Kernel::notify` → Notification Center bell).
+(`Kernel::notify` → Notification Center bell). Two watchers use them today.
+Neither is an agent in the tool-calling sense: both observe and report,
+and neither changes anything.
 
-The **build-failure watcher is live** for PowerShell sessions:
+### Build-failure watcher — event-driven (M2)
+
+Live for PowerShell sessions:
 
 ```
 prompt hook (OSC 133;D;<exit-code>, injected via -EncodedCommand,
@@ -119,6 +123,40 @@ every failure — a deliberate cost/noise decision. Opt out entirely with
 setting `terminal.integration=off`. cmd.exe and other shells are not
 instrumented (no reliable prompt hook); they keep manual diagnosis only.
 The watcher never applies changes.
+
+### Monitor scheduler — time-driven (M4)
+
+The website monitor (`devos-monitor`) is the second watcher, and the first
+that runs on a clock instead of reacting to something the user did:
+
+```
+tokio task started at boot  →  tick every ~15s
+→ select enabled monitors whose newest check is older than interval_secs
+→ HTTP check (15s timeout, limited redirects) → insert into monitor_checks
+→ compare with the previous check's ok flag
+→ transition only:  ok→fail  Kernel::notify(level "warning")
+                    fail→ok  Kernel::notify(level "info")   →  bell
+```
+
+Transition-based notification is the whole design: a site that stays down
+produces one warning, not one per check, so the bell stays worth reading —
+including for the terminal watcher, which shares it. The cost is that a
+still-broken monitor is silent after that first warning; `/monitors` is the
+surface that always shows current state.
+
+**Checks only run while DevOS is open.** There is no daemon and no OS
+scheduled task, so closing the app stops monitoring, `monitor_checks` has
+holes wherever it was closed, and an outage that starts *and* ends while
+it was closed is never noticed — the stored state was `ok` before and the
+first check after launch is `ok`, so there is no transition. That
+limitation, why it was accepted, and what would have to change to remove
+it are in
+[ADR-0008](adr/0008-in-process-watchers-notify-on-transitions.md).
+
+Like the terminal watcher, this one only reports: it records a result and
+raises a notification. It takes no remedial action, and it does not call
+the AI — detection is deterministic and free, and there is little for a
+model to add to a status code and a transport error string.
 
 ## Project indexing / RAG — lexical half implemented
 

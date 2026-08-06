@@ -3,6 +3,7 @@ import { ArrowRight, FolderKanban, FolderPlus, Gauge, Layers, Plus } from "lucid
 
 import { useAppInfo } from "@/features/app/hooks";
 import { useProjects } from "@/features/projects/hooks";
+import { SystemMetrics } from "@/features/system/SystemMetrics";
 import {
   useActiveWorkspace,
   useWorkspaces,
@@ -63,6 +64,8 @@ export function DashboardPage() {
           value={appInfo?.version ?? "—"}
         />
       </div>
+
+      <SystemMetrics />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

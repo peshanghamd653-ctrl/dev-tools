@@ -13,10 +13,12 @@
 | `devos-docker` | 5 | container/image mapping from Engine API shapes, port formatting, `Unavailable` vs `Api` error classification (so the UI can degrade rather than error) |
 | `devos-api` | 10 | full request round trip against a **real one-shot local TCP server** (asserting both the parsed response and the raw bytes the server received), invalid method/URL, connection-refused, saved-request CRUD, history recording + pruning to 100 |
 | `devos-db` | 21 | statement classification past comments/case, **`PRAGMA query_only` stopping a write disguised as a read** (`WITH … INSERT`), write blocked without consent and landing with it, every SQLite value type incl. NULL → `None`, 500-row cap + `truncated`, identifier quoting, schema introspection (PK/NOT NULL/DEFAULT, views, broken view → `-1`), pool cache + refusal to create a missing file |
+| `devos-system` | 6 | snapshot reports plausible hardware (cores/memory/uptime; disks deliberately *not* asserted non-empty), top processes capped and CPU-ordered, and **CPU usage is not stuck at zero across two snapshots** — the failure mode a fresh probe per call would produce |
+| `devos-monitor` | 24 | monitor CRUD, blank name and **non-http scheme rejection** (`file://`, `ftp://`, `javascript:`, `data:`), interval floor clamping, real HTTP checks against a hermetic one-shot TCP server (200 / 500 / connection-refused), **alerts fire only on state transitions** (ok→fail and fail→ok notify; same-state pairs stay silent), first-check-fails-alerts semantics, uptime/latency aggregation incl. the zero-check case, pruning, and deleting a monitor taking its history with it |
 | `src-tauri` | 14 | AI tools read/list real files, **path-traversal and absolute-path rejection**, dependency-dir skipping in search, unknown-tool error, approval-gate resolve/deny/timeout |
-| Frontend (`src/**/*.test.ts`) | 9 | Zustand UI store (palette toggle, tab dedup/close, active workspace), `cn()` class merging, unified-diff parser (hunk/add/del/ctx classification, line numbering, synthesized untracked-file diffs) |
+| Frontend (`src/**/*.test.ts`) | 29 | Zustand UI store (palette toggle, tab dedup/close, active workspace), `cn()` class merging, unified-diff parser (hunk/add/del/ctx classification, line numbering, synthesized untracked-file diffs), byte/uptime/percent formatting, monitor state derivation + sparkline ordering (incl. not mutating the source array) |
 
-Rust totals **112** via `cargo test --workspace`. Per-crate counts include the
+Rust totals **142** via `cargo test --workspace`. Per-crate counts include the
 generated `export_bindings_*` tests ts-rs emits for each exported DTO — those
 assert the TypeScript bindings are current, not runtime behavior, so the
 behavioral count per crate is lower than the number above.

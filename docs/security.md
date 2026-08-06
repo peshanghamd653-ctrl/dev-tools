@@ -5,8 +5,9 @@
 Protects against: secrets leaking via the DB file, backups, or logs;
 a malicious/compromised plugin (future); an AI tool call reading outside
 the granted project; an unintended destructive write through the SQL
-editor; injection through webview content. Out of scope: an attacker with
-full control of the user's OS account.
+editor; unattended outbound requests from a scheduled monitor; injection
+through webview content. Out of scope: an attacker with full control of
+the user's OS account.
 
 ## Secrets — implemented
 
@@ -98,6 +99,39 @@ mechanism that doesn't depend on DevOS having classified correctly.
   path and nothing else, because SQLite needs nothing else. Server
   drivers, when added, put the credential in `secrets` and reference it by
   id.
+
+## Website monitoring — implemented (M4)
+
+The monitor fetches URLs the user supplies. The API client already does
+that, but the monitor is the first feature that does it **unattended, on a
+timer** — nobody is watching the request when it goes out, and it goes out
+again every interval until the monitor is deleted. That changes what a bad
+input costs.
+
+- **The URL is validated on write.** `monitor_create` requires the URL to
+  parse and its scheme to be `http` or `https`. `file://` and every other
+  scheme are refused, so a monitor cannot be aimed at the local filesystem
+  or at another protocol handler.
+- **The interval has a floor.** `interval_secs` is clamped to 60 seconds.
+  A mistyped `1` would otherwise turn DevOS into a small load generator
+  pointed at somebody else's server, running for as long as the app is
+  open. The floor makes that impossible rather than merely discouraged.
+- **Each check is bounded**: a 15-second timeout and a limited redirect
+  policy, so a hung target or a redirect loop can't occupy the scheduler.
+- **Response bodies are never stored.** `monitor_checks` records the status
+  code, the ok flag, the duration, and any transport error string —
+  nothing else. A monitored page may carry session data, personal data, or
+  an error page full of internals; no feature needs the body, so it never
+  reaches the database. The module checks that a site *answers*, not that
+  it answers correctly; content assertions are deferred (see the
+  [roadmap](feature-roadmap.md)).
+- **Not reachable from AI tool calling.** Monitors are user-created only;
+  there is no monitor tool at any grant level. A prompt injection cannot
+  register an outbound request that DevOS will then repeat on a timer.
+
+System metrics (`devos-system`) are read-only and local: `sysinfo` values,
+never persisted, never sent anywhere, and no command in that module takes
+an argument.
 
 ## IPC & webview
 

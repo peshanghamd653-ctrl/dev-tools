@@ -1,0 +1,18 @@
+[package]
+name = "devos-system"
+description = "DevOS system metrics module: CPU, memory, swap, disk, and process snapshots"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+devos-kernel = { path = "../../devos-kernel" }
+serde.workspace = true
+ts-rs.workspace = true
+# Only the two collectors a snapshot actually reads; the default feature set
+# also pulls in components, networks, and users, none of which are exposed.
+sysinfo = { version = "0.39", default-features = false, features = [
+    "system",
+    "disk",
+] }

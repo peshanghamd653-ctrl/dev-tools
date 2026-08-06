@@ -33,6 +33,7 @@ const moduleCommandHandlers: Record<
   | "openDocker"
   | "openApi"
   | "openDatabase"
+  | "openMonitors"
 > = {
   "core.workspace.create": "createWorkspace",
   "core.project.add": "addProject",
@@ -43,6 +44,7 @@ const moduleCommandHandlers: Record<
   "docker.open": "openDocker",
   "api.open": "openApi",
   "db.open": "openDatabase",
+  "monitor.open": "openMonitors",
 };
 
 export function CommandPalette() {
@@ -72,6 +74,7 @@ export function CommandPalette() {
     else if (handler === "openDocker") void navigate({ to: "/docker" });
     else if (handler === "openApi") void navigate({ to: "/api" });
     else if (handler === "openDatabase") void navigate({ to: "/database" });
+    else if (handler === "openMonitors") void navigate({ to: "/monitors" });
     else if (handler === "indexProject") {
       if (!paletteProject) {
         toast.error("Add a project first");

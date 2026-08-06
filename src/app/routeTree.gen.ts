@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TerminalRouteImport } from './routes/terminal'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as MonitorsRouteImport } from './routes/monitors'
 import { Route as GitRouteImport } from './routes/git'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as DockerRouteImport } from './routes/docker'
@@ -33,6 +34,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitorsRoute = MonitorsRouteImport.update({
+  id: '/monitors',
+  path: '/monitors',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GitRoute = GitRouteImport.update({
@@ -79,6 +85,7 @@ export interface FileRoutesByFullPath {
   '/docker': typeof DockerRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
+  '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
@@ -91,6 +98,7 @@ export interface FileRoutesByTo {
   '/docker': typeof DockerRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
+  '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
@@ -104,6 +112,7 @@ export interface FileRoutesById {
   '/docker': typeof DockerRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
+  '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
   '/terminal': typeof TerminalRoute
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
     | '/docker'
     | '/files'
     | '/git'
+    | '/monitors'
     | '/projects'
     | '/settings'
     | '/terminal'
@@ -130,6 +140,7 @@ export interface FileRouteTypes {
     | '/docker'
     | '/files'
     | '/git'
+    | '/monitors'
     | '/projects'
     | '/settings'
     | '/terminal'
@@ -142,6 +153,7 @@ export interface FileRouteTypes {
     | '/docker'
     | '/files'
     | '/git'
+    | '/monitors'
     | '/projects'
     | '/settings'
     | '/terminal'
@@ -155,6 +167,7 @@ export interface RootRouteChildren {
   DockerRoute: typeof DockerRoute
   FilesRoute: typeof FilesRoute
   GitRoute: typeof GitRoute
+  MonitorsRoute: typeof MonitorsRoute
   ProjectsRoute: typeof ProjectsRoute
   SettingsRoute: typeof SettingsRoute
   TerminalRoute: typeof TerminalRoute
@@ -181,6 +194,13 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitors': {
+      id: '/monitors'
+      path: '/monitors'
+      fullPath: '/monitors'
+      preLoaderRoute: typeof MonitorsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/git': {
@@ -243,6 +263,7 @@ const rootRouteChildren: RootRouteChildren = {
   DockerRoute: DockerRoute,
   FilesRoute: FilesRoute,
   GitRoute: GitRoute,
+  MonitorsRoute: MonitorsRoute,
   ProjectsRoute: ProjectsRoute,
   SettingsRoute: SettingsRoute,
   TerminalRoute: TerminalRoute,

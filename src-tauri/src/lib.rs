@@ -8,8 +8,10 @@ mod docker_commands;
 mod fs_commands;
 mod git_commands;
 mod index_commands;
+mod monitor_commands;
 mod pathsafe;
 mod state;
+mod system_commands;
 mod term_commands;
 mod tools;
 
@@ -19,6 +21,7 @@ use devos_ai::AiRegistry;
 use devos_db::DbManager;
 use devos_kernel::Kernel;
 use devos_secrets::SecretStore;
+use devos_system::SystemProbe;
 use devos_terminal::TerminalManager;
 use tauri::{Emitter, Manager};
 use tokio::sync::broadcast::error::RecvError;
@@ -46,6 +49,8 @@ pub fn run() {
             kernel.register_module(&devos_docker::DockerModule);
             kernel.register_module(&devos_api::ApiModule);
             kernel.register_module(&devos_db::DbModule);
+            kernel.register_module(&devos_system::SystemModule);
+            kernel.register_module(&devos_monitor::MonitorModule);
             let kernel = Arc::new(kernel);
 
             let secrets = tauri::async_runtime::block_on(SecretStore::init(kernel.pool.clone()))?;
@@ -57,6 +62,8 @@ pub fn run() {
                 .map_err(|e| format!("api tables: {e}"))?;
             tauri::async_runtime::block_on(devos_db::init(&kernel.pool))
                 .map_err(|e| format!("db tables: {e}"))?;
+            tauri::async_runtime::block_on(devos_monitor::init(&kernel.pool))
+                .map_err(|e| format!("monitor tables: {e}"))?;
 
             // Forward every kernel event to the webview on one channel.
             let mut rx = kernel.events.subscribe();
@@ -119,6 +126,12 @@ pub fn run() {
                 });
             }
 
+            // The uptime watcher: checks monitors whose interval has elapsed
+            // and notifies only when a site's reachability actually changes
+            // (see `devos_monitor::alert_for`). Spawned here rather than by
+            // the module so the crate stays runtime-agnostic.
+            tauri::async_runtime::spawn(devos_monitor::run_scheduler(kernel.clone()));
+
             app.manage(AppState {
                 kernel,
                 terminal,
@@ -126,6 +139,7 @@ pub fn run() {
                 secrets,
                 ai: Arc::new(AiRegistry::new()),
                 approvals: Arc::new(approvals::ApprovalRegistry::default()),
+                system: Arc::new(SystemProbe::new()),
                 startup_ms,
             });
             Ok(())
@@ -202,6 +216,12 @@ pub fn run() {
             db_commands::db_schema,
             db_commands::db_query,
             db_commands::db_table_rows,
+            system_commands::system_snapshot,
+            monitor_commands::monitors_list,
+            monitor_commands::monitor_create,
+            monitor_commands::monitor_delete,
+            monitor_commands::monitor_toggle,
+            monitor_commands::monitor_check_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

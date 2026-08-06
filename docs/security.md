@@ -23,8 +23,27 @@ the user's OS account.
   through. Only `SecretStore::get(name)` returns plaintext, and it's called
   in exactly one place today: building the Claude API request. Values are
   never logged or included in emitted events.
+- **The management UI can't reveal a value, by construction** (M4). The
+  secret manager is a section on the Settings page over the existing
+  `secret_set` / `secret_list` / `secret_delete` commands — no new backend.
+  It lists stored **names**, adds or overwrites a value, and deletes behind
+  a confirmation. There is no reveal button and there cannot be one: a
+  stored value never crosses the IPC boundary in any direction except
+  inward, so on the frontend side there is nothing to reveal. This is the
+  type-level redaction above surfacing in the UI — `SecretMeta` carries no
+  value field, so the absence is enforced by the compiler, not by a screen
+  choosing not to render something. Values are write-only from the user's
+  point of view: set it, overwrite it, delete it, never read it back. The
+  UI says so on the page rather than leaving people hunting for a control
+  that was never left out by accident.
 - Currently stored: `anthropic-api-key` (entered once via the AI assistant's
-  key-setup card).
+  key-setup card) and `vercel_token` (M4). The Vercel token is an ordinary
+  secret — same master key, same AES-256-GCM, same names-only listing — read
+  only when a Vercel API request is built and sent only to
+  `api.vercel.com`. `devos-deploy` never touches the store itself; the
+  command layer resolves the token and passes it in. See
+  [ADR-0009](adr/0009-deployments-read-only-no-write-actions.md) for why the
+  module holding that token performs no write actions.
 
 ## AI tool-calling — implemented (M2)
 
@@ -76,14 +95,35 @@ mechanism that doesn't depend on DevOS having classified correctly.
   the caller passes `allowWrite: true`, which is driven by a UI toggle
   that starts off. Reading a table and dropping it are not the same
   gesture.
-- **Classification is not trusted on its own.** The read path also sets
-  `PRAGMA query_only = ON` on the connection it executes against, so
-  SQLite itself refuses the write even if the keyword check were fooled.
-  The parser being wrong is a bug; the parser being wrong *and* the
-  database accepting the write is the incident. Note this specific defence
-  is SQLite-only and would have to be re-established as a read-only
-  transaction if Postgres lands — see
+- **Classification is not trusted on its own** — and the first attempt at
+  backing it up was itself insufficient, which is worth recording. A
+  security review on 2026-08-06 demonstrated that `PRAGMA query_only = ON`
+  is **not** a real guard: sqlx-sqlite executes every statement in a
+  `;`-separated string, so `SELECT 1; PRAGMA query_only(0); UPDATE …`
+  classified as a read from its first keyword and then turned the guard off
+  from inside the query it was guarding. It landed silently, since the read
+  path returns only rows. Two guards were added:
+  - **One statement per call.** Anything with a separator outside a string
+    literal, quoted identifier, or comment is rejected. This is a far
+    narrower parse than classifying SQL, and it closes the demonstrated
+    bypass.
+  - **The read path runs on a connection opened `SQLITE_OPEN_READONLY`**
+    (`DbManager::read_pool_for`). An open mode cannot be undone by a
+    statement, so this is the guard actually carrying the guarantee.
+    `query_only` is still set, but only as a backstop for the rare fallback
+    to a read-write handle (a live WAL database whose `-shm` does not yet
+    exist cannot be opened read-only). That fallback is degraded, not
+    unguarded — the other two guards still apply.
+
+  The lesson generalizes: a guard that the guarded input can address by
+  name is not a guard. Note the read-only-connection defence is SQLite-
+  specific; Postgres would need a read-only transaction instead — see
   [ADR-0007](adr/0007-sqlite-only-database-manager-first.md).
+- **PRAGMA classification is an allowlist**, not a test for `=`. The
+  original heuristic treated any PRAGMA without `=` as a read, which let
+  through every parenthesised setter — `journal_mode(wal)`,
+  `wal_checkpoint(TRUNCATE)` and `writable_schema(1)` all execute happily
+  under `query_only`. Only named introspection pragmas are reads now.
 - **Identifiers are quoted, not interpolated.** `db_table_rows` quotes the
   table name by doubling embedded quotes rather than string-formatting a
   caller-supplied identifier into the statement.

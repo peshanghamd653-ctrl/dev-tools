@@ -37,12 +37,12 @@ pub async fn db_connection_delete(state: State<'_, AppState>, id: String) -> Res
 
 #[tauri::command]
 pub async fn db_schema(state: State<'_, AppState>, id: String) -> Result<DbSchema, String> {
-    let (connection, pool) = state
+    let (connection, read_pool, _) = state
         .db
         .resolve(&state.kernel.pool, &id)
         .await
         .map_err(|e| e.to_string())?;
-    devos_db::read_schema(&pool, Path::new(&connection.path))
+    devos_db::read_schema(&read_pool, Path::new(&connection.path))
         .await
         .map_err(|e| e.to_string())
 }
@@ -54,12 +54,12 @@ pub async fn db_query(
     sql: String,
     allow_write: bool,
 ) -> Result<QueryResult, String> {
-    let (_, pool) = state
+    let (_, read_pool, write_pool) = state
         .db
         .resolve(&state.kernel.pool, &id)
         .await
         .map_err(|e| e.to_string())?;
-    devos_db::run_query(&pool, &sql, allow_write)
+    devos_db::run_query(&read_pool, &write_pool, &sql, allow_write)
         .await
         .map_err(|e| e.to_string())
 }
@@ -71,12 +71,12 @@ pub async fn db_table_rows(
     table: String,
     limit: i64,
 ) -> Result<QueryResult, String> {
-    let (_, pool) = state
+    let (_, read_pool, _) = state
         .db
         .resolve(&state.kernel.pool, &id)
         .await
         .map_err(|e| e.to_string())?;
-    devos_db::table_rows(&pool, &table, limit)
+    devos_db::table_rows(&read_pool, &table, limit)
         .await
         .map_err(|e| e.to_string())
 }

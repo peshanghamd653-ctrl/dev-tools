@@ -75,7 +75,7 @@ drivers slot in later without a rewrite:
   column to `db_connections` pointing into `secrets`, and extend the
   connect arguments with host/port/user/database. The IPC command names,
   the `QueryResult` shape, and the read/write gate all survive unchanged —
-  with one known exception: `PRAGMA query_only = ON`, the second line of
+  with one known exception: the read-only connection, the load-bearing line of
   defence on the read path (see [security.md](../security.md)), has no
   Postgres equivalent. A Postgres read path would need a read-only
   transaction instead, so that defence has to be re-established per

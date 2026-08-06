@@ -1,10 +1,24 @@
 //! Query execution.
 //!
-//! Two independent guards keep a read from turning into a write:
-//! classification of the statement text, and `PRAGMA query_only` on the
-//! connection that actually runs it. The first produces a good error message;
-//! the second is what makes the guarantee, because SQL is easier to disguise
-//! than to parse (`WITH x AS (…) INSERT …` starts with a read keyword).
+//! Three guards keep a read from turning into a write, in increasing order
+//! of how much they can be trusted:
+//!
+//! 1. **Classification** of the statement text. Produces the good error
+//!    message, and nothing else — SQL is far easier to disguise than to
+//!    parse (`WITH x AS (…) INSERT …` opens with a read keyword).
+//! 2. **One statement per call.** sqlx-sqlite runs *every* statement in a
+//!    `;`-separated string, so `SELECT 1; PRAGMA query_only(0); UPDATE …`
+//!    would otherwise be classified from `SELECT` and executed in full.
+//! 3. **A connection opened `SQLITE_OPEN_READONLY`** (see
+//!    [`crate::manager::DbManager::read_pool_for`]). This is the only guard
+//!    no statement can switch off, and therefore the one carrying the actual
+//!    guarantee. `PRAGMA query_only` is still set on the read path, but it
+//!    is a backstop for the rare fallback to a read-write handle, *not* the
+//!    guarantee — it can be turned off from inside the query it guards.
+//!
+//! Guards 2 and 3 exist because a security review demonstrated the bypass in
+//! guard 1 + `query_only` alone. The regression test for it is
+//! `a_smuggled_statement_cannot_disable_the_read_guard`.
 
 use std::time::Instant;
 
@@ -56,14 +70,103 @@ fn leading_keyword(sql: &str) -> String {
         .to_uppercase()
 }
 
+/// PRAGMAs that only interrogate.
+///
+/// Anything absent from this list — setters like `journal_mode(wal)`,
+/// `wal_checkpoint(...)`, `writable_schema(1)`, and `query_only` itself — is
+/// a write and needs consent. The previous version asked whether the
+/// statement contained `=`, which waved through every parenthesised setter.
+const READ_ONLY_PRAGMAS: &[&str] = &[
+    "collation_list",
+    "compile_options",
+    "database_list",
+    "foreign_key_list",
+    "freelist_count",
+    "function_list",
+    "index_info",
+    "index_list",
+    "index_xinfo",
+    "integrity_check",
+    "module_list",
+    "page_count",
+    "pragma_list",
+    "quick_check",
+    "table_info",
+    "table_xinfo",
+];
+
+/// `stripped` begins at the PRAGMA keyword.
+fn pragma_is_read_only(stripped: &str) -> bool {
+    let Some((_, after)) = stripped.split_once(char::is_whitespace) else {
+        return false;
+    };
+    let name = after
+        .trim_start()
+        .split(|c: char| c.is_whitespace() || c == '(' || c == '=' || c == ';')
+        .find(|token| !token.is_empty())
+        .unwrap_or_default();
+    // `PRAGMA main.table_info(x)` — drop any schema qualifier.
+    let name = name.rsplit('.').next().unwrap_or(name).to_lowercase();
+    READ_ONLY_PRAGMAS.contains(&name.as_str())
+}
+
+/// True when more than one statement is present.
+///
+/// This matters more than it looks: sqlx-sqlite executes *every* statement in
+/// a `;`-separated string, so without this check a query classified from its
+/// first keyword could carry an arbitrary second statement behind it.
+/// Skips separators inside string literals, quoted identifiers, and comments.
+fn has_multiple_statements(sql: &str) -> bool {
+    let bytes = sql.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            quote @ (b'\'' | b'"' | b'`') => {
+                i += 1;
+                while i < bytes.len() {
+                    if bytes[i] == quote {
+                        // A doubled quote escapes itself rather than closing.
+                        if bytes.get(i + 1) == Some(&quote) {
+                            i += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    i += 1;
+                }
+            }
+            b'[' => {
+                while i < bytes.len() && bytes[i] != b']' {
+                    i += 1;
+                }
+            }
+            b'-' if bytes.get(i + 1) == Some(&b'-') => {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i += 2;
+                while i < bytes.len() && !(bytes[i] == b'*' && bytes.get(i + 1) == Some(&b'/')) {
+                    i += 1;
+                }
+                i += 1;
+            }
+            // `;` is ASCII, so `i + 1` is always a char boundary.
+            b';' if !strip_leading_noise(&sql[i + 1..]).is_empty() => return true,
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
 fn classify(sql: &str) -> StatementKind {
     let rest = strip_leading_noise(sql);
     match leading_keyword(rest).as_str() {
         // EXPLAIN never executes the statement it explains.
         "SELECT" | "WITH" | "EXPLAIN" => StatementKind::Read,
-        // `PRAGMA foo` and `PRAGMA foo(arg)` interrogate; `PRAGMA foo = bar`
-        // sets. Treat the setting form as a write and let the user opt in.
-        "PRAGMA" if !rest.contains('=') => StatementKind::Read,
+        "PRAGMA" if pragma_is_read_only(rest) => StatementKind::Read,
         _ => StatementKind::Write,
     }
 }
@@ -167,11 +270,23 @@ fn cell(row: &SqliteRow, index: usize) -> Option<String> {
 
 /// Execute one statement. Writes require `allow_write`, which the UI gates
 /// behind an explicit toggle — the same two-tier consent the AI tools use.
-pub async fn run_query(pool: &SqlitePool, sql: &str, allow_write: bool) -> DbResult<QueryResult> {
+pub async fn run_query(
+    read_pool: &SqlitePool,
+    write_pool: &SqlitePool,
+    sql: &str,
+    allow_write: bool,
+) -> DbResult<QueryResult> {
     let sql = sql.trim();
     let keyword = leading_keyword(sql);
     if keyword.is_empty() {
         return Err(DbError::Invalid("query is empty".into()));
+    }
+    if has_multiple_statements(sql) {
+        return Err(DbError::Invalid(
+            "run one statement at a time — a `;`-separated list would be executed in full, \
+             which is how a write gets smuggled past a read"
+                .into(),
+        ));
     }
     let kind = classify(sql);
     if kind == StatementKind::Write && !allow_write {
@@ -183,7 +298,7 @@ pub async fn run_query(pool: &SqlitePool, sql: &str, allow_write: bool) -> DbRes
     let started = Instant::now();
     match kind {
         StatementKind::Read => {
-            let (columns, rows, truncated) = fetch_read_only(pool, sql, None).await?;
+            let (columns, rows, truncated) = fetch_read_only(read_pool, sql, None).await?;
             Ok(QueryResult {
                 row_count: rows.len() as i64,
                 columns,
@@ -195,7 +310,7 @@ pub async fn run_query(pool: &SqlitePool, sql: &str, allow_write: bool) -> DbRes
             })
         }
         StatementKind::Write => {
-            let result = sqlx::query(sql).execute(pool).await?;
+            let result = sqlx::query(sql).execute(write_pool).await?;
             Ok(QueryResult {
                 columns: Vec::new(),
                 rows: Vec::new(),
@@ -288,7 +403,7 @@ mod tests {
     #[tokio::test]
     async fn select_renders_each_sqlite_type() {
         let (_dir, pool) = fixture().await;
-        let result = run_query(&pool, "SELECT n, r, s, b, z FROM mixed", false)
+        let result = run_query(&pool, &pool, "SELECT n, r, s, b, z FROM mixed", false)
             .await
             .unwrap();
 
@@ -309,9 +424,14 @@ mod tests {
     #[tokio::test]
     async fn empty_result_still_reports_its_columns() {
         let (_dir, pool) = fixture().await;
-        let result = run_query(&pool, "SELECT id, email FROM users WHERE id < 0", false)
-            .await
-            .unwrap();
+        let result = run_query(
+            &pool,
+            &pool,
+            "SELECT id, email FROM users WHERE id < 0",
+            false,
+        )
+        .await
+        .unwrap();
         assert_eq!(result.row_count, 0);
         assert_eq!(result.columns, vec!["id", "email"]);
     }
@@ -321,7 +441,7 @@ mod tests {
         let (_dir, pool) = fixture().await;
         let insert = "INSERT INTO users (email) VALUES ('c@x')";
 
-        let blocked = run_query(&pool, insert, false).await;
+        let blocked = run_query(&pool, &pool, insert, false).await;
         assert!(
             matches!(&blocked, Err(DbError::WriteBlocked(message)) if message.contains("INSERT")),
             "expected a named WriteBlocked, got {blocked:?}"
@@ -332,7 +452,7 @@ mod tests {
             .unwrap();
         assert_eq!(count, 2, "blocked write left the data alone");
 
-        let allowed = run_query(&pool, insert, true).await.unwrap();
+        let allowed = run_query(&pool, &pool, insert, true).await.unwrap();
         assert_eq!(allowed.rows_affected, 1);
         assert!(!allowed.read_only);
         let emails: Vec<String> = sqlx::query_scalar("SELECT email FROM users ORDER BY id")
@@ -350,7 +470,7 @@ mod tests {
         let disguised = "WITH c AS (SELECT 'z@x' AS e) INSERT INTO users (email) SELECT e FROM c";
         assert_eq!(classify(disguised), StatementKind::Read, "parsed as a read");
 
-        let result = run_query(&pool, disguised, false).await;
+        let result = run_query(&pool, &pool, disguised, false).await;
         assert!(matches!(result, Err(DbError::Db(_))), "got {result:?}");
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
             .fetch_one(&pool)
@@ -360,7 +480,10 @@ mod tests {
 
         // The connection is usable afterwards — query_only was reset.
         assert_eq!(
-            run_query(&pool, "SELECT 1", false).await.unwrap().row_count,
+            run_query(&pool, &pool, "SELECT 1", false)
+                .await
+                .unwrap()
+                .row_count,
             1
         );
     }
@@ -380,7 +503,7 @@ mod tests {
         .await
         .unwrap();
 
-        let result = run_query(&pool, "SELECT i FROM big ORDER BY i", false)
+        let result = run_query(&pool, &pool, "SELECT i FROM big ORDER BY i", false)
             .await
             .unwrap();
         assert!(result.truncated);
@@ -388,7 +511,7 @@ mod tests {
         assert_eq!(result.row_count, MAX_ROWS as i64);
         assert_eq!(result.rows[0][0].as_deref(), Some("1"));
 
-        let under = run_query(&pool, "SELECT i FROM big WHERE i <= 10", false)
+        let under = run_query(&pool, &pool, "SELECT i FROM big WHERE i <= 10", false)
             .await
             .unwrap();
         assert!(!under.truncated, "the cap only bites when it has to");
@@ -417,15 +540,82 @@ mod tests {
         assert!(table_rows(&pool, "  ", 10).await.is_err());
     }
 
+    /// SEC-001 regression. sqlx-sqlite executes every statement in a
+    /// `;`-separated string, so a second statement could turn the read guard
+    /// off from inside the guarded query. Classification never sees it — the
+    /// string starts with SELECT.
+    #[tokio::test]
+    async fn a_smuggled_statement_cannot_disable_the_read_guard() {
+        let (_dir, pool) = fixture().await;
+        let attack = "SELECT 1; PRAGMA query_only(0); INSERT INTO users (email) VALUES ('pwned@x')";
+        assert_eq!(classify(attack), StatementKind::Read, "reads as a SELECT");
+
+        let _ = run_query(&pool, &pool, attack, false).await;
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 2, "the smuggled INSERT must not have run");
+    }
+
+    #[test]
+    fn setter_pragmas_are_writes() {
+        // These all succeed under `PRAGMA query_only = ON`, which is exactly
+        // why the classifier must not wave them through on the read path.
+        for sql in [
+            "PRAGMA query_only(0)",
+            "PRAGMA journal_mode(wal)",
+            "PRAGMA wal_checkpoint(TRUNCATE)",
+            "PRAGMA writable_schema(1)",
+            "PRAGMA main.journal_mode(delete)",
+        ] {
+            assert_eq!(classify(sql), StatementKind::Write, "should write: {sql:?}");
+        }
+        for sql in [
+            "PRAGMA table_info(users)",
+            "pragma INDEX_LIST('users')",
+            "PRAGMA main.table_info(users)",
+            "PRAGMA integrity_check",
+        ] {
+            assert_eq!(classify(sql), StatementKind::Read, "should read: {sql:?}");
+        }
+    }
+
+    #[test]
+    fn statement_separators_are_found_only_where_they_count() {
+        for sql in [
+            "SELECT 1; DROP TABLE users",
+            "SELECT 1;;DELETE FROM users",
+            "SELECT 1; -- comment\nUPDATE users SET email = 'x'",
+            "SELECT 1; /* c */ INSERT INTO users (email) VALUES ('x')",
+        ] {
+            assert!(has_multiple_statements(sql), "should be multiple: {sql:?}");
+        }
+        for sql in [
+            "SELECT 1",
+            "SELECT 1;",
+            "SELECT 1;   \n  ",
+            "SELECT 1; -- just a trailing note",
+            // A separator inside a literal or identifier is data, not syntax.
+            "SELECT ';' AS semi",
+            "SELECT 'it''s; fine' AS quoted",
+            "SELECT * FROM \"weird;name\"",
+            "SELECT * FROM [bracket;name]",
+        ] {
+            assert!(!has_multiple_statements(sql), "should be single: {sql:?}");
+        }
+    }
+
     #[tokio::test]
     async fn rejects_an_empty_statement() {
         let (_dir, pool) = fixture().await;
         assert!(matches!(
-            run_query(&pool, "   \n  ", false).await,
+            run_query(&pool, &pool, "   \n  ", false).await,
             Err(DbError::Invalid(_))
         ));
         assert!(matches!(
-            run_query(&pool, "-- nothing here", true).await,
+            run_query(&pool, &pool, "-- nothing here", true).await,
             Err(DbError::Invalid(_))
         ));
     }

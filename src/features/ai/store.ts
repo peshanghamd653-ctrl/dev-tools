@@ -16,7 +16,8 @@ interface AiState {
   /**
    * Second grant level: edit_file/write_file/run_command exist for the
    * model. Every individual call still requires explicit approval in the
-   * chat (ADR-0005). Off by default.
+   * chat (ADR-0005). Off by default — and, unlike every other field here,
+   * **never restored from disk**: see the persist config below.
    */
   writeToolsEnabled: boolean;
   /**
@@ -58,13 +59,38 @@ export const useAiStore = create<AiState>()(
     }),
     {
       name: "devos-ai",
+      /**
+       * `writeToolsEnabled` is deliberately absent (SEC-009). "Off by
+       * default" has to mean off at every launch, not off on first run: a
+       * standing grant that lets the model *propose* edits and shell
+       * commands should not survive a restart, because the user who granted
+       * it three weeks ago is not the user opening the app today. Per-call
+       * approval still guards each action, but the grant is what puts those
+       * tools in the model's tool list at all — and a tool that is not
+       * offered is the one thing a prompt injection cannot reach for.
+       *
+       * The read grant does persist: read-only tools are side-effect-free by
+       * construction (ADR-0005), the chip states the grant on screen the
+       * whole time, and `save_memory` — the one mutating tool in that tier —
+       * now goes through per-call approval (SEC-002).
+       */
       partialize: (s) => ({
         activeConversationId: s.activeConversationId,
         provider: s.provider,
         model: s.model,
         attachProject: s.attachProject,
         toolsEnabled: s.toolsEnabled,
-        writeToolsEnabled: s.writeToolsEnabled,
+      }),
+      /**
+       * Rehydration merges the stored object over the initial state, so
+       * dropping the key above is not enough on its own: an install that
+       * already wrote `writeToolsEnabled: true` would keep restoring it.
+       * Forcing it here makes the guarantee independent of what is on disk.
+       */
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as Partial<AiState>),
+        writeToolsEnabled: false,
       }),
     },
   ),

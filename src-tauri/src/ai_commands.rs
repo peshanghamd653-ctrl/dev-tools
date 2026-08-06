@@ -303,15 +303,19 @@ pub async fn ai_send(
             .ok_or("no Anthropic API key configured")?;
         let root = std::path::PathBuf::from(project_path.clone().unwrap_or_default());
         let mut defs = crate::tools::tool_defs();
+        // The gate exists at *both* tiers. The read tier needs one because
+        // `save_memory` is mutating — it writes text that lands in the system
+        // prompt of every later conversation — and per-call approval is the
+        // only thing that puts that text in front of the user first (SEC-002).
+        let gate = std::sync::Arc::new(crate::approvals::ChannelApprovalGate::new(
+            state.approvals.clone(),
+            on_delta.clone(),
+        ));
         let executor = if use_write_tools {
             defs.extend(crate::tools::write_tool_defs());
-            let gate = std::sync::Arc::new(crate::approvals::ChannelApprovalGate::new(
-                state.approvals.clone(),
-                on_delta.clone(),
-            ));
             crate::tools::ProjectTools::with_write_access(root, state.kernel.pool.clone(), gate)
         } else {
-            crate::tools::ProjectTools::new(root, state.kernel.pool.clone())
+            crate::tools::ProjectTools::with_approval(root, state.kernel.pool.clone(), gate)
         };
         devos_ai::run_agent(
             &state.ai.claude,

@@ -75,3 +75,23 @@ What exists today:
 There *is* now a code path to audit for destructive action. See
 [security.md](../security.md) and [agents.md](../agents.md), which have
 described the write tier correctly throughout.
+
+Two corrections from a later security review (2026-08-06/07), both of which
+this ADR's framing contributed to:
+
+- **"Read-only tier" stopped being literally true and nobody noticed.**
+  `save_memory` was added to the read tier, where the gate did not apply —
+  it was checked inside the `edit_file | write_file | run_command` match
+  arm, so a fifth mutating tool added elsewhere inherited nothing. What it
+  writes is injected into the system prompt of every later conversation,
+  which makes it a more durable capability than a single file edit. The
+  gate is now keyed off an explicit `MUTATING_TOOLS` list checked before
+  dispatch, so the property is "mutating implies approval" rather than
+  "these three names imply approval". The tier split stands — the second
+  grant means filesystem and shell, which remembering a fact is not.
+- **The write grant is no longer persisted.** It had been restored from
+  localStorage, so "off by default" held only on first run. It is now
+  session-scoped, and a grant left by an older build is forced off on
+  rehydration. Per-call approval still guards each action, but the grant
+  decides whether those tools are offered to the model at all, and that is
+  the cheaper thing to keep narrow.

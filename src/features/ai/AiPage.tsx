@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
 import { Input } from "@/shared/ui/input";
+import { ApprovalCard } from "./ApprovalCard";
 import {
   aiKeys,
   useConversations,
@@ -40,7 +41,6 @@ import {
   useOllamaModels,
   useSecretNames,
   useSendMessage,
-  type PendingApproval,
 } from "./hooks";
 import {
   Dialog,
@@ -395,8 +395,8 @@ export function AiPage() {
                           )}
                           title={
                             writeToolsEnabled
-                              ? "Claude may propose edits & commands — every call still needs your approval. Click to revoke."
-                              : "Allow Claude to propose file edits & commands (each call requires your approval)"
+                              ? "Claude may propose edits & commands — every call still needs your approval, and the grant is dropped when DevOS restarts. Click to revoke."
+                              : "Allow Claude to propose file edits & commands (each call requires your approval; the grant lasts until DevOS restarts)"
                           }
                         >
                           <span className="text-[10px]">⚡</span>
@@ -566,79 +566,6 @@ function MemoryDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/** Pretty-printed consent card for one mutating tool call. */
-function ApprovalCard({
-  approval,
-  onRespond,
-}: {
-  approval: PendingApproval;
-  onRespond: (id: string, approved: boolean) => void;
-}) {
-  let details: { label: string; value: string; mono?: boolean }[];
-  try {
-    const input = JSON.parse(approval.input) as Record<string, string>;
-    if (approval.name === "run_command") {
-      details = [{ label: "Command", value: input.command ?? "", mono: true }];
-    } else if (approval.name === "edit_file") {
-      details = [
-        { label: "File", value: input.path ?? "", mono: true },
-        { label: "Replace", value: input.old_string ?? "", mono: true },
-        { label: "With", value: input.new_string ?? "", mono: true },
-      ];
-    } else if (approval.name === "write_file") {
-      details = [
-        { label: "New file", value: input.path ?? "", mono: true },
-        { label: "Content", value: input.content ?? "", mono: true },
-      ];
-    } else {
-      details = [{ label: "Input", value: approval.input, mono: true }];
-    }
-  } catch {
-    details = [{ label: "Input", value: approval.input, mono: true }];
-  }
-
-  return (
-    <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/5 p-3">
-      <div className="flex items-center gap-2 pb-2">
-        <span className="text-sm">⚡</span>
-        <p className="text-sm font-medium">
-          Claude wants to run{" "}
-          <span className="font-mono text-xs">{approval.name}</span>
-        </p>
-      </div>
-      <div className="space-y-1.5 pb-3">
-        {details.map((d) => (
-          <div key={d.label}>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              {d.label}
-            </p>
-            <pre
-              className={cn(
-                "max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-card px-2 py-1 text-xs",
-                d.mono && "font-mono",
-              )}
-            >
-              {d.value.length > 2000 ? `${d.value.slice(0, 2000)}…` : d.value}
-            </pre>
-          </div>
-        ))}
-      </div>
-      <div className="flex gap-2">
-        <Button size="sm" onClick={() => onRespond(approval.id, true)}>
-          Approve
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => onRespond(approval.id, false)}
-        >
-          Deny
-        </Button>
-      </div>
-    </div>
   );
 }
 

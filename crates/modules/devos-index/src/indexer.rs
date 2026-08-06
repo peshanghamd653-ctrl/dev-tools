@@ -728,6 +728,30 @@ fn read_text(path: &Path) -> Option<String> {
     Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
+/// True for a symlink, a directory junction, or any other reparse point.
+///
+/// `FileType::is_symlink()` alone is not enough on Windows: std reports it
+/// only for `IO_REPARSE_TAG_SYMLINK`, so a `mklink /J` junction — which any
+/// unprivileged user can create, and which a cloned repo can carry — looks
+/// like an ordinary directory. The `FILE_ATTRIBUTE_REPARSE_POINT` bit covers
+/// every tag.
+///
+/// Deliberately mirrors `src-tauri/src/pathsafe.rs::is_reparse_point`; this
+/// crate is a leaf module and cannot depend on the desktop shell. Both copies
+/// are pinned by a test that builds a real junction, so the two cannot drift
+/// apart silently.
+fn is_reparse_point(meta: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return true;
+        }
+    }
+    meta.file_type().is_symlink()
+}
+
 fn walk_files(root: &Path, dir: &Path, depth: usize, out: &mut Vec<(String, i64, i64)>) {
     if depth > MAX_WALK_DEPTH {
         return;
@@ -738,13 +762,21 @@ fn walk_files(root: &Path, dir: &Path, depth: usize, out: &mut Vec<(String, i64,
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        if path.is_dir() {
+        // `DirEntry::metadata()` does not traverse the link. `path.is_dir()`
+        // does, which is how the indexer used to walk out of the project
+        // through a junction and land file *contents* from outside the root
+        // in `index_chunks`, where `search_code` then fed them to the model
+        // with no approval anywhere in the path (SEC-004).
+        let Ok(meta) = entry.metadata() else { continue };
+        if is_reparse_point(&meta) {
+            continue;
+        }
+        if meta.is_dir() {
             if !SKIP_DIRS.contains(&name.as_str()) {
                 walk_files(root, &path, depth + 1, out);
             }
             continue;
         }
-        let Ok(meta) = entry.metadata() else { continue };
         if meta.len() > MAX_FILE_BYTES {
             continue;
         }
@@ -994,6 +1026,74 @@ mod tests {
         let content = std::fs::read(path).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(path, content).unwrap();
+    }
+
+    /// On Windows a **junction** (`mklink /J`) — the only link an
+    /// unprivileged process can create, and therefore the shape a hostile
+    /// cloned repo would actually ship. On Unix an ordinary symlink.
+    fn make_dir_link(link: &Path, target: &Path) -> bool {
+        #[cfg(windows)]
+        {
+            std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .output()
+                .map(|out| out.status.success())
+                .unwrap_or(false)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+    }
+
+    /// SEC-004. The indexer walks a project the user granted; a link inside
+    /// it can point anywhere. Following one puts file *contents* from outside
+    /// the root into `index_chunks`, and `search_code` — a read-tier,
+    /// approval-free tool — then hands those snippets to the model.
+    ///
+    /// This test fails if the reparse-point check is removed: `path.is_dir()`
+    /// happily descends a junction.
+    #[tokio::test]
+    async fn indexing_does_not_follow_links_out_of_the_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        write_sample_project(&project);
+
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("id_rsa"), "PRIVATE_KEY_pangolin\n").unwrap();
+
+        assert!(
+            make_dir_link(&project.join("vendor"), &outside),
+            "creating a junction/symlink must not need privileges"
+        );
+        // Guard: the link really is traversable, so a walker that follows
+        // links would in fact reach the secret.
+        assert!(project.join("vendor/id_rsa").is_file());
+
+        let pool = test_pool(dir.path()).await;
+        let project_str = project.to_string_lossy().into_owned();
+        let s = reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            s.files, 2,
+            "only the project's own two files may be indexed"
+        );
+        assert!(
+            search_with(&pool, &project_str, "PRIVATE_KEY_pangolin", 10, None)
+                .await
+                .unwrap()
+                .is_empty(),
+            "content from outside the project must never reach index_chunks"
+        );
+        assert!(
+            !project_files(&project).iter().any(|f| f.contains("vendor")),
+            "the link must not appear in the file list either"
+        );
     }
 
     #[tokio::test]

@@ -53,15 +53,36 @@ The riskiest new surface as of M2: giving an LLM read access to files.
   empty unless the user toggles the "Tools" chip on (read-only level).
   A second chip adds `edit_file`/`write_file`/`run_command` — and revoking
   the read level automatically revokes the write level too.
-- **Per-call approval for anything mutating** (ADR-0005): even with the
-  write grant on, every individual `edit_file`/`write_file`/`run_command`
-  call pauses the agent loop, shows an approval card in the chat with the
-  full arguments (the command line, the exact old/new strings), and only
-  proceeds on an explicit Approve. Deny — or 180 seconds of silence — turns
-  the call into an error result the model must work around. The pending
-  approval lives in `ApprovalRegistry` (`src-tauri/src/approvals.rs`),
-  resolved by the `ai_tool_respond` command; a response for an unknown or
-  already-resolved id is a no-op.
+- **The write grant is session-scoped.** It is deliberately not persisted,
+  and a grant left on disk by an older build is forced off on rehydration.
+  "Off by default" has to mean off at every launch, not off on first run —
+  the user who granted shell access three weeks ago is not the user opening
+  the app today. Per-call approval still guards each action, but the grant
+  is what puts those tools in the model's list at all, and a tool that is
+  never offered is the one thing a prompt injection cannot reach for. The
+  read grant does persist: read tools are side-effect-free by construction
+  and the chip states the grant on screen throughout.
+- **Per-call approval for anything mutating** (ADR-0005), enforced by a
+  `MUTATING_TOOLS` list checked *before* tool dispatch rather than inside
+  one match arm. That ordering is the fix for a real hole: `save_memory`
+  had been added to the read tier and inherited no gate, so indirect prompt
+  injection from any file the model read could silently write durable,
+  authoritative-looking text into the system prompt of **every future
+  conversation** for that project. It is now approval-gated, and the read
+  tier has an approval channel for exactly that reason. A gate-less
+  executor refuses every mutating tool rather than falling through.
+  Approving, not the grant tier, is what closes this — `save_memory` stays
+  in the read grant, because "may remember a fact" and "may touch my
+  filesystem and shell" are different permissions and conflating them is
+  what ADR-0005 exists to prevent.
+- Each call pauses the agent loop and shows an approval card with the full
+  arguments. Long arguments are **folded, never silently truncated**: the
+  card states how many characters are hidden and expands to the complete
+  text, because approving a command whose tail scrolled off screen is not
+  approval. Deny — or 180 seconds of silence — turns the call into an error
+  the model must work around. Pending approvals live in `ApprovalRegistry`
+  (`src-tauri/src/approvals.rs`), resolved by `ai_tool_respond`; a response
+  for an unknown or already-resolved id is a no-op.
 - **Write-tool semantics limit blast radius**: `edit_file` requires the
   target string to occur exactly once (ambiguity is an error, so the model
   can't mass-replace by accident); `write_file` refuses to overwrite an
@@ -72,6 +93,29 @@ The riskiest new surface as of M2: giving an LLM read access to files.
   read. `../` traversal and absolute paths outside the project are rejected
   — covered by `rejects_path_traversal_and_absolute_paths` in
   `src-tauri/src/tools.rs`.
+- **Links are not followed out of the project**, which canonicalization
+  alone did not achieve. Two gaps were found and closed:
+  - `find_files` and the indexer walked *through* symlinks and junctions,
+    because `path.is_dir()` follows them. `read_file` correctly refused a
+    path through a link, but `find_files` still listed it, and after
+    `index_project` the file *contents* from outside the root landed in
+    `index_chunks` where `search_code` fed snippets to the model — both in
+    the read tier, both unapproved. Both walkers now use non-traversing
+    metadata and skip any reparse point.
+  - `write_file` wrote *through* a pre-existing symlink. It canonicalized
+    only the parent and re-attached the raw final component, and
+    `Path::exists()` follows links, so a **dangling** link reported absent
+    and the write followed it out of the root — while the approval card
+    innocently read `New file: docs/notes.md`.
+
+  Two Windows details make the naive fixes insufficient, and both are worth
+  knowing before touching this code: `FileType::is_symlink()` is only true
+  for `IO_REPARSE_TAG_SYMLINK`, so a `mklink /J` junction reads as an
+  ordinary directory and the check must test `FILE_ATTRIBUTE_REPARSE_POINT`
+  instead; and `create_new(true)` is not enough on its own, because
+  `CreateFileW` follows reparse points unless opened with
+  `FILE_FLAG_OPEN_REPARSE_POINT`. Each guard is pinned by a test that
+  builds a real junction and was confirmed to fail without the fix.
 - **Dependency directories are skipped** in `find_files` (`.git`,
   `node_modules`, `target`, `dist`, `.venv`, `__pycache__`) so the model
   doesn't burn context or leak vendored secrets accidentally checked into

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { inDesktopShell } from "@/shared/ipc/client";
+import { isDesktopShell } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
@@ -40,7 +40,7 @@ export function DockerPage() {
     null,
   );
 
-  if (!inDesktopShell) {
+  if (!isDesktopShell()) {
     return <Notice title="Docker needs the desktop shell" />;
   }
 

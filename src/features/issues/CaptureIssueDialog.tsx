@@ -18,7 +18,7 @@ import { toast } from "sonner";
 
 import { useAppInfo } from "@/features/app/hooks";
 import {
-  inDesktopShell,
+  isDesktopShell,
   ipc,
   type CapturedShot,
   type CreatedIssue,
@@ -107,7 +107,7 @@ export function CaptureIssueDialog() {
   // screenshot is being taken the shell stays exactly as the user left it.
   const visible =
     open &&
-    (!inDesktopShell ||
+    (!isDesktopShell() ||
       configured.isError ||
       configured.data === false ||
       captureFailed ||
@@ -121,7 +121,7 @@ export function CaptureIssueDialog() {
           shot ? "sm:max-w-3xl" : "sm:max-w-md",
         )}
       >
-        {!inDesktopShell ? (
+        {!isDesktopShell() ? (
           <Notice
             icon={<Camera className="size-5 text-muted-foreground" />}
             title="Reporting a bug needs the desktop shell"

@@ -1,7 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 
 import {
-  inDesktopShell,
+  isDesktopShell,
   ipc,
   type TermEvent,
 } from "@/shared/ipc/client";
@@ -10,7 +10,7 @@ import { useTerminalStore } from "./store";
 
 /** Spawn a backend pty, wire its stream into a fresh xterm instance. */
 export async function createTerminalSession(cwd?: string): Promise<void> {
-  if (!inDesktopShell) {
+  if (!isDesktopShell()) {
     throw new Error("Terminals require the desktop shell");
   }
 
@@ -65,7 +65,7 @@ export async function closeTerminalSession(id: string): Promise<void> {
  * silently killing someone's shell.
  */
 export async function reconcileSessions(): Promise<void> {
-  if (!inDesktopShell) return;
+  if (!isDesktopShell()) return;
   const backend = await ipc.termList();
   const store = useTerminalStore.getState();
   for (const info of backend) {

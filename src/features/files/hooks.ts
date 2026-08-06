@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { ipc, isDesktopShell } from "@/shared/ipc/client";
 
 export const fileKeys = {
   dir: (project: string, relative: string) =>
@@ -21,7 +21,7 @@ export function useDirEntries(
   return useQuery({
     queryKey: fileKeys.dir(projectPath ?? "none", relative),
     queryFn: () => ipc.fsListDir(projectPath ?? "", relative),
-    enabled: inDesktopShell && Boolean(projectPath) && enabled,
+    enabled: isDesktopShell() && Boolean(projectPath) && enabled,
     staleTime: 10_000,
   });
 }
@@ -33,13 +33,13 @@ export function useFilePreview(
   return useQuery({
     queryKey: fileKeys.file(projectPath ?? "none", relative ?? "none"),
     queryFn: () => ipc.fsReadFile(projectPath ?? "", relative ?? ""),
-    enabled: inDesktopShell && Boolean(projectPath) && Boolean(relative),
+    enabled: isDesktopShell() && Boolean(projectPath) && Boolean(relative),
   });
 }
 
 /** Both search flavors; `query` should already be debounced/committed. */
 export function useFileSearch(projectPath: string | undefined, query: string) {
-  const active = inDesktopShell && Boolean(projectPath) && query.length >= 2;
+  const active = isDesktopShell() && Boolean(projectPath) && query.length >= 2;
   const names = useQuery({
     queryKey: fileKeys.find(projectPath ?? "none", query),
     queryFn: () => ipc.fsFind(projectPath ?? "", query),

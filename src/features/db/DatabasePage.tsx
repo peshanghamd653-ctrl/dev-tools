@@ -15,10 +15,11 @@ import {
 import { toast } from "sonner";
 
 import {
-  inDesktopShell,
+  isDesktopShell,
   type DbConnection,
   type QueryResult,
 } from "@/shared/ipc/client";
+import { formatBytes } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
@@ -33,8 +34,8 @@ import {
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 import { Skeleton } from "@/shared/ui/skeleton";
+import { isWriteBlocked } from "./errors";
 import {
-  isWriteBlocked,
   useDbConnect,
   useDbConnectionDelete,
   useDbConnections,
@@ -45,6 +46,15 @@ import {
 
 /** How many rows a table click pulls in — mirrored in the results notice. */
 const TABLE_ROW_LIMIT = 500;
+
+/**
+ * The write toggle's visible label is its *state* ("Read-only" / "Writes
+ * enabled"), which makes it unnameable: nothing can ask for "the write toggle"
+ * without already knowing which way it is set. This is the app's most
+ * safety-critical control, so it carries a fixed accessible name and reports
+ * its state through `aria-pressed` — the way a toggle button is supposed to.
+ */
+const WRITE_TOGGLE_LABEL = "Allow SQL writes";
 
 export function DatabasePage() {
   const { data: connections } = useDbConnections();
@@ -62,7 +72,7 @@ export function DatabasePage() {
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState("");
 
-  if (!inDesktopShell) {
+  if (!isDesktopShell()) {
     return <Notice title="The database manager needs the desktop shell" />;
   }
 
@@ -224,6 +234,7 @@ export function DatabasePage() {
           <button
             type="button"
             onClick={() => setAllowWrite(!allowWrite)}
+            aria-label={WRITE_TOGGLE_LABEL}
             aria-pressed={allowWrite}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
@@ -363,7 +374,7 @@ function SchemaTree({
   return (
     <div className="pb-1">
       <p className="px-2 py-1 pl-4 text-[10px] text-muted-foreground">
-        {schema.tables.length} tables · {formatSize(schema.sizeBytes)}
+        {schema.tables.length} tables · {formatBytes(schema.sizeBytes)}
       </p>
       <ul>
         {schema.tables.map((table) => {
@@ -709,10 +720,4 @@ function Notice({ title }: { title: string }) {
 
 function basename(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { EyeOff, KeyRound, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { inDesktopShell } from "@/shared/ipc/client";
+import { isDesktopShell } from "@/shared/ipc/client";
 import { Button } from "@/shared/ui/button";
 import {
   Card,
@@ -46,7 +46,7 @@ export function SecretsSection() {
       </CardHeader>
 
       <CardContent className="space-y-5">
-        {!inDesktopShell ? (
+        {!isDesktopShell() ? (
           <p className="text-sm text-muted-foreground">
             The secret store lives in the desktop shell — a browser tab can't
             reach it.

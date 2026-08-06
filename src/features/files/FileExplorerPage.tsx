@@ -18,7 +18,8 @@ import { toast } from "sonner";
 import { useProjects } from "@/features/projects/hooks";
 import { useActiveWorkspace } from "@/features/workspaces/hooks";
 import { useGitStore } from "@/features/git/store";
-import { inDesktopShell } from "@/shared/ipc/client";
+import { isDesktopShell } from "@/shared/ipc/client";
+import { formatBytes } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
@@ -48,7 +49,7 @@ export function FileExplorerPage() {
 
   const search = useFileSearch(project?.path, query);
 
-  if (!inDesktopShell) {
+  if (!isDesktopShell()) {
     return (
       <Notice title="The file explorer needs the desktop shell" />
     );
@@ -250,7 +251,7 @@ function PreviewPane({
         </span>
         {preview && (
           <span className="text-[10px] text-muted-foreground">
-            {formatSize(preview.size)}
+            {formatBytes(preview.size)}
           </span>
         )}
         <Button
@@ -286,7 +287,7 @@ function PreviewPane({
         )}
         {preview?.binary && (
           <p className="p-4 text-sm text-muted-foreground">
-            Binary file ({formatSize(preview.size)}) — no preview.
+            Binary file ({formatBytes(preview.size)}) — no preview.
           </p>
         )}
         {preview && !preview.binary && (
@@ -402,10 +403,4 @@ function Notice({ title }: { title: string }) {
       </Card>
     </div>
   );
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

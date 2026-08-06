@@ -1,16 +1,11 @@
 import { ArrowDownUp, Cpu, Gauge, HardDrive, MemoryStick, Timer } from "lucide-react";
 
 import type { DiskInfo, ProcessInfo } from "@/shared/ipc/client";
+import { formatBytes } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import { Card, CardContent } from "@/shared/ui/card";
 import { Skeleton } from "@/shared/ui/skeleton";
-import {
-  formatBytes,
-  formatPercent,
-  formatUptime,
-  loadColor,
-  usageRatio,
-} from "./format";
+import { formatPercent, formatUptime, loadColor, usageRatio } from "./format";
 import { useSystemSnapshot } from "./hooks";
 
 /** Enough to spot a runaway process, few enough to stay a strip. */

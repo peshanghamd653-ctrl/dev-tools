@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { Channel } from "@tauri-apps/api/core";
 
-import { inDesktopShell, ipc, type AiDelta } from "@/shared/ipc/client";
+import { isDesktopShell, ipc, type AiDelta } from "@/shared/ipc/client";
 
 export const aiKeys = {
   conversations: ["ai", "conversations"] as const,
@@ -20,7 +20,7 @@ export function useConversations() {
   return useQuery({
     queryKey: aiKeys.conversations,
     queryFn: ipc.aiConversationsList,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
   });
 }
 
@@ -28,7 +28,7 @@ export function useMessages(conversationId: string | null) {
   return useQuery({
     queryKey: aiKeys.messages(conversationId ?? "none"),
     queryFn: () => ipc.aiMessages(conversationId ?? ""),
-    enabled: inDesktopShell && Boolean(conversationId),
+    enabled: isDesktopShell() && Boolean(conversationId),
   });
 }
 
@@ -36,7 +36,7 @@ export function useSecretNames() {
   return useQuery({
     queryKey: aiKeys.secrets,
     queryFn: ipc.secretList,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
   });
 }
 
@@ -44,7 +44,7 @@ export function useMemoryEntries(projectPath: string | null) {
   return useQuery({
     queryKey: aiKeys.memory(projectPath ?? "none"),
     queryFn: () => ipc.aiMemoryList(projectPath ?? ""),
-    enabled: inDesktopShell && Boolean(projectPath),
+    enabled: isDesktopShell() && Boolean(projectPath),
   });
 }
 
@@ -52,7 +52,7 @@ export function useOllamaModels(enabled: boolean) {
   return useQuery({
     queryKey: aiKeys.ollamaModels,
     queryFn: ipc.aiOllamaModels,
-    enabled: inDesktopShell && enabled,
+    enabled: isDesktopShell() && enabled,
     staleTime: 30_000,
     retry: false,
   });

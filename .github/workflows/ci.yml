@@ -78,6 +78,93 @@ jobs:
         run: cargo test --workspace
 
   # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E (WebdriverIO + tauri-driver)
+    # windows-latest is forced, not chosen: tauri-driver has no macOS support
+    # at all, and the Linux path would need webkit2gtk plus a virtual display.
+    # GitHub's Windows image ships the WebView2 Evergreen runtime, which is the
+    # one thing this job cannot install cheaply itself.
+    runs-on: windows-latest
+    #
+    # Trigger: pull requests and manual dispatch only. Deliberately *not* push,
+    # and deliberately not the weekly schedule.
+    #
+    #   * Not on push-to-main. Every commit that reaches main goes through a PR
+    #     where this already ran, so a push run is a second ~20 minute Windows
+    #     build (2x billing) that re-tests an identical tree. The `rust` and
+    #     `frontend` jobs still run on push; this is the one leg expensive
+    #     enough that the duplication is worth skipping.
+    #   * Not on the schedule. The scheduled run exists for advisories
+    #     published against an unchanged lockfile. Nothing about a Tauri boot
+    #     rots on a timer, so recompiling the app every Monday buys nothing.
+    #   * workflow_dispatch stays available so this can be run on demand
+    #     against main after a merge, or when debugging the job itself.
+    #
+    # This job has never run on a GitHub runner. Until it has a green streak,
+    # treat it as informational and do NOT add it to branch protection: a
+    # required check that flakes gets un-required and then ignored, which is
+    # strictly worse than the documented gap it replaced.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    # A cold debug Tauri build dominates this; the suite itself is ~1 minute.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Same action as the `rust` job, different cache. A shared key would
+      # thrash: that job builds `--all-targets` (every test binary), this one
+      # builds a single bin, so each would keep evicting the other's artifacts.
+      # Two smaller, stable caches beat one large, always-half-wrong cache.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: e2e
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Pinned rather than floating. tauri-driver is the piece most likely to
+      # break this job from the outside, and a version bump arriving silently
+      # on an unrelated PR is exactly the kind of red build that gets a job
+      # switched off. 2.0.6 is what the suite is verified against locally.
+      # Cached separately from Swatinem's cache, which covers target/ and the
+      # registry but not installed binaries in ~/.cargo/bin.
+      - name: Cache tauri-driver
+        id: tauri-driver-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/tauri-driver.exe
+          key: tauri-driver-2.0.6-${{ runner.os }}
+
+      - name: Install tauri-driver
+        if: steps.tauri-driver-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-driver --locked --version 2.0.6
+
+      # Debug, not release: this mirrors what a developer runs, and a release
+      # build here would roughly double the job. The trade-off is that the
+      # debug binary loads its frontend from the Vite dev server (started and
+      # stopped by wdio.conf.js), so bundling and the production CSP stay
+      # unverified — the same limitation the local suite has.
+      - name: Build app (debug)
+        run: cargo build -p devos-desktop
+
+      # wdio.conf.js points DEVOS_DATA_DIR at a fresh temp directory, so this
+      # boots an empty database and needs nothing pre-seeded on the runner.
+      # msedgedriver is downloaded by @wdio/tauri-service to match the runner's
+      # WebView2 build.
+      - name: E2E
+        run: pnpm e2e
+
+  # ---------------------------------------------------------------------------
   frontend:
     name: Frontend (typecheck, lint, test, build)
     # tsc / eslint / vitest / vite are OS-agnostic, so this runs on the cheaper

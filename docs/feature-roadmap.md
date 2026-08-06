@@ -78,8 +78,22 @@ project templates, repository cloning.
   evaluated and rejected — sqlx loads extensions only at connect time and
   re-disables loading afterwards, so a module crate cannot reach it. See
   [agents.md](agents.md).
-- Still planned: **tree-sitter symbol extraction**, the other half of this
-  line item. Not started.
+- ✅ **Tree-sitter symbol extraction** (added 2026-08-07), completing M2's
+  retrieval line item. Rust, TypeScript and TSX grammars — with JS/JSX
+  riding the TSX parser rather than adding a fourth — extract functions,
+  methods, classes, structs, enums, traits, interfaces and types into an
+  `index_symbols` table, which `index_search` fuses as a **third**
+  reciprocal-rank leg alongside lexical and semantic. So a declaration now
+  outranks a comment that merely mentions the name, which bm25 alone gets
+  backwards. Symbol-boundary *chunking* was deliberately rejected: it would
+  re-key every chunk and embedding, and would make a 400-line component one
+  chunk that silently overflows the embedding model's input window. The
+  retrieval unit was not the problem; the ordering was.
+- Migration is a `symbols.version` marker in `index_meta`, not a forced
+  reindex — an existing index passes the mtime/size skip on every file, so
+  symbols would otherwise never appear. A stale marker triggers one
+  extraction pass that writes symbols only and never touches chunks or
+  embeddings.
 
 ### M3 — Ops tools ✅
 - ✅ **Docker module** (`/docker`, Ctrl+7): containers (state, ports,

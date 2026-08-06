@@ -4,7 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { isDesktopShell, ipc } from "@/shared/ipc/client";
 import { useUiStore } from "@/shared/stores/ui";
 
 export const workspaceKeys = {
@@ -15,7 +15,7 @@ export function useWorkspaces() {
   return useQuery({
     queryKey: workspaceKeys.all,
     queryFn: ipc.workspacesList,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
   });
 }
 

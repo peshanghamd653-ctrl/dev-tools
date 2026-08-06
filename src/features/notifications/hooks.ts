@@ -4,7 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { isDesktopShell, ipc } from "@/shared/ipc/client";
 
 export const notificationKeys = {
   list: ["notifications", "list"] as const,
@@ -15,7 +15,7 @@ export function useNotifications() {
   return useQuery({
     queryKey: notificationKeys.list,
     queryFn: ipc.notificationsList,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
   });
 }
 
@@ -23,7 +23,7 @@ export function useUnreadCount() {
   return useQuery({
     queryKey: notificationKeys.unread,
     queryFn: ipc.notificationsUnreadCount,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
   });
 }
 

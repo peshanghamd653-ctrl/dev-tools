@@ -10,7 +10,14 @@
  * Those are slow, stateful, and depend on the machine (a real repo, a running
  * daemon, an API key), which would make this suite flaky. They are covered by
  * Rust unit tests instead.
+ *
+ * The app boots against a throwaway database — see `DEVOS_DATA_DIR` in
+ * `wdio.conf.js` — so everything below runs against genuine first-run state.
  */
+import { existsSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { browser, expect, $ } from "@wdio/globals";
 
 const NAV_LABELS = [
@@ -83,9 +90,16 @@ before(async () => {
   await browser.switchToWindow(handle);
 
   // The bundle is served by Vite on first hit; give it room to mount.
+  //
+  // 120s is not padding for a slow assertion — it is the ceiling on a cold
+  // Vite transforming the whole module graph one request at a time inside
+  // WebView2, which is what a CI runner does every single time. Observed at
+  // ~5s warm and comfortably over 60s cold on a loaded machine. This wait is
+  // the suite's only real source of flakiness, so it is sized for the worst
+  // case; a healthy run never spends it.
   await browser.waitUntil(
     async () => (await textOf("aside")) !== null,
-    { timeout: 60_000, timeoutMsg: "React shell never mounted" },
+    { timeout: 120_000, timeoutMsg: "React shell never mounted" },
   );
 });
 
@@ -130,6 +144,51 @@ describe("DevOS boots", () => {
         return stats.some((t) => /^\d+\.\d+\.\d+$/.test(t.trim()));
       },
       { timeout: 30_000, timeoutMsg: "app_info version stat never populated" },
+    );
+  });
+
+  /**
+   * Isolation, asserted rather than assumed.
+   *
+   * Two halves, because either alone is weak. The filesystem half proves a
+   * database was created under the temp directory the config handed the app
+   * (if `DEVOS_DATA_DIR` failed to propagate through tauri-driver, no file
+   * appears there). The UI half proves that *this* is the database the running
+   * app is answering IPC from: a fresh kernel boot creates exactly one
+   * workspace and no projects, so the dashboard must show the first-run empty
+   * state. A run that leaked into `%APPDATA%` fails the second half on any
+   * machine where DevOS has ever been used.
+   */
+  it("runs against an isolated, first-run database", async () => {
+    const dataDir = process.env.DEVOS_DATA_DIR;
+    expect(dataDir).toBeTruthy();
+    expect(dataDir.startsWith(os.tmpdir())).toBe(true);
+    expect(existsSync(path.join(dataDir, "devos.db"))).toBe(true);
+
+    await browser.waitUntil(
+      async () => (await textOf("main"))?.includes("No projects yet") ?? false,
+      {
+        timeout: 30_000,
+        timeoutMsg: "dashboard did not show first-run empty state",
+      },
+    );
+
+    // Each stat card renders "<value>" then "<label>" as sibling <p>s, so the
+    // count sits one index before its label. Polled rather than read once:
+    // "No projects yet" also renders while the workspace query is still in
+    // flight, and an in-flight card shows an em dash.
+    await browser.waitUntil(
+      async () => {
+        const stats = await textsOf("main .grid p");
+        const label = stats.findIndex((t) => t.trim() === "Workspaces");
+        // Exactly one: the default "Personal" workspace a fresh kernel boot
+        // creates. Anything else means this is not a first-run database.
+        return label > 0 && stats[label - 1].trim() === "1";
+      },
+      {
+        timeout: 30_000,
+        timeoutMsg: "workspace count was never exactly 1 on a fresh database",
+      },
     );
   });
 

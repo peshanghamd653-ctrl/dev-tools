@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { useGitStore } from "@/features/git/store";
 import { useProjects } from "@/features/projects/hooks";
 import { useActiveWorkspace } from "@/features/workspaces/hooks";
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { isDesktopShell, ipc } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
@@ -111,7 +111,7 @@ export function AiPage() {
     });
   }, [pendingPrompt, active, activeId, send, setPendingPrompt]);
 
-  if (!inDesktopShell) {
+  if (!isDesktopShell()) {
     return (
       <div className="mx-auto max-w-3xl p-6">
         <Card>

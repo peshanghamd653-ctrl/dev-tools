@@ -1,31 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { ipc, isDesktopShell } from "@/shared/ipc/client";
 
 export const dbKeys = {
   connections: ["db", "connections"] as const,
   schema: (id: string) => ["db", "schema", id] as const,
 };
 
-/**
- * The backend refuses non-read statements unless `allowWrite` is set, and
- * reports that refusal as an ordinary error string. Detect it so the results
- * pane can point at the toggle instead of dumping the raw message.
- */
-export function isWriteBlocked(error: unknown): boolean {
-  const message = String(error).toLowerCase();
-  return (
-    (message.includes("write") && message.includes("block")) ||
-    message.includes("read-only") ||
-    message.includes("readonly")
-  );
-}
-
 export function useDbConnections() {
   return useQuery({
     queryKey: dbKeys.connections,
     queryFn: ipc.dbConnections,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
   });
 }
 
@@ -33,7 +19,7 @@ export function useDbSchema(id: string | null) {
   return useQuery({
     queryKey: dbKeys.schema(id ?? "none"),
     queryFn: () => ipc.dbSchema(id ?? ""),
-    enabled: inDesktopShell && Boolean(id),
+    enabled: isDesktopShell() && Boolean(id),
     staleTime: 30_000,
   });
 }

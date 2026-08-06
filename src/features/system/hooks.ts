@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { ipc, isDesktopShell } from "@/shared/ipc/client";
 
 export const systemKeys = {
   snapshot: ["system", "snapshot"] as const,
@@ -16,7 +16,7 @@ export function useSystemSnapshot() {
   return useQuery({
     queryKey: systemKeys.snapshot,
     queryFn: ipc.systemSnapshot,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
     refetchInterval: 3000,
     // A snapshot is worthless the moment it lands; never serve a stale one.
     staleTime: 0,

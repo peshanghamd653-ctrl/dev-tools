@@ -1,31 +1,7 @@
+// Byte formatting is shared now — see `src/shared/lib/format.test.ts`.
 import { describe, expect, it } from "vitest";
 
-import {
-  formatBytes,
-  formatPercent,
-  formatUptime,
-  loadColor,
-  usageRatio,
-} from "./format";
-
-describe("formatBytes", () => {
-  it("scales through binary units", () => {
-    expect(formatBytes(512)).toBe("512 B");
-    expect(formatBytes(2048)).toBe("2.0 KB");
-    expect(formatBytes(5 * 1024 ** 2)).toBe("5.0 MB");
-    expect(formatBytes(13.5 * 1024 ** 3)).toBe("13.5 GB");
-  });
-
-  it("drops the decimal once the number is three digits wide", () => {
-    expect(formatBytes(512 * 1024 ** 3)).toBe("512 GB");
-  });
-
-  it("never renders a raw byte count for zero or nonsense input", () => {
-    expect(formatBytes(0)).toBe("0 B");
-    expect(formatBytes(-1)).toBe("0 B");
-    expect(formatBytes(Number.NaN)).toBe("0 B");
-  });
-});
+import { formatPercent, formatUptime, loadColor, usageRatio } from "./format";
 
 describe("formatUptime", () => {
   it("renders days, hours and minutes, skipping empty leading units", () => {

@@ -4,7 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { isDesktopShell, ipc } from "@/shared/ipc/client";
 
 export const projectKeys = {
   list: (workspaceId: string) => ["projects", workspaceId] as const,
@@ -14,7 +14,7 @@ export function useProjects(workspaceId: string | undefined) {
   return useQuery({
     queryKey: projectKeys.list(workspaceId ?? "none"),
     queryFn: () => ipc.projectsList(workspaceId ?? ""),
-    enabled: inDesktopShell && Boolean(workspaceId),
+    enabled: isDesktopShell() && Boolean(workspaceId),
   });
 }
 

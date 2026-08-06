@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { isDesktopShell, ipc } from "@/shared/ipc/client";
 
 export const monitorKeys = {
   list: ["monitors", "list"] as const,
@@ -15,7 +15,7 @@ export function useMonitors() {
   return useQuery({
     queryKey: monitorKeys.list,
     queryFn: ipc.monitorsList,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
     refetchInterval: 10_000,
   });
 }

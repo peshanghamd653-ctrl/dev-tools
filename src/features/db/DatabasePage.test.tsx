@@ -76,8 +76,14 @@ function typeSql(sql: string) {
   });
 }
 
+/**
+ * Queried by its fixed accessible name, not by its label: the label *is* the
+ * state, so matching on it means a test can only find the toggle if it already
+ * knows which way it is set. `aria-label` + `aria-pressed` is what makes the
+ * control nameable — asserting the visible text stays a separate concern.
+ */
 function writeToggle() {
-  return screen.getByRole("button", { name: /^(Read-only|Writes enabled)$/ });
+  return screen.getByRole("button", { name: "Allow SQL writes" });
 }
 
 beforeEach(resetClientMock);
@@ -103,6 +109,19 @@ describe("DatabasePage write safety", () => {
     expect(toggle).toHaveTextContent("Read-only");
     expect(toggle).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByText(/There is no undo/)).not.toBeInTheDocument();
+  });
+
+  it("keeps one accessible name in both states, so it can always be found", async () => {
+    await renderConnected();
+
+    // The visible label flips; the name a screen reader (or a test) uses to
+    // address the control does not. Without this, "the write toggle" is only
+    // reachable by guessing its current state.
+    const before = writeToggle();
+    fireEvent.click(before);
+    expect(writeToggle()).toBe(before);
+    expect(before).toHaveTextContent("Writes enabled");
+    expect(before).toHaveAttribute("aria-pressed", "true");
   });
 
   it("sends allowWrite=false unless the user opts in", async () => {

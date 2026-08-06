@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { deployKeys } from "@/features/deploy/hooks";
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { isDesktopShell, ipc } from "@/shared/ipc/client";
 
 export const secretKeys = {
   /**
@@ -17,7 +17,7 @@ export function useSecretNames() {
   return useQuery({
     queryKey: secretKeys.list,
     queryFn: ipc.secretList,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
   });
 }
 

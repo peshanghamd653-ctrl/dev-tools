@@ -100,12 +100,20 @@ export type {
   Workspace,
 };
 
-/** True when running inside the Tauri shell (vs. a plain browser tab). */
-export const inDesktopShell =
-  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+/**
+ * True when running inside the Tauri shell (vs. a plain browser tab).
+ *
+ * Evaluated on every call rather than once at import: `__TAURI_INTERNALS__` is
+ * injected by the shell, and any module that happens to be imported before
+ * that lands would otherwise snapshot `false` for the life of the process. It
+ * also means a test can flip the answer without a module mock.
+ */
+export function isDesktopShell(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
 
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  if (!inDesktopShell) {
+  if (!isDesktopShell()) {
     return Promise.reject(
       new Error("DevOS IPC is only available inside the desktop shell"),
     );
@@ -278,7 +286,7 @@ export const ipc = {
 export function onKernelEvent(
   handler: (event: KernelEvent) => void,
 ): () => void {
-  if (!inDesktopShell) return () => {};
+  if (!isDesktopShell()) return () => {};
   let unlisten: UnlistenFn | undefined;
   let cancelled = false;
   void listen<KernelEvent>("devos://event", (e) => handler(e.payload)).then(

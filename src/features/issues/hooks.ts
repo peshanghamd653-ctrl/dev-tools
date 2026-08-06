@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useGitStore } from "@/features/git/store";
 import { useProjects } from "@/features/projects/hooks";
 import { useActiveWorkspace } from "@/features/workspaces/hooks";
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { isDesktopShell, ipc } from "@/shared/ipc/client";
 
 export const issueKeys = {
   all: ["issues"] as const,
@@ -22,7 +22,7 @@ export function useIssueConfigured(enabled: boolean) {
   return useQuery({
     queryKey: issueKeys.configured,
     queryFn: ipc.issueConfigured,
-    enabled: inDesktopShell && enabled,
+    enabled: isDesktopShell() && enabled,
     retry: false,
   });
 }
@@ -36,7 +36,7 @@ export function useIssueTargets(projectPath: string | null) {
   return useQuery({
     queryKey: issueKeys.targets(projectPath ?? "none"),
     queryFn: () => ipc.issueTargets(projectPath ?? ""),
-    enabled: inDesktopShell && Boolean(projectPath),
+    enabled: isDesktopShell() && Boolean(projectPath),
     retry: false,
     staleTime: 60_000,
   });

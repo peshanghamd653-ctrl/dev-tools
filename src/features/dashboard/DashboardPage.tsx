@@ -8,7 +8,7 @@ import {
   useActiveWorkspace,
   useWorkspaces,
 } from "@/features/workspaces/hooks";
-import { inDesktopShell } from "@/shared/ipc/client";
+import { isDesktopShell } from "@/shared/ipc/client";
 import { useDialogStore } from "@/shared/stores/dialogs";
 import { Button } from "@/shared/ui/button";
 import {
@@ -36,7 +36,7 @@ export function DashboardPage() {
           {activeWorkspace ? activeWorkspace.name : "Dashboard"}
         </h1>
         <p className="text-sm text-muted-foreground">
-          {inDesktopShell
+          {isDesktopShell()
             ? "Your development operating center."
             : "Running outside the desktop shell — data is unavailable."}
         </p>

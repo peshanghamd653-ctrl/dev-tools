@@ -1,23 +1,12 @@
 /**
- * Presentation helpers for the system strip. Raw byte counts and raw second
- * counts never reach the UI — a snapshot reports `memUsed: 13_958_643_712`,
- * and nobody reads that as 13 GB at a glance.
+ * Presentation helpers for the system strip. Raw second counts and raw
+ * percentages never reach the UI — a snapshot reports `uptimeSecs: 273_120`,
+ * and nobody reads that as three days at a glance.
+ *
+ * Byte formatting used to live here too. It moved to `@/shared/lib/format`
+ * when three other pages turned out to be carrying their own truncated copies
+ * of it; this file keeps only what is genuinely about the system strip.
  */
-
-const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
-
-/** `13_958_643_712` -> `13.0 GB`. Binary units, matching what the OS reports. */
-export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  const exponent = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    UNITS.length - 1,
-  );
-  const value = bytes / 1024 ** exponent;
-  // Whole bytes have no fraction; past three digits the decimal is noise.
-  const decimals = exponent === 0 ? 0 : value >= 100 ? 0 : 1;
-  return `${value.toFixed(decimals)} ${UNITS[exponent]}`;
-}
 
 /**
  * `273_120` -> `3d 3h 52m`. Seconds only appear below a minute, because an

@@ -5,7 +5,7 @@ import { Columns2, Plus, Sparkles, Terminal, Unplug, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAiStore } from "@/features/ai/store";
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { isDesktopShell, ipc } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
@@ -55,7 +55,7 @@ export function TerminalPage() {
   }
 
   useEffect(() => {
-    if (!inDesktopShell || bootstrapped.current) return;
+    if (!isDesktopShell() || bootstrapped.current) return;
     bootstrapped.current = true;
     void (async () => {
       await reconcileSessions();
@@ -68,7 +68,7 @@ export function TerminalPage() {
     })();
   }, []);
 
-  if (!inDesktopShell) {
+  if (!isDesktopShell()) {
     return (
       <div className="mx-auto max-w-3xl p-6">
         <Card>

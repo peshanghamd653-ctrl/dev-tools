@@ -11,7 +11,7 @@ import {
 import { toast } from "sonner";
 
 import {
-  inDesktopShell,
+  isDesktopShell,
   type MonitorCheck,
   type MonitorStatus,
 } from "@/shared/ipc/client";
@@ -59,7 +59,7 @@ export function MonitorsPage() {
   const create = useMonitorCreate();
   const [addOpen, setAddOpen] = useState(false);
 
-  if (!inDesktopShell) {
+  if (!isDesktopShell()) {
     return (
       <EmptyCard title="Uptime monitoring needs the desktop shell">
         Checks run in a background scheduler inside the DevOS process — there is

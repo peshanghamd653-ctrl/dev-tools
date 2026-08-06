@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { inDesktopShell, type Deployment } from "@/shared/ipc/client";
+import { isDesktopShell, type Deployment } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
@@ -48,7 +48,7 @@ export function DeployPage() {
     ordered.find((project) => project.id === selectedId) ?? ordered[0] ?? null;
   const deployments = useDeployments(selected?.id ?? null);
 
-  if (!inDesktopShell) {
+  if (!isDesktopShell()) {
     return (
       <Notice title="Deployments need the desktop shell">
         The Vercel token lives in the encrypted secret store inside the DevOS

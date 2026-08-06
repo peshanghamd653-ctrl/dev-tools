@@ -4,7 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { isDesktopShell, ipc } from "@/shared/ipc/client";
 
 export const gitKeys = {
   all: (path: string) => ["git", path] as const,
@@ -19,7 +19,7 @@ export function useGitStatus(path: string | undefined) {
   return useQuery({
     queryKey: gitKeys.status(path ?? "none"),
     queryFn: () => ipc.gitStatus(path ?? ""),
-    enabled: inDesktopShell && Boolean(path),
+    enabled: isDesktopShell() && Boolean(path),
     refetchInterval: 4000,
   });
 }
@@ -28,7 +28,7 @@ export function useGitLog(path: string | undefined) {
   return useQuery({
     queryKey: gitKeys.log(path ?? "none"),
     queryFn: () => ipc.gitLog(path ?? "", 50),
-    enabled: inDesktopShell && Boolean(path),
+    enabled: isDesktopShell() && Boolean(path),
     staleTime: 10_000,
   });
 }
@@ -37,7 +37,7 @@ export function useGitBranches(path: string | undefined) {
   return useQuery({
     queryKey: gitKeys.branches(path ?? "none"),
     queryFn: () => ipc.gitBranches(path ?? ""),
-    enabled: inDesktopShell && Boolean(path),
+    enabled: isDesktopShell() && Boolean(path),
     staleTime: 10_000,
   });
 }
@@ -51,7 +51,7 @@ export function useGitDiff(
   return useQuery({
     queryKey: gitKeys.diff(path ?? "none", file ?? "none", staged),
     queryFn: () => ipc.gitDiff(path ?? "", file ?? "", staged, untracked),
-    enabled: inDesktopShell && Boolean(path) && Boolean(file),
+    enabled: isDesktopShell() && Boolean(path) && Boolean(file),
     refetchInterval: 4000,
   });
 }

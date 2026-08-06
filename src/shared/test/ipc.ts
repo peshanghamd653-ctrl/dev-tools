@@ -3,11 +3,13 @@
  *
  * Two things make the real module awkward to drive from a test:
  *
- * 1. `inDesktopShell` is a module-level `const` derived once, at import time,
- *    from `window.__TAURI_INTERNALS__`. Every page and every hook branches on
- *    it. Exposing it here as a *getter* over mutable state means one test file
- *    can exercise both the desktop path and the browser-tab path without
- *    resetting the module registry between tests.
+ * 1. Whether the app is inside the Tauri shell is a global that every page and
+ *    every hook branches on. `isDesktopShell()` is a function evaluated per
+ *    call, so the double just returns mutable state and one test file can
+ *    drive both the desktop and browser paths. (It used to be an import-time
+ *    const, which forced this double to expose a *getter* — a plain property
+ *    was read once when the mock factory ran and went stale. That const is
+ *    gone; the function form is what makes this straightforward.)
  * 2. `ipc` has ~70 methods. Listing them by hand would drift, so the double is
  *    a proxy that mints a `vi.fn()` on first access and remembers it. Tests
  *    still get full type checking, because the test file imports `ipc` from
@@ -47,7 +49,7 @@ function stub(name: string): Mock {
   return existing;
 }
 
-/** Drive the `inDesktopShell` branch that every page short-circuits on. */
+/** Drive the desktop-shell branch that every page short-circuits on. */
 export function setDesktopShell(value: boolean): void {
   desktopShell = value;
 }
@@ -71,9 +73,7 @@ export function createClientMock() {
   });
 
   return {
-    get inDesktopShell() {
-      return desktopShell;
-    },
+    isDesktopShell: () => desktopShell,
     ipc,
     onKernelEvent: vi.fn(() => () => {}),
   };

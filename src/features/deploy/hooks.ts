@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { inDesktopShell, ipc } from "@/shared/ipc/client";
+import { isDesktopShell, ipc } from "@/shared/ipc/client";
 
 export const deployKeys = {
   /** Root — invalidated when the stored Vercel token changes. */
@@ -20,7 +20,7 @@ export function useDeployConfigured() {
   return useQuery({
     queryKey: deployKeys.configured,
     queryFn: ipc.deployConfigured,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
   });
 }
 
@@ -36,7 +36,7 @@ export function useDeployProjects(enabled: boolean) {
   return useQuery({
     queryKey: deployKeys.projects,
     queryFn: ipc.deployProjects,
-    enabled: inDesktopShell && enabled,
+    enabled: isDesktopShell() && enabled,
     retry: false,
     staleTime: 60_000,
   });
@@ -50,7 +50,7 @@ export function useDeployments(projectId: string | null) {
   return useQuery({
     queryKey: deployKeys.deployments(projectId ?? "none"),
     queryFn: () => ipc.deployList(projectId ?? ""),
-    enabled: inDesktopShell && Boolean(projectId),
+    enabled: isDesktopShell() && Boolean(projectId),
     retry: false,
     refetchInterval: 30_000,
   });

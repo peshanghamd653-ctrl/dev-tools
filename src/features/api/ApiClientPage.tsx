@@ -4,13 +4,14 @@ import { History, Plus, Save, Send, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
-  inDesktopShell,
   ipc,
+  isDesktopShell,
   type ApiHeader,
   type ApiRequestSpec,
   type ApiResponse,
   type SavedRequest,
 } from "@/shared/ipc/client";
+import { formatBytes } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
@@ -46,12 +47,12 @@ export function ApiClientPage() {
   const { data: saved } = useQuery({
     queryKey: ["api", "saved"],
     queryFn: ipc.apiRequests,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
   });
   const { data: history } = useQuery({
     queryKey: ["api", "history"],
     queryFn: ipc.apiHistory,
-    enabled: inDesktopShell,
+    enabled: isDesktopShell(),
   });
 
   const spec = (): ApiRequestSpec => ({
@@ -78,7 +79,7 @@ export function ApiClientPage() {
     setResponse(null);
   }
 
-  if (!inDesktopShell) {
+  if (!isDesktopShell()) {
     return (
       <div className="mx-auto max-w-3xl p-6">
         <Card>
@@ -320,7 +321,7 @@ export function ApiClientPage() {
                   {response.status}
                 </Badge>
                 <span className="text-xs text-muted-foreground">
-                  {response.durationMs} ms · {formatSize(response.sizeBytes)}
+                  {response.durationMs} ms · {formatBytes(response.sizeBytes)}
                   {response.truncated && " · truncated"}
                 </span>
                 <div className="flex-1" />
@@ -490,10 +491,4 @@ function prettyBody(body: string): string {
   } catch {
     return body;
   }
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

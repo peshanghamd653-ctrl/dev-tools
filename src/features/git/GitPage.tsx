@@ -18,7 +18,7 @@ import { useAiStore } from "@/features/ai/store";
 
 import { useProjects } from "@/features/projects/hooks";
 import { useActiveWorkspace } from "@/features/workspaces/hooks";
-import { inDesktopShell, ipc, type GitFileEntry } from "@/shared/ipc/client";
+import { isDesktopShell, ipc, type GitFileEntry } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
@@ -88,7 +88,7 @@ export function GitPage() {
     selected?.untracked ?? false,
   );
 
-  if (!inDesktopShell) {
+  if (!isDesktopShell()) {
     return (
       <Notice title="Git needs the desktop shell">
         This page is running in a plain browser tab.

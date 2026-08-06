@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from "@/shared/ui/card";
 import { Input } from "@/shared/ui/input";
+import { ThemePicker } from "@/shared/theme/ThemePicker";
 import { Separator } from "@/shared/ui/separator";
 
 export function SettingsPage() {
@@ -50,15 +51,12 @@ export function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-base">Appearance</CardTitle>
           <CardDescription>
-            DevOS is dark-first. Additional themes arrive with the theme system
-            in M5.
+            DevOS is dark-first — Midnight is the default. Your choice is
+            remembered and applied before the window paints.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between text-sm">
-            <span>Theme</span>
-            <span className="text-muted-foreground">Dark (default)</span>
-          </div>
+          <ThemePicker />
         </CardContent>
       </Card>
 

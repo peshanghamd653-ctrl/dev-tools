@@ -5,11 +5,68 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DevOS</title>
     <style>
-      /* Painted before any CSS loads: prevents a white flash in the dark app. */
-      html {
-        background: #101013;
+      /* Last-resort paint if the boot script below never runs (JS disabled,
+         CSP, a syntax error): the default theme's background.
+
+         Scoped to the un-themed state on purpose. This rule is unlayered and
+         would otherwise outrank `@layer base { html { background-color:
+         var(--background) } }` for the whole session, pinning <html> to the
+         dark value behind a light theme (visible on overscroll). */
+      html:not([class*="theme-"]) {
+        background: #0f0f12;
       }
     </style>
+
+    <!--
+      Theme boot. Must stay inline and in <head>: it has to run before the
+      first paint, and in dev the stylesheet is injected by JS long after.
+      A useEffect (or anything in the module graph) is far too late.
+
+      Mirrors resolveTheme() from src/shared/theme/themes.ts. The duplication
+      is deliberate and small; src/shared/theme/themes.test.ts parses this
+      file and fails if the theme list, storage key or default drift apart.
+    -->
+    <script>
+      (function () {
+        // id -> [appearance, pre-paint background = that theme's --background]
+        var THEMES = {
+          midnight: ["dark", "#0f0f12"],
+          daylight: ["light", "#fafafb"],
+          obsidian: ["dark", "#050506"],
+        };
+        var DEFAULT_THEME = "midnight";
+        var SYSTEM = { dark: "midnight", light: "daylight" };
+        var STORAGE_KEY = "devos-theme";
+
+        var preference = DEFAULT_THEME;
+        try {
+          var raw = window.localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            var state = JSON.parse(raw).state;
+            if (state && state.preference) preference = state.preference;
+          }
+        } catch (err) {
+          /* unreadable storage: keep the default rather than fail to paint */
+        }
+
+        var id = preference;
+        if (preference === "system") {
+          id =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? SYSTEM.dark
+              : SYSTEM.light;
+        }
+        if (!THEMES[id]) id = DEFAULT_THEME;
+
+        var root = document.documentElement;
+        root.classList.add("theme-" + id);
+        // Inline so it beats the not-yet-loaded stylesheet. applyThemeClass()
+        // strips both once React mounts, handing control back to the cascade.
+        root.style.colorScheme = THEMES[id][0];
+        root.style.backgroundColor = THEMES[id][1];
+      })();
+    </script>
   </head>
 
   <body>

@@ -2,14 +2,30 @@
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
+/*
+ * Kept for the shadcn/ui primitives that ship `dark:` utilities, but DevOS
+ * never sets `.dark` on any element: a theme is a token assignment, not a
+ * variant switch. Every `dark:` branch stays dormant in every theme, which is
+ * what guarantees the default dark theme renders identically to pre-M5 DevOS.
+ */
 @custom-variant dark (&:is(.dark *));
 
-/*
- * DevOS is dark-first: :root carries the dark palette.
- * A light theme can be added later as a `.light` override without
- * touching component code.
- */
-:root {
+/* ==========================================================================
+ * Themes (M5)
+ *
+ * One class per theme on <html>, applied before first paint by the boot
+ * script in index.html. Every theme assigns the *same* token set — a missing
+ * token would inherit the previous theme's value and produce invisible text,
+ * so `src/shared/theme/tokens.test.ts` asserts completeness against
+ * `.theme-midnight`.
+ *
+ * `:root` keeps the midnight values so the app is never unstyled if the class
+ * is missing (script blocked, JS disabled, a bare HTML harness).
+ * ========================================================================== */
+
+/* --- Midnight: the original DevOS dark palette. Values unchanged. --------- */
+:root,
+.theme-midnight {
   --radius: 0.5rem;
 
   --background: oklch(0.171 0.005 285);
@@ -46,6 +62,169 @@
   --sidebar-accent-foreground: oklch(0.93 0.004 285);
   --sidebar-border: oklch(0.24 0.006 285);
   --sidebar-ring: oklch(0.585 0.17 277);
+}
+
+/* --- Daylight: the light theme. ------------------------------------------ *
+ * Same neutral hue (285) as midnight so the app keeps its cool-grey
+ * character. Every accent is pushed dark enough to clear 4.5:1 on white,
+ * which is the opposite direction from the dark themes — a colour picked to
+ * glow on near-black is exactly the colour that disappears on near-white. */
+.theme-daylight {
+  --radius: 0.5rem;
+
+  --background: oklch(0.985 0.002 285);
+  --foreground: oklch(0.215 0.012 285);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.215 0.012 285);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.215 0.012 285);
+  --primary: oklch(0.49 0.19 277);
+  --primary-foreground: oklch(0.99 0.002 285);
+  --secondary: oklch(0.955 0.004 285);
+  --secondary-foreground: oklch(0.255 0.012 285);
+  --muted: oklch(0.955 0.004 285);
+  --muted-foreground: oklch(0.47 0.014 285);
+  --accent: oklch(0.935 0.006 285);
+  --accent-foreground: oklch(0.24 0.012 285);
+  --destructive: oklch(0.505 0.205 27);
+  --destructive-foreground: oklch(0.99 0.002 285);
+  --border: oklch(0.9 0.005 285);
+  --input: oklch(0.85 0.006 285);
+  --ring: oklch(0.49 0.19 277);
+
+  --chart-1: oklch(0.49 0.19 277);
+  --chart-2: oklch(0.52 0.13 235);
+  --chart-3: oklch(0.5 0.13 155);
+  --chart-4: oklch(0.58 0.14 78);
+  --chart-5: oklch(0.53 0.2 27);
+
+  --sidebar: oklch(0.962 0.004 285);
+  --sidebar-foreground: oklch(0.215 0.012 285);
+  --sidebar-primary: oklch(0.49 0.19 277);
+  --sidebar-primary-foreground: oklch(0.99 0.002 285);
+  --sidebar-accent: oklch(0.915 0.006 285);
+  --sidebar-accent-foreground: oklch(0.215 0.012 285);
+  --sidebar-border: oklch(0.895 0.005 285);
+  --sidebar-ring: oklch(0.49 0.19 277);
+}
+
+/* --- Obsidian: near-black, high-contrast dark. --------------------------- *
+ * For OLED panels and bright rooms. Every text pair clears 4.5:1 (midnight
+ * leaves primary and destructive text at AA-large). The primary swaps to a
+ * bright indigo with a near-black label, which is what lets the button pass
+ * in both directions instead of trading one side off against the other. */
+.theme-obsidian {
+  --radius: 0.5rem;
+
+  --background: oklch(0.115 0.004 280);
+  --foreground: oklch(0.965 0.003 280);
+  --card: oklch(0.155 0.005 280);
+  --card-foreground: oklch(0.965 0.003 280);
+  --popover: oklch(0.145 0.005 280);
+  --popover-foreground: oklch(0.965 0.003 280);
+  --primary: oklch(0.655 0.175 277);
+  --primary-foreground: oklch(0.14 0.012 280);
+  --secondary: oklch(0.2 0.006 280);
+  --secondary-foreground: oklch(0.965 0.003 280);
+  --muted: oklch(0.2 0.006 280);
+  --muted-foreground: oklch(0.745 0.012 280);
+  --accent: oklch(0.235 0.008 280);
+  --accent-foreground: oklch(0.98 0.003 280);
+  --destructive: oklch(0.575 0.205 27);
+  --destructive-foreground: oklch(0.99 0.002 285);
+  --border: oklch(0.3 0.008 280);
+  --input: oklch(0.34 0.009 280);
+  --ring: oklch(0.655 0.175 277);
+
+  --chart-1: oklch(0.655 0.175 277);
+  --chart-2: oklch(0.72 0.14 200);
+  --chart-3: oklch(0.78 0.16 145);
+  --chart-4: oklch(0.82 0.15 85);
+  --chart-5: oklch(0.7 0.2 25);
+
+  --sidebar: oklch(0.085 0.003 280);
+  --sidebar-foreground: oklch(0.965 0.003 280);
+  --sidebar-primary: oklch(0.655 0.175 277);
+  --sidebar-primary-foreground: oklch(0.14 0.012 280);
+  --sidebar-accent: oklch(0.205 0.007 280);
+  --sidebar-accent-foreground: oklch(0.98 0.003 280);
+  --sidebar-border: oklch(0.27 0.008 280);
+  --sidebar-ring: oklch(0.655 0.175 277);
+}
+
+/* --- Status palette layer ------------------------------------------------ *
+ * The semantic tokens above are not the whole story: monitor up/down, deploy
+ * state, git file status and the SQL write-toggle warning are painted with
+ * raw Tailwind palette utilities (`text-emerald-300`, `bg-yellow-500/10`, …)
+ * in feature code owned by other modules. Tailwind v4 compiles those to
+ * `var(--color-emerald-300)`, so the palette itself is themeable — no
+ * component edits and no new component-level variables.
+ *
+ * Only the light theme needs it. Shades 200–400 were chosen to glow on
+ * near-black; on white they vanish, so daylight re-points them at the dark
+ * end of the same hue while preserving shade order (200 lightest → 400
+ * darkest). The 500s stay fills (dots, bars, 10–15% tints) and only move far
+ * enough to clear 3:1 against white. Dark themes keep Tailwind's defaults.  */
+.theme-daylight {
+  --color-emerald-200: oklch(0.52 0.13 160);
+  --color-emerald-300: oklch(0.48 0.125 160);
+  --color-emerald-400: oklch(0.44 0.115 160);
+  --color-emerald-500: oklch(0.49 0.135 160);
+
+  --color-green-200: oklch(0.52 0.13 150);
+  --color-green-300: oklch(0.48 0.125 150);
+  --color-green-400: oklch(0.44 0.115 150);
+  --color-green-500: oklch(0.49 0.135 150);
+
+  --color-red-200: oklch(0.52 0.19 25);
+  --color-red-300: oklch(0.48 0.19 25);
+  --color-red-400: oklch(0.44 0.175 25);
+  --color-red-500: oklch(0.55 0.215 27);
+
+  --color-rose-200: oklch(0.52 0.185 15);
+  --color-rose-300: oklch(0.48 0.185 15);
+  --color-rose-400: oklch(0.44 0.17 15);
+  --color-rose-500: oklch(0.55 0.21 15);
+
+  --color-yellow-200: oklch(0.52 0.12 75);
+  --color-yellow-300: oklch(0.48 0.115 72);
+  --color-yellow-400: oklch(0.44 0.105 70);
+  --color-yellow-500: oklch(0.62 0.145 78);
+
+  --color-amber-200: oklch(0.52 0.125 70);
+  --color-amber-300: oklch(0.48 0.12 68);
+  --color-amber-400: oklch(0.44 0.11 66);
+  --color-amber-500: oklch(0.62 0.15 72);
+
+  --color-orange-200: oklch(0.55 0.16 45);
+  --color-orange-300: oklch(0.51 0.16 45);
+  --color-orange-400: oklch(0.48 0.155 45);
+  --color-orange-500: oklch(0.58 0.18 45);
+
+  --color-sky-200: oklch(0.52 0.13 240);
+  --color-sky-300: oklch(0.48 0.13 240);
+  --color-sky-400: oklch(0.44 0.125 240);
+  --color-sky-500: oklch(0.58 0.155 240);
+
+  --color-blue-200: oklch(0.52 0.155 255);
+  --color-blue-300: oklch(0.48 0.16 255);
+  --color-blue-400: oklch(0.44 0.155 255);
+  --color-blue-500: oklch(0.55 0.19 255);
+}
+
+/*
+ * `color-scheme` drives native scrollbars, form controls and the webview's
+ * own canvas colour. Set per theme class so a nested preview (the Settings
+ * picker renders real, live token subtrees) matches its own appearance.
+ */
+:root,
+.theme-midnight,
+.theme-obsidian {
+  color-scheme: dark;
+}
+
+.theme-daylight {
+  color-scheme: light;
 }
 
 @theme inline {
@@ -96,8 +275,13 @@
     @apply border-border outline-ring/50;
   }
 
+  /*
+   * The boot script paints this inline before the stylesheet exists; it
+   * removes the inline value once React takes over so theme switches at
+   * runtime are handled here (an inline style would outrank any layer).
+   */
   html {
-    color-scheme: dark;
+    background-color: var(--background);
   }
 
   body {

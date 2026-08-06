@@ -9,11 +9,16 @@ import { CreateWorkspaceDialog } from "@/app/components/dialogs/CreateWorkspaceD
 import { CaptureIssueDialog } from "@/features/issues/CaptureIssueDialog";
 import { useGlobalHotkeys } from "@/shared/hooks/useGlobalHotkeys";
 import { useKernelEventBridge } from "@/shared/hooks/useKernelEvents";
+import { toasterTheme } from "@/shared/theme/apply";
+import { useThemeSync } from "@/shared/theme/useTheme";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 
 export function AppShell({ children }: { children: ReactNode }) {
   useKernelEventBridge();
   useGlobalHotkeys();
+  // Keeps <html> on the right theme class after boot: preference changes and
+  // live OS appearance flips. First paint is handled by index.html's script.
+  const theme = useThemeSync();
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -28,7 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <CreateWorkspaceDialog />
       <AddProjectDialog />
       <CaptureIssueDialog />
-      <Toaster theme="dark" position="bottom-right" richColors />
+      <Toaster theme={toasterTheme(theme)} position="bottom-right" richColors />
     </TooltipProvider>
   );
 }

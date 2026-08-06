@@ -12,7 +12,10 @@ import type { ApiHistoryEntry } from "./bindings/ApiHistoryEntry";
 import type { ApiRequestSpec } from "./bindings/ApiRequestSpec";
 import type { ApiResponse } from "./bindings/ApiResponse";
 import type { AppInfo } from "./bindings/AppInfo";
+import type { CapturedShot } from "./bindings/CapturedShot";
 import type { ChatMessage } from "./bindings/ChatMessage";
+import type { CreatedIssue } from "./bindings/CreatedIssue";
+import type { IssueTarget } from "./bindings/IssueTarget";
 import type { CommandDescriptor } from "./bindings/CommandDescriptor";
 import type { Conversation } from "./bindings/Conversation";
 import type { DbColumn } from "./bindings/DbColumn";
@@ -57,9 +60,11 @@ export type {
   ApiResponse,
   AppInfo,
   SavedRequest,
+  CapturedShot,
   ChatMessage,
   CommandDescriptor,
   Conversation,
+  CreatedIssue,
   DbColumn,
   DbConnection,
   DbSchema,
@@ -77,6 +82,7 @@ export type {
   GitStatus,
   IndexHit,
   IndexStats,
+  IssueTarget,
   JobInfo,
   KernelEvent,
   MemoryEntry,
@@ -258,6 +264,14 @@ export const ipc = {
   deployProjects: () => call<DeployProject[]>("deploy_projects"),
   deployList: (projectId: string) =>
     call<Deployment[]>("deploy_list", { projectId }),
+
+  issueConfigured: () => call<boolean>("issue_configured"),
+  issueCapture: () => call<CapturedShot>("issue_capture"),
+  issueTargets: (projectPath: string) =>
+    call<IssueTarget[]>("issue_targets", { projectPath }),
+  issueCreate: (owner: string, name: string, title: string, body: string) =>
+    call<CreatedIssue>("issue_create", { owner, name, title, body }),
+  issueCopyImage: (path: string) => call<void>("issue_copy_image", { path }),
 };
 
 /** Subscribe to the kernel event stream. Returns an unsubscribe function. */

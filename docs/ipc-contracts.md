@@ -240,6 +240,35 @@ being injectable is what lets every test run against a local one-shot
 server instead of `api.vercel.com`. **Nothing is persisted** — each command
 is a live read, the same as Docker.
 
+### Screenshot → issue (M4)
+
+Reached by `Ctrl+Shift+S` or the palette (`issue.capture`); there is no
+route and no nav entry, because it is an action rather than a place.
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `issue_configured` | — | `boolean` | whether a non-blank `github_token` secret exists |
+| `issue_capture` | — | `CapturedShot` | primary monitor → PNG under `$APPDATA/screenshots`, pruned to the newest 20 |
+| `issue_targets` | `projectPath` | `IssueTarget[]` | GitHub repos parsed from `git remote -v`; non-GitHub hosts are rejected by exact match, so an Enterprise or GitLab remote yields nothing rather than a wrong guess |
+| `issue_create` | `owner, name, title, body` | `CreatedIssue` | `POST /repos/{owner}/{name}/issues` |
+| `issue_copy_image` | `path` | `()` | puts a PNG on the clipboard |
+
+`CapturedShot` is `{ path, width, height, capturedAt }`, `IssueTarget` is
+`{ owner, name, remote }`, `CreatedIssue` is `{ number, url, title }`.
+
+Errors distinguish **not-configured**, **auth** (401/403), and **not-found**
+(404) — the last is worded around *access*, since the REST API returns 404
+rather than 403 for a private repo the token cannot see, and telling the
+user their repo is missing would send them to the wrong fix.
+
+Two things this contract deliberately does not do. It never sends the
+screenshot: `issue_create` posts text only, and the image reaches GitHub by
+the user pasting it, because there is no documented attachment API. And the
+frontend flattens redactions into the exported PNG before anything leaves
+the dialog — `issue_copy_image` takes a *path*, so it is only used when
+nothing was drawn; copying `shot.path` after annotation would put the
+unredacted original on the clipboard.
+
 ## Event catalog
 
 `KernelEvent` is a tagged union `{ kind, data? }`:

@@ -1,0 +1,21 @@
+[package]
+name = "devos-issue"
+description = "DevOS issue reporter module: screenshot capture and GitHub issue filing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+devos-kernel = { path = "../../devos-kernel" }
+arboard = "3"
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["process"] }
+ts-rs.workspace = true
+xcap = "0.9"
+
+[dev-dependencies]
+tempfile = "3"

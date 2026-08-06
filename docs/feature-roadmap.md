@@ -177,9 +177,13 @@ forward rather than quietly dropped:
   boundary outward, so there is nothing to reveal. The UI says that plainly
   instead of looking like it forgot a feature — see
   [security.md](security.md).
-- **Screenshot → GitHub issue** — not built. Researched 2026-08-06, and the
-  research changed the intended shape, so recording it here rather than
-  losing it:
+- ✅ **Screenshot → GitHub issue** (`Ctrl+Shift+S`, or the command palette —
+  deliberately no nav item, because this is an action rather than a place).
+  Captures the primary monitor, lets the user annotate and redact, composes
+  an issue with a system-context block, shows the exact body for review and
+  editing, files it via the GitHub REST API, and hands the image off through
+  the clipboard. Research from 2026-08-06 shaped it, and is kept here
+  because it explains why the feature looks the way it does:
   - **GitHub documents no API for attaching an image to an issue.** Release
     assets are documented and are a different thing. An undocumented
     endpoint (`uploads.github.com/user-attachments/assets`) was demonstrated
@@ -206,20 +210,31 @@ forward rather than quietly dropped:
     scope and terminal context must be opt-in and visible. Filing an issue
     would also be DevOS's **first outward-facing write**, so it needs the
     existing per-call approval gate, showing the full generated body
-    verbatim — the user is approving text they did not write.
+    verbatim — the user is approving text they did not write. Note this is a
+    **review-and-edit step, not the `ApprovalRegistry`**: that gate exists to
+    interpose on calls *the model* decided to make, and reusing it for an
+    action the user explicitly triggered would misrepresent who is asking.
   - Capture crate: `xcap` (Apache-2.0, actively maintained, Windows window
     and region capture). The older `screenshots` crate is deprecated by its
     own author in favour of it.
 
-M4 status: **partially done** — monitoring (both items), deployments, and
-the secret manager UI shipped; **screenshot → GitHub issue was not
-started**, so the milestone stays open. Two qualifications on what
-"shipped" means here: of the monitoring pair only the website monitor is an
-actual background watcher (system metrics are a live readout with no loop
-behind them), and deployments is read-only visibility, not deployment
-control. Also still outstanding under M4: automatic DB backups
-(pre-migration + daily rotating), listed in [database.md](database.md) and
-[security.md](security.md) and not yet implemented.
+M4 status: ✅ — monitoring (both items), deployments, the secret manager UI,
+automatic DB backups, and screenshot → GitHub issue all shipped. Three
+qualifications on what "shipped" means, so the tick is not read as more
+than it is:
+
+- Of the monitoring pair only the website monitor is an actual background
+  watcher; system metrics are a live readout with no loop behind them.
+- Deployments is **read-only visibility**, not deployment control
+  ([ADR-0009](adr/0009-deployments-read-only-no-write-actions.md)).
+- Screenshot → issue files the issue but **does not attach the image** —
+  GitHub documents no API for that, so the image goes via the clipboard and
+  the user pastes it. That is the deliberate shape, not a shortfall, but it
+  does mean the flow has one manual step.
+
+Backups have a real gap of their own: there is no restore path, so recovery
+means quitting the app and copying a file by hand. See
+[database.md](database.md).
 
 ### M5 — Extensibility & polish
 - WASM plugin runtime (Extism-style) + contribution manifests, plugin SDK,

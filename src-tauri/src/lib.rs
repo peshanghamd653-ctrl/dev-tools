@@ -9,6 +9,7 @@ mod docker_commands;
 mod fs_commands;
 mod git_commands;
 mod index_commands;
+mod issue_commands;
 mod monitor_commands;
 mod pathsafe;
 mod state;
@@ -53,6 +54,7 @@ pub fn run() {
             kernel.register_module(&devos_system::SystemModule);
             kernel.register_module(&devos_monitor::MonitorModule);
             kernel.register_module(&devos_deploy::DeployModule);
+            kernel.register_module(&devos_issue::IssueModule);
             let kernel = Arc::new(kernel);
 
             let secrets = tauri::async_runtime::block_on(SecretStore::init(kernel.pool.clone()))?;
@@ -227,6 +229,11 @@ pub fn run() {
             deploy_commands::deploy_configured,
             deploy_commands::deploy_projects,
             deploy_commands::deploy_list,
+            issue_commands::issue_configured,
+            issue_commands::issue_capture,
+            issue_commands::issue_targets,
+            issue_commands::issue_create,
+            issue_commands::issue_copy_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

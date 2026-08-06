@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { FolderPlus, MonitorCog, Plus } from "lucide-react";
+import { Camera, FolderPlus, MonitorCog, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { primaryNav } from "@/app/nav";
@@ -35,6 +35,7 @@ const moduleCommandHandlers: Record<
   | "openDatabase"
   | "openMonitors"
   | "openDeploy"
+  | "captureIssue"
 > = {
   "core.workspace.create": "createWorkspace",
   "core.project.add": "addProject",
@@ -47,6 +48,7 @@ const moduleCommandHandlers: Record<
   "db.open": "openDatabase",
   "monitor.open": "openMonitors",
   "deploy.open": "openDeploy",
+  "issue.capture": "captureIssue",
 };
 
 export function CommandPalette() {
@@ -54,6 +56,7 @@ export function CommandPalette() {
   const setOpen = useUiStore((s) => s.setPaletteOpen);
   const setCreateWorkspaceOpen = useDialogStore((s) => s.setCreateWorkspaceOpen);
   const setAddProjectOpen = useDialogStore((s) => s.setAddProjectOpen);
+  const setCaptureIssueOpen = useDialogStore((s) => s.setCaptureIssueOpen);
   const navigate = useNavigate();
   const { data: moduleCommands } = useModuleCommands();
   const activeWorkspace = useActiveWorkspace();
@@ -78,6 +81,7 @@ export function CommandPalette() {
     else if (handler === "openDatabase") void navigate({ to: "/database" });
     else if (handler === "openMonitors") void navigate({ to: "/monitors" });
     else if (handler === "openDeploy") void navigate({ to: "/deploy" });
+    else if (handler === "captureIssue") setCaptureIssueOpen(true);
     else if (handler === "indexProject") {
       if (!paletteProject) {
         toast.error("Add a project first");
@@ -142,6 +146,14 @@ export function CommandPalette() {
           >
             <FolderPlus className="size-4" />
             Add project
+          </CommandItem>
+          <CommandItem
+            keywords={["issue", "bug", "screenshot", "capture", "github"]}
+            onSelect={() => runAndClose(() => setCaptureIssueOpen(true))}
+          >
+            <Camera className="size-4" />
+            Report a bug with a screenshot
+            <CommandShortcut>Ctrl+Shift+S</CommandShortcut>
           </CommandItem>
         </CommandGroup>
 

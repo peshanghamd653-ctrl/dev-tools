@@ -6,6 +6,7 @@ import { Sidebar } from "@/app/components/Sidebar";
 import { Topbar } from "@/app/components/Topbar";
 import { AddProjectDialog } from "@/app/components/dialogs/AddProjectDialog";
 import { CreateWorkspaceDialog } from "@/app/components/dialogs/CreateWorkspaceDialog";
+import { CaptureIssueDialog } from "@/features/issues/CaptureIssueDialog";
 import { useGlobalHotkeys } from "@/shared/hooks/useGlobalHotkeys";
 import { useKernelEventBridge } from "@/shared/hooks/useKernelEvents";
 import { TooltipProvider } from "@/shared/ui/tooltip";
@@ -26,6 +27,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <CommandPalette />
       <CreateWorkspaceDialog />
       <AddProjectDialog />
+      <CaptureIssueDialog />
       <Toaster theme="dark" position="bottom-right" richColors />
     </TooltipProvider>
   );

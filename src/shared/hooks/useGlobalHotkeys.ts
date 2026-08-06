@@ -1,18 +1,21 @@
 import { useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
+import { useDialogStore } from "@/shared/stores/dialogs";
 import { useUiStore } from "@/shared/stores/ui";
 
 /**
  * App-wide keyboard shortcuts. Registered once in the shell.
  *   Ctrl+K  command palette      Ctrl+B  toggle sidebar
  *   Ctrl+1  dashboard            Ctrl+2  projects
- *   Ctrl+Shift+D  deployments    Ctrl+,  settings
+ *   Ctrl+Shift+D  deployments    Ctrl+Shift+S  report a bug
+ *   Ctrl+,  settings
  */
 export function useGlobalHotkeys() {
   const navigate = useNavigate();
   const togglePalette = useUiStore((s) => s.togglePalette);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const setCaptureIssueOpen = useDialogStore((s) => s.setCaptureIssueOpen);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -28,6 +31,12 @@ export function useGlobalHotkeys() {
         if (e.code === "KeyD") {
           e.preventDefault();
           void navigate({ to: "/deploy" });
+        }
+        if (e.code === "KeyS") {
+          // Opens the dialog, which takes the screenshot before rendering
+          // anything — pressing this must not put a dialog in the picture.
+          e.preventDefault();
+          setCaptureIssueOpen(true);
         }
         return;
       }
@@ -89,5 +98,5 @@ export function useGlobalHotkeys() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigate, togglePalette, toggleSidebar]);
+  }, [navigate, setCaptureIssueOpen, togglePalette, toggleSidebar]);
 }

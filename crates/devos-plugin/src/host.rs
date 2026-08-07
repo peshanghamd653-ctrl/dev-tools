@@ -16,10 +16,21 @@
 //!    equivalent of "a tool that is never offered is the one thing a prompt
 //!    injection cannot reach for".
 //! 2. **Per-call approval.** Calls in [`NEEDS_APPROVAL`] additionally block on
-//!    the user, every time, with denial on timeout. The list is checked
-//!    *before* dispatch rather than inside one match arm — that ordering is
-//!    the fix ADR-0005's update describes for `save_memory`, applied here
-//!    before the same bug can happen.
+//!    the user, every time, with denial on timeout. The list is consulted once
+//!    in `runtime::dispatch`, around every match arm, before any handler runs
+//!    — that ordering is the fix ADR-0005's update describes for
+//!    `save_memory`.
+//!
+//!    This comment used to claim that ordering was already the case. It was
+//!    not: until the 2026-08 review the check lived *inside* the `HttpFetch`
+//!    arm and [`NEEDS_APPROVAL`] was referenced nowhere outside this file, so
+//!    membership decided nothing. It happened not to be exploitable — the one
+//!    member's arm did gate — but the next call added to the list would have
+//!    read as gated to every reviewer and dispatched ungated. The test that
+//!    now holds this up is parameterised over the list itself
+//!    (`every_call_that_needs_approval_is_refused_by_a_deny_all_gate`), so
+//!    asserting the list's *contents*, which is all the old tests did, is no
+//!    longer mistaken for asserting that the list has an effect.
 
 use crate::manifest::{DbAccess, Permissions};
 
@@ -86,7 +97,8 @@ pub const IMPORT_MODULE: &str = "devos";
 pub const NEEDS_APPROVAL: &[HostCall] = &[HostCall::HttpFetch];
 
 impl HostCall {
-    /// Checked before dispatch, never inside a handler.
+    /// Consulted once by `runtime::dispatch`, around every arm, never inside a
+    /// handler. Membership here is what gates a call; nothing else does.
     pub fn needs_approval(self) -> bool {
         NEEDS_APPROVAL.contains(&self)
     }
@@ -245,6 +257,11 @@ mod tests {
         }
     }
 
+    /// Asserts the list's *contents* only. That membership has any effect is a
+    /// separate claim, and one this test cannot make — it was true here for
+    /// months while the dispatcher ignored the list entirely. The test that
+    /// makes it is `every_call_that_needs_approval_is_refused_by_a_deny_all_gate`
+    /// in `lib.rs`, which runs a real module for every member.
     #[test]
     fn only_egress_needs_per_call_approval() {
         assert!(HostCall::HttpFetch.needs_approval());

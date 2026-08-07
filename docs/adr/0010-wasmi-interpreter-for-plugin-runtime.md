@@ -2,6 +2,12 @@
 
 Status: accepted
 Date: 2026-08-07
+Amended: 2026-08-07 — an adversarial review of `crates/devos-plugin` found
+three of the enforced properties recorded below were claimed rather than true.
+The **decision is unchanged and reinforced**: the evidence for "do not ship
+this in-process" got stronger, not weaker. What changed is the evidence, which
+this ADR had stated too confidently. See *Enforced properties* and the new
+first entry under *Consequences*.
 
 ## Context
 
@@ -53,17 +59,63 @@ The wasmtime and extism timings were taken with some CPU contention and should
 be read as "roughly 10× wasmi", not as precise figures. That ratio is the
 decision-relevant part and it is not close.
 
-Three properties are enforced and pinned by tests in `crates/devos-plugin`:
+### Enforced properties
 
-- **Fuel** bounds instructions per call, so a plugin that never returns is
-  stopped rather than hanging DevOS. Fuel is reset per call, so a plugin
-  cannot bank an earlier call's leftovers.
+*Rewritten 2026-08-07. The original list of three is kept verbatim underneath,
+because what an ADR got wrong is part of what it is for.*
+
+- **Fuel** bounds work per call — guest instructions, and also the work the
+  guest asks the *host* to do: each host call costs 100 fuel flat, plus one
+  unit per 64 bytes copied out of guest memory, which is wasmi's own
+  `bytes_per_fuel` rate. Fuel is reset per call, so a plugin cannot bank an
+  earlier call's leftovers.
 - **A linear-memory ceiling** bounds allocation via wasmi's `ResourceLimiter`,
   not via the module's own declared maximum — a hostile module omits that.
+- **Table and module-shape ceilings** bound what a module can make the host
+  commit before its first instruction: 4 tables of 10,000 elements via
+  `ResourceLimiter`, and `EnforcedLimits::strict()` at compile time for
+  globals, functions, element and data segments, and average bytes per
+  function.
+- **A bounded per-call journal** (1,000 entries / 64 KB, details clamped to
+  1 KB, reset each call) bounds what the host retains on the plugin's behalf.
+- **A wall-clock budget** checked on entry to each host call, which bounds a
+  plugin driving the host in a loop and nothing else — fuel is not a clock and
+  `Sandbox::call_*` is synchronous, so the general wall-clock bound belongs to
+  the caller. This is recorded as a limitation, not a feature.
 - **The granted host-function set** is derived from the manifest *before* any
   guest code runs. An ungranted host function is not defined in the linker, so
   a module importing it fails to instantiate. The capability is absent, not
   refused.
+- **Per-call approval** is consulted once in the dispatcher, around every
+  match arm, keyed off `NEEDS_APPROVAL`. A refusal traps rather than returning
+  a sentinel, so being told no cannot be looped on.
+
+<details>
+<summary>The original three, as written on 2026-08-07 before the review</summary>
+
+> Three properties are enforced and pinned by tests in `crates/devos-plugin`:
+>
+> - **Fuel** bounds instructions per call, so a plugin that never returns is
+>   stopped rather than hanging DevOS. Fuel is reset per call, so a plugin
+>   cannot bank an earlier call's leftovers.
+> - **A linear-memory ceiling** bounds allocation via wasmi's
+>   `ResourceLimiter`, not via the module's own declared maximum — a hostile
+>   module omits that.
+> - **The granted host-function set** is derived from the manifest *before* any
+>   guest code runs. An ungranted host function is not defined in the linker,
+>   so a module importing it fails to instantiate. The capability is absent,
+>   not refused.
+
+Two of the three were true as far as they went and incomplete in the same way:
+each named the resource the *guest* spends and none named what the guest can
+make the *host* spend. "Fuel bounds instructions per call" was accurate and
+irrelevant to a plugin whose whole strategy is to call `log` in a loop. "A
+linear-memory ceiling bounds allocation" was accurate about linear memory and
+silent about tables, which allocate 8 bytes an element at instantiation. The
+third was fine; a fourth property that this list did not mention at all —
+per-call approval — was the one that was structurally broken.
+
+</details>
 
 Permission design, and its relationship to
 [ADR-0005](0005-read-only-tools-first-with-explicit-grant.md), is in
@@ -103,11 +155,47 @@ Permission design, and its relationship to
 
 ## Consequences
 
+- **A sandbox is only as good as its last adversarial review, and this one
+  failed its first.** In August 2026 `crates/devos-plugin` was reviewed with
+  the specific brief "is the sandbox real". Three findings, all reproduced with
+  working exploits rather than inferred:
+  1. **Unbounded table allocation (high).** A **146-byte** module declaring
+     only tables got the host to commit **976 MB** at instantiation. A table's
+     declared minimum is allocated eagerly at 8 bytes an element, and none of
+     it runs, so neither fuel nor the memory ceiling was ever consulted.
+     Scaling is linear and the store permitted 10,000 tables; the practical
+     ceiling was system RAM, i.e. an OOM abort of the process holding the
+     user's decrypted API keys. `Config::enforced_limits` was also never set,
+     so globals, functions and element/data segments were uncapped on
+     untrusted input.
+  2. **Fuel bounded instructions, not host work (high).** Host functions
+     consumed no fuel of their own; the 64 KB guest-string read cap was per
+     call with nothing capping calls; the journal was never bounded and never
+     drained. On the default 5M fuel, a loop calling `log` — which requires no
+     permissions at all — made **1,666,631** host calls reading **101.7 GB**
+     over **52 seconds**, while the crate's own test comment claimed fuel
+     stopped a runaway "in milliseconds". A 1/50-fuel run held **2.08 GB** in
+     the journal.
+  3. **`NEEDS_APPROVAL` was decorative (medium, structurally serious).** The
+     constant was referenced nowhere outside `host.rs`; approval happened
+     inside the `HttpFetch` arm of the dispatcher's match — the exact shape a
+     comment in that file claimed had been avoided, citing ADR-0005's
+     `save_memory` update. Not exploitable with one member. The next member
+     would have dispatched ungated while reading as gated to every reviewer.
+
+  All three are fixed, each pinned by a test that fails without its fix.
+  The instructive part is not the bugs but that **the crate had a green test
+  suite asserting the properties it violated** — the tests checked the shape
+  of the configuration and the contents of the constant, never that either bit.
+  This is the strongest argument in this ADR for not shipping in-process:
+  the properties that make an in-process sandbox tolerable are exactly the ones
+  that can be confidently documented, plausibly tested, and false.
 - **Plugins will be slow relative to native code.** An interpreter is
   typically several times slower than a JIT. This is acceptable for
   contribution-model plugins and is not acceptable for compute. The
-  `SandboxLimits` defaults (5M fuel, 16 MB) encode that opinion: anything
-  needing more should be a DevOS job, not a plugin.
+  `SandboxLimits` defaults (5M fuel, 16 MB memory, 4 tables of 10,000
+  elements, a 1,000-entry / 64 KB journal, a 2 s host-call deadline) encode
+  that opinion: anything needing more should be a DevOS job, not a plugin.
 - **The sandbox is in-process, and in-process is not isolation.** Fuel,
   memory caps and a narrow host API make a plugin's *intended* behaviour
   bounded. None of them contain a plugin that finds a bug in the interpreter
@@ -126,8 +214,16 @@ Permission design, and its relationship to
      "malicious plugin" is a supply-chain question rather than an anyone-can
      question.
   3. `audit_log` actually gets written, since the runtime already produces the
-     journal it needs and nothing currently persists it.
-  4. For genuinely untrusted third-party plugins, an out-of-process host.
+     journal it needs and nothing currently persists it. Note the journal is
+     now per call and drained by `Sandbox::take_journal()`: whatever writes
+     `audit_log` has to take it after each invocation, because the sandbox
+     deliberately does not keep a second copy.
+  4. **A second adversarial review that finds nothing, and a fuzzer.** The
+     first review found three exploitable gaps in code that looked reviewed
+     and had passing tests for the properties it broke. One clean review is
+     evidence; the first one was not clean, so there is no reason yet to
+     believe the fourth finding does not exist.
+  5. For genuinely untrusted third-party plugins, an out-of-process host.
      Until that exists, a plugin marketplace open to arbitrary authors should
      not exist either.
 - **Path length is a real constraint on Windows and worth recording.** The

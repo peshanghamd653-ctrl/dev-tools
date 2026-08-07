@@ -79,15 +79,40 @@ Enforced today, each pinned by a test in `crates/devos-plugin`:
 | Limit | Mechanism | What it stops |
 |---|---|---|
 | CPU | fuel, reset per call | a plugin that never returns hanging DevOS |
+| Host work | fuel charged inside host calls: 100 flat per crossing, plus `len / 64` for bytes copied out of guest memory | a plugin spending the *host's* time instead of its own |
 | Memory | `ResourceLimiter` ceiling (default 16 MB) | a plugin allocating until the machine swaps |
+| Tables | 4 tables × 10,000 elements (`ResourceLimiter`) | a plugin committing host memory at instantiation, before fuel or the memory ceiling apply |
+| Module shape | `Config::enforced_limits(EnforcedLimits::strict())` | a module built to attack the compiler rather than to run |
+| Audit trail | journal capped per call at 1,000 entries / 64 KB, details clamped to 1 KB, reset each call | a plugin growing an unbounded `Vec` inside the host |
+| Wall clock | 2 s budget, checked on entry to each host call | a plugin driving the host in a loop (see the caveat below) |
 | Effects | linker populated only from granted permissions | a plugin reaching a capability it did not declare |
 
 The memory ceiling is the host's, not the guest's declared maximum — a
-hostile module simply omits that. Fuel does not accumulate across calls.
+hostile module simply omits that. Fuel does not accumulate across calls, and
+neither does the journal.
+
+The table limits exist because a table's declared *minimum* is allocated
+eagerly at 8 bytes an element when the module is instantiated. That is host
+memory committed before the guest's first instruction, so neither fuel nor
+`memory_bytes` is consulted for it. `tables × table_elements × 8` is 320 KB at
+the defaults, about 2% of the memory ceiling: the point of the numbers is that
+tables cannot be a second, unmetered way to ask for memory. One indirect-call
+table is what LLVM and TinyGo emit, so four is headroom rather than a budget.
 
 Reading a `(ptr, len)` string out of guest memory goes through a bounds-checked
-accessor plus a length cap; an out-of-range pointer is an error, not a
-host-side out-of-bounds read and not a panic that takes DevOS down.
+accessor plus a 64 KB length cap; an out-of-range pointer is an error, not a
+host-side out-of-bounds read and not a panic that takes DevOS down. That cap is
+per call, which is why the copy is also charged fuel at wasmi's own rate of 64
+bytes per unit — the cap alone bounds one call, not a million of them.
+
+**The wall-clock budget is not a general execution deadline, and cannot be.**
+It is checked on entry to a host call, so it bounds a plugin making the host
+work; it cannot interrupt a compute loop (fuel does that) and it cannot
+interrupt a host function already blocked in a syscall, which is what a real
+`http_fetch` will be. `Sandbox::call_*` is synchronous and blocks the calling
+thread. A caller that needs a hard wall-clock bound has to own it, by running
+the sandbox on a thread it is prepared to abandon. The sandbox promises
+termination, not promptness.
 
 ## Permission model — proven
 
@@ -104,7 +129,13 @@ cannot reach for". The test is
 
 **2. Per-call approval, for egress only.** `http_fetch` blocks on the user
 every time, with denial on timeout, exactly as `src-tauri/src/approvals.rs`
-does for `edit_file`/`write_file`/`run_command`.
+does for `edit_file`/`write_file`/`run_command`. A refusal — by the allowlist
+or by the user — **traps**, ending the invocation, rather than returning a
+sentinel the guest can ignore and retry. A refusal that can be looped on is not
+free for the host: it costs a string copy, a gate consultation and a journal
+entry each time, at three guest instructions apiece. A plugin that wants to
+degrade gracefully gets a fresh call with a fresh budget from the app; it does
+not get to retry inside one.
 
 Why only egress needs the per-call dialog is ADR-0005's own argument, applied
 to a different surface. That ADR declined to approve every read because
@@ -119,10 +150,21 @@ can go; approval bounds whether it goes.
 
 Two ordering properties, both tested, both learned from ADR-0005's update:
 
-- **The approval list is checked before dispatch**, keyed off an explicit
-  `NEEDS_APPROVAL` constant — not inside one match arm. That is precisely the
-  bug the ADR-0005 update describes for `save_memory`, fixed here before it
-  could happen.
+- **The approval list is consulted once in the dispatcher**, around every match
+  arm, before any handler runs — keyed off the `NEEDS_APPROVAL` constant. That
+  is precisely the bug the ADR-0005 update describes for `save_memory`.
+
+  This document, and a comment in `host.rs`, claimed that was already true. It
+  was not. Until the August 2026 review the check sat *inside* the `HttpFetch`
+  arm and `NEEDS_APPROVAL` was referenced nowhere outside `host.rs`, so
+  membership decided nothing — the exact shape both texts claimed had been
+  avoided. It was not exploitable, because the one member's arm happened to
+  gate; the next call added to the list would have read as gated to every
+  reviewer and dispatched ungated. The tests asserted the list's *contents*,
+  which is a different claim and cannot catch this. The test that holds it up
+  now is parameterised over every member of the list and runs a real module for
+  each: `every_call_that_needs_approval_is_refused_by_a_deny_all_gate`, with
+  `a_deny_all_gate_does_not_refuse_calls_outside_the_list` as its complement.
 - **The allowlist is checked before the user is asked.** A prompt for a host
   the manifest never declared is a prompt the user should never see; asking
   trains them to approve, and hands them a decision that was not theirs.
@@ -157,10 +199,56 @@ Every call crossing the boundary is recorded in a journal, including every
 denial with its reason. That journal is what `audit_log` should be fed from;
 nothing writes to `audit_log` yet.
 
+The journal is **scoped to one call**, like fuel. `Sandbox::take_journal()` is
+the app-facing accessor and the next invocation starts empty whether or not
+anyone read the last one — the sandbox should not be holding a second copy of
+the audit trail. It is bounded twice over, by entry count and by recorded
+bytes, and a call that overflows either leaves a single `Truncated { dropped }`
+marker rather than more entries, so "nothing else happened" and "a great deal
+else happened and we declined to store it" stay distinguishable. Individual
+details are clamped to 1 KB with a trailing `…`, because the audit trail
+records *that* a call happened and what it targeted, not the payload.
+
 ## Not established
 
 Honest list of what this spike does **not** show:
 
+- **The limits above were reviewed adversarially once, in August 2026, and
+  three of them were claimed rather than true.** Each was reproduced with a
+  working exploit, and each is now fixed and pinned by a test that fails
+  without its fix — but the general lesson is the one worth keeping: this
+  document described a sandbox stronger than the one that existed, and it did
+  so for months, with a passing test suite. What was found:
+  - *Unbounded table allocation.* `table_elements` was unset and `tables` sat
+    at wasmi's default of 10,000. A table's declared minimum is committed
+    eagerly at 8 bytes an element, so a **146-byte** module got the host to
+    commit **976 MB** at instantiation — before a guest instruction ran, so
+    neither fuel nor the 16 MB memory ceiling was ever consulted. Scaling is
+    linear; the practical ceiling was system RAM. `Config::enforced_limits`
+    was also unset, so globals, functions, element and data segments were
+    uncapped on untrusted input too.
+  - *Fuel bounded instructions, not host work.* Host functions registered with
+    `func_wrap` consumed no fuel of their own, the 64 KB read cap was per call
+    with nothing capping calls, and the journal was a `Vec` that was never
+    bounded and never drained. On default limits, a loop calling `log` with a
+    64 KB slice made **1,666,631** host calls reading **101.7 GB** over **52
+    seconds**, and a 1/50-fuel run held **2.08 GB** in the journal. `log`
+    needs no permissions at all.
+  - *`NEEDS_APPROVAL` was decorative.* See the permission-model section above.
+- **Nothing here has been fuzzed, and one review is one review.** Every one of
+  the three findings was in code that had a test suite asserting the property
+  it violated. Assume there are more.
+- **Nothing bounds the size of the `.wasm` file itself.** `Sandbox::load` takes
+  a `&[u8]` and the caller decides where it came from. Passive data segments
+  and function bodies are bounded by the module's own byte count, so the module
+  byte count is a limit the install flow owes this crate and does not yet
+  provide. Two adjacent things *were* checked while fixing the above and are
+  already covered, recorded here so nobody re-derives them: wasmi enables
+  `MULTI_MEMORY` and `MEMORY64` by default, and both are caught — a memory's
+  declared minimum is checked by the `ResourceLimiter` at creation, exactly as
+  a table's now is, and the memory *count* is capped at 1 in both the store and
+  the enforced limits. Guest recursion depth and value-stack height are bounded
+  by wasmi's own defaults (1,000 frames, 1 MB) rather than by anything here.
 - **In-process is not isolation.** The limits above bound a plugin's intended
   behaviour. None of them contain a plugin that finds a bug in the interpreter
   or in a host function — and on that path it is inside the process holding

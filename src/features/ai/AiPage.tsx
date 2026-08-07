@@ -49,7 +49,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
-import { CLAUDE_MODELS, useAiStore } from "./store";
+import {
+  CLAUDE_MODELS,
+  GEMINI_MODELS,
+  PROVIDER_LABELS,
+  useAiStore,
+} from "./store";
 import { useQueryClient } from "@tanstack/react-query";
 
 export function AiPage() {
@@ -64,6 +69,7 @@ export function AiPage() {
   const queryClient = useQueryClient();
   const { data: secretNames } = useSecretNames();
   const hasClaudeKey = secretNames?.includes("anthropic-api-key") ?? false;
+  const hasGeminiKey = secretNames?.includes("gemini-api-key") ?? false;
   const { data: ollamaModels } = useOllamaModels(provider === "ollama");
 
   const attachProject = useAiStore((s) => s.attachProject);
@@ -154,7 +160,7 @@ export function AiPage() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1 px-2 text-xs">
-                {provider === "claude" ? "Claude" : "Ollama"}
+                {PROVIDER_LABELS[provider] ?? provider}
                 <ChevronsUpDown className="size-3 text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
@@ -167,6 +173,19 @@ export function AiPage() {
                 >
                   <span className="font-mono text-xs">{m}</span>
                   {provider === "claude" && model === m && (
+                    <Check className="ml-auto size-4" />
+                  )}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Gemini (free tier)</DropdownMenuLabel>
+              {GEMINI_MODELS.map((m) => (
+                <DropdownMenuItem
+                  key={m}
+                  onSelect={() => setProvider("gemini", m)}
+                >
+                  <span className="font-mono text-xs">{m}</span>
+                  {provider === "gemini" && model === m && (
                     <Check className="ml-auto size-4" />
                   )}
                 </DropdownMenuItem>
@@ -262,14 +281,16 @@ export function AiPage() {
 
       <section className="flex min-h-0 flex-col">
         {active?.provider === "claude" && !hasClaudeKey ? (
-          <ClaudeKeySetup />
+          <ProviderKeySetup provider="claude" />
+        ) : active?.provider === "gemini" && !hasGeminiKey ? (
+          <ProviderKeySetup provider="gemini" />
         ) : !active ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <Sparkles className="size-6 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
               Start a conversation — it runs on{" "}
               <span className="text-foreground">
-                {provider === "claude" ? "Claude" : "Ollama"} · {model}
+                {PROVIDER_LABELS[provider] ?? provider} · {model}
               </span>
             </p>
             <Button size="sm" onClick={newConversation}>
@@ -569,7 +590,32 @@ function MemoryDialog({
   );
 }
 
-function ClaudeKeySetup() {
+/**
+ * The "add your key" state for a cloud provider.
+ *
+ * Parameterised rather than duplicated: the two providers differ only in the
+ * secret name, the placeholder and where the key comes from, and a copy per
+ * provider is how one of them ends up writing the other's secret.
+ */
+const KEY_SETUP = {
+  claude: {
+    label: "Anthropic",
+    secret: "anthropic-api-key",
+    placeholder: "sk-ant-…",
+    where: "console.anthropic.com",
+    note: "Anthropic requires a billing account.",
+  },
+  gemini: {
+    label: "Google Gemini",
+    secret: "gemini-api-key",
+    placeholder: "AIza…",
+    where: "aistudio.google.com/apikey",
+    note: "Gemini has a free tier, so a billing account is not required to start.",
+  },
+} as const;
+
+function ProviderKeySetup({ provider }: { provider: "claude" | "gemini" }) {
+  const setup = KEY_SETUP[provider];
   const [key, setKey] = useState("");
   const queryClient = useQueryClient();
 
@@ -579,25 +625,29 @@ function ClaudeKeySetup() {
         <CardContent className="space-y-4 py-6">
           <div className="flex items-center gap-2">
             <KeyRound className="size-4 text-muted-foreground" />
-            <p className="font-medium">Connect your Anthropic API key</p>
+            <p className="font-medium">Connect your {setup.label} API key</p>
           </div>
           <p className="text-sm text-muted-foreground">
             The key is encrypted with a master key held in Windows Credential
-            Manager and never leaves this machine except to call the API.
+            Manager and never leaves this machine except to call the API.{" "}
+            {setup.note} Create one at{" "}
+            <span className="text-foreground">{setup.where}</span>.
           </p>
           <Input
             type="password"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder="sk-ant-…"
+            placeholder={setup.placeholder}
             className="font-mono text-xs"
+            autoComplete="off"
+            spellCheck={false}
           />
           <Button
             className="w-full"
             disabled={!key.trim()}
             onClick={() => {
               void ipc
-                .secretSet("anthropic-api-key", key.trim())
+                .secretSet(setup.secret, key.trim())
                 .then(() =>
                   queryClient.invalidateQueries({ queryKey: aiKeys.secrets }),
                 )

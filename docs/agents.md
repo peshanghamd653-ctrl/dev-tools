@@ -1,8 +1,10 @@
 # AI & Agents
 
 Provider priority (user-confirmed): **Claude first, Ollama second**
-(local/offline, also used for embeddings once indexing lands). OpenAI and
-Gemini slot in behind the same trait later with no special treatment.
+(local/offline, also used for embeddings). **Gemini** was added third, for
+one reason worth stating: its free tier makes it the only cloud provider a
+user can try without a billing account — Claude needs one, and Ollama needs
+hardware. OpenAI slots in behind the same trait when there is a reason.
 
 ## Provider abstraction (`devos-ai`, implemented)
 
@@ -18,12 +20,28 @@ pub trait AiProvider: Send + Sync {
   `SseParser` that emits text deltas immediately and accumulates `tool_use`
   blocks (whose JSON arguments can arrive fragmented across multiple
   `input_json_delta` frames — the parser buffers per block index).
+- `GeminiProvider` — Generative Language API, `streamGenerateContent?alt=sse`.
+  Three things differ from Claude and each is a quiet-failure trap: the
+  assistant role is called **`model`** (sending `assistant` is *accepted*
+  and degrades the reply rather than erroring), the system prompt is
+  `systemInstruction` rather than a message, and the key goes in an
+  `x-goog-api-key` header rather than `?key=` so it stays out of URLs. Only
+  flash-class models are offered — the pro models are the ones a free key
+  cannot usefully drive, so listing them would mostly produce quota errors.
 - `OllamaProvider` — `/api/chat`, NDJSON streaming, also exposes
   `list_models()` for the model picker.
-- `AiRegistry` holds both and resolves by id; `complete_once()` is a
+- `AiRegistry` holds all three and resolves by id; `complete_once()` is a
   one-shot helper (used by AI commit-message generation) that drops the
   streaming receiver immediately — providers tolerate a closed channel.
-- API keys come from `devos-secrets`, never from settings or env files.
+- API keys come from `devos-secrets`, never from settings or env files, and
+  the provider→secret mapping lives in one function so a new provider cannot
+  inherit another's credential by copy-paste.
+- **Tool calling is Claude-only.** The agent loop is written against
+  Anthropic's `tool_use` blocks; Gemini has function calling but needs a
+  second loop, which is a larger change than adding a provider. The desktop
+  layer gates tools on `provider == "claude"`, so a Gemini conversation
+  streams plain chat rather than accepting a tools grant it would silently
+  ignore.
 
 ## Conversation persistence (implemented)
 

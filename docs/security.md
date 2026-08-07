@@ -20,9 +20,9 @@ the user's OS account.
   that decryption with the wrong key fails (`wrong_key_cannot_decrypt`).
 - **Redaction at the type level**: `SecretStore::list()` returns
   `SecretMeta { name, updated_at }` — there is no field to leak a value
-  through. Only `SecretStore::get(name)` returns plaintext, and it's called
-  in exactly one place today: building the Claude API request. Values are
-  never logged or included in emitted events.
+  through. Only `SecretStore::get(name)` returns plaintext, and every call
+  site is a request builder resolving one provider's credential immediately
+  before use. Values are never logged or included in emitted events.
 - **The management UI can't reveal a value, by construction** (M4). The
   secret manager is a section on the Settings page over the existing
   `secret_set` / `secret_list` / `secret_delete` commands — no new backend.
@@ -36,11 +36,24 @@ the user's OS account.
   point of view: set it, overwrite it, delete it, never read it back. The
   UI says so on the page rather than leaving people hunting for a control
   that was never left out by accident.
-- Currently stored: `anthropic-api-key` (entered once via the AI assistant's
-  key-setup card), `vercel_token` (M4) and `github_token` (M4). All are
-  ordinary secrets — same master key, same AES-256-GCM, same names-only
-  listing — read only when the relevant request is built. No module touches
-  the store itself; the command layer resolves the token and passes it in.
+- Currently stored: `anthropic-api-key` and `gemini-api-key` (each entered
+  via the AI assistant's key-setup card), `vercel_token` (M4) and
+  `github_token` (M4). All are ordinary secrets — same master key, same
+  AES-256-GCM, same names-only listing — read only when the relevant request
+  is built. No module touches the store itself; the command layer resolves
+  the credential and passes it in.
+- **Which secret a provider uses is decided in one place**
+  (`key_secret_for` in `ai_commands.rs`) rather than at each call site. That
+  matters more than it looks: before Gemini there was a single hardcoded
+  lookup, and adding a second provider by copying it is how one provider
+  ends up sending another's key to a third party. Ollama maps to `None` —
+  it is local and needs no credential, and `None` keeps "needs no key"
+  distinguishable from "key not configured yet".
+- `gemini-api-key` travels as an `x-goog-api-key` **header**, not the `?key=`
+  query parameter Google also documents. Both authenticate; only one keeps
+  the credential out of URLs, and URLs reach logs, proxies and error
+  messages. A test asserts the key appears in the request headers and *not*
+  in the request line.
 - **`github_token` is the most privileged credential DevOS holds**, and it
   deserves saying plainly: it backs `issue_create`, the only thing this app
   writes to the outside world, and a filed issue is public and irreversible.
@@ -262,14 +275,121 @@ surfaced at install; own-table DB access only; network allowlists.
 See [plugin-api.md](plugin-api.md) — the AI tool-calling design above is a
 working preview of the same gated-capability shape.
 
-## Audit & recovery
+## Audit log — implemented
 
-- `audit_log` table exists (kernel migration) but nothing writes to it yet
-  — planned to record secret access, workspace deletion, plugin installs,
-  and AI tool executions once the volume of security-relevant actions
-  justifies it.
+Every guarantee above is enforced *while something happens*, and visible only
+then. A tool call renders in the chat, a refused write renders in the SQL
+editor, a restore raises a notification — and all of it dies with the
+conversation, the tab, or the cleared bell. `audit_log` is the half that
+survives, and the question it exists to answer is "what happened to my
+machine, and did I agree to it?"
+
+**What is recorded.** A closed set, defined as a Rust enum (`AuditEvent` in
+`crates/devos-kernel/src/audit.rs`) so a module cannot invent an entry type
+and nothing can be added without deciding it belongs in the security record:
+
+- **AI tool approvals and denials** — the highest-value entry. Which tool,
+  what it was aimed at, whether it ran, and for a refusal *which kind of
+  refusal*: an explicit Deny and a 180-second timeout produce the same error
+  for the model and very different stories for whoever reads this later. That
+  distinction is a typed `ApprovalOutcome`, not a string the reader parses.
+  The row is written at the single consent choke point in `ProjectTools::
+  approve` — the same place the gate is enforced — so a mutating tool added
+  later cannot be forgotten here without also being ungated.
+- **Secret set and delete** — the **name** only.
+- **Writes through the SQL editor** — that a write ran, against which
+  connection, and how many rows moved.
+- **Issues filed** — `owner/name#number`. DevOS's only outward-facing write,
+  and the only recorded action whose effect is public and irreversible.
+- **Restores applied or refused at boot** — the durable half of the
+  notification `Kernel::boot` already raises, including the name of the
+  preserved database.
+
+**What is deliberately not recorded**, because logging everything produces a
+table nobody reads and a privacy problem of its own:
+
+- **Secret values.** `AuditEvent::SecretSet` has no field one could travel in,
+  the same type-level redaction as `SecretMeta` — the compiler enforces it,
+  not a screen choosing not to render something. This table is plaintext in
+  the same database the AES-256-GCM encryption exists to survive, so it is the
+  last place a value may appear. A test asserts the value string is absent
+  from every column of every row, not merely from the field the writer chose.
+- **SQL statements.** A statement is where the *data* is: `INSERT INTO users
+  VALUES ('<a token>')` classifies as a write and carries whatever the user's
+  database carries. "A write ran against Local notes and moved 400 rows" is
+  the security fact; reproducing it verbatim is the editor's history's job.
+- **Issue bodies.** Free-form prose assembled from an annotated screenshot,
+  routinely quoting logs and config — and already durable on GitHub. Copying
+  it here would duplicate arbitrary text into a table with no delete button.
+- **File contents written by `edit_file`/`write_file`.** The path is the
+  action; the bytes are the payload. Recording them would put arbitrary file
+  content — including the `.env` the model was asked to create — into this
+  table.
+- **`save_memory`'s text.** That a memory was written is recorded; the text is
+  not. It is already durable, already listed in the Memory panel *with* a
+  delete button, and is free-form model output.
+- **Read-only tool calls** (`read_file`, `list_dir`, `find_files`,
+  `search_code`). These are the volume. They are side-effect-free by
+  construction and containment-checked before they run, and a row per read
+  would be a browsing history of the user's own source tree that buries the
+  entries someone came looking for.
+- **Ordinary CRUD** — workspaces, projects, snippets, monitors, saved
+  requests. Recoverable, non-security-relevant, and already visible in its own
+  screen.
+- **Refused SQL writes.** Nothing happened; the refusal is surfaced in the
+  editor at the time. A guard doing its job every time somebody forgets the
+  write toggle is noise, not history.
+
+**One honest exception to "action, not payload": `run_command` records the
+command line.** For every other tool the argument is a target and the payload
+is separate, but here the command *is* the action — "run_command was approved"
+without it does not answer the question this table exists for. The residual
+risk is real and worth stating rather than shrugging at: a command that embeds
+a credential (`curl -H "Authorization: Bearer …"`) lands in the audit log in
+plaintext. What bounds it: the text is truncated at 160 characters with an
+explicit marker, and it is the exact text the user was shown in the approval
+card and consented to — so it is not data the log introduces to the machine,
+only data it keeps for longer than the chat does.
+
+**Writing an entry never breaks the action it records.** `Kernel::audit`
+returns `()`; a failed insert is logged and skipped, the same contract a
+failed backup has against a boot. An audit log that can veto the action it is
+describing is a liability, not a control. Tested by dropping the table out
+from under a live tool call and asserting the file is still written.
+
+**Retention is 90 days, and visible.** Age rather than a row cap, because a
+cap lets one busy afternoon evict a year of history. No second size-based axis
+on top, because every recorded event needs a human gesture — an approval click
+or a 180-second wait, a Run, a Save, a restart — so the write rate is bounded
+by a person and the window can be promised without a silent truncation behind
+it. Pruning runs from `Kernel::boot`, best effort. The Settings viewer prints
+the window, the total row count and the date the record reaches back to, and
+says when the list on screen is a slice of a bigger table — neither truncation
+is left to be inferred. Full reasoning in [database.md](database.md).
+
+**The log cannot be edited from the app.** `audit_log` (read) is the only IPC
+command; there is no write, delete or clear, and there is no clear button in
+the viewer. Rows are appended by the code paths performing the audited actions
+and removed only by the age-based prune, which takes rows by age and cannot be
+aimed at a particular entry — so nothing reachable from the webview, including
+a prompt injection that reaches it, can write its own alibi.
+
+The viewer is a Settings section rather than a fourteenth sidebar item: it is
+a "look when something went wrong" surface, and the secrets, backups and
+restore controls it records are already on that page.
+
+This is precondition 3 of the five in
+[ADR-0010](adr/0010-wasmi-interpreter-for-plugin-runtime.md) for a plugin
+runtime shipping in-process. The remaining four are unaffected — and note the
+plugin sandbox's per-call journal (`Sandbox::take_journal()`) is *not* wired
+here, because the crate is still not registered with the app; whatever
+registers it has to drain that journal into `AuditEvent` variants that do not
+exist yet.
+
+## Recovery
+
 - Automatic DB backup before migrations and daily rotating backups are
-  planned for M4, not yet implemented.
+  implemented — see [database.md](database.md).
 - Crash recovery: SQLite WAL + the `jobs` table means interrupted work is
   visible (a `running` row at boot would indicate a crash mid-job) rather
   than silently lost — no automatic stale-job reconciliation exists yet.

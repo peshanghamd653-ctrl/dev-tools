@@ -1,4 +1,5 @@
 pub mod claude;
+pub mod gemini;
 pub mod ollama;
 
 use tokio::sync::mpsc::UnboundedSender;
@@ -65,10 +66,14 @@ pub trait AiProvider: Send + Sync {
     ) -> AiResult<String>;
 }
 
-/// The providers wired into DevOS. Claude and Ollama first (user priority);
-/// OpenAI/Gemini slot in behind the same trait later.
+/// The providers wired into DevOS: Claude, Gemini and Ollama. OpenAI slots in
+/// behind the same trait when there is a reason to add it.
+///
+/// Only Claude drives the agentic tool loop — see `claude::run_agent` and the
+/// note at the top of `gemini.rs`. The other two stream plain chat.
 pub struct AiRegistry {
     pub claude: claude::ClaudeProvider,
+    pub gemini: gemini::GeminiProvider,
     pub ollama: ollama::OllamaProvider,
 }
 
@@ -76,6 +81,7 @@ impl AiRegistry {
     pub fn new() -> Self {
         Self {
             claude: claude::ClaudeProvider::new(),
+            gemini: gemini::GeminiProvider::new(),
             ollama: ollama::OllamaProvider::new(),
         }
     }
@@ -83,6 +89,7 @@ impl AiRegistry {
     pub fn provider(&self, id: &str) -> AiResult<&dyn AiProvider> {
         match id {
             "claude" => Ok(&self.claude),
+            "gemini" => Ok(&self.gemini),
             "ollama" => Ok(&self.ollama),
             other => Err(AiError::UnknownProvider(other.to_string())),
         }

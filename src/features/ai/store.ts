@@ -1,10 +1,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+/** Providers the backend can resolve — see `AiRegistry::provider`. */
+export type AiProviderId = "claude" | "gemini" | "ollama";
+
 interface AiState {
   activeConversationId: string | null;
   /** Provider/model used when creating the next conversation. */
-  provider: "claude" | "ollama";
+  provider: AiProviderId;
   model: string;
   /** Inject the active project's git summary into the system prompt. */
   attachProject: boolean;
@@ -26,7 +29,7 @@ interface AiState {
    */
   pendingPrompt: string | null;
   setActiveConversation: (id: string | null) => void;
-  setProvider: (provider: "claude" | "ollama", model: string) => void;
+  setProvider: (provider: AiProviderId, model: string) => void;
   setModel: (model: string) => void;
   setAttachProject: (attach: boolean) => void;
   setToolsEnabled: (enabled: boolean) => void;
@@ -101,3 +104,26 @@ export const CLAUDE_MODELS = [
   "claude-opus-4-8",
   "claude-haiku-4-5",
 ];
+
+/**
+ * Flash-class only, deliberately. The pro models are the ones a free key
+ * cannot usefully drive, so listing them would mostly produce quota errors
+ * from the provider people pick *because* it is free.
+ *
+ * Kept in step with `GEMINI_MODELS` in `crates/devos-ai/src/providers/gemini.rs`
+ * — the Rust list is what a default lands on; this one is what the picker
+ * offers.
+ */
+export const GEMINI_MODELS = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-2.5-flash",
+];
+
+/** Display names, so a third provider doesn't mean a third nested ternary. */
+export const PROVIDER_LABELS: Record<string, string> = {
+  claude: "Claude",
+  gemini: "Gemini",
+  ollama: "Ollama",
+};

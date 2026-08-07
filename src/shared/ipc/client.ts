@@ -12,6 +12,8 @@ import type { ApiHistoryEntry } from "./bindings/ApiHistoryEntry";
 import type { ApiRequestSpec } from "./bindings/ApiRequestSpec";
 import type { ApiResponse } from "./bindings/ApiResponse";
 import type { AppInfo } from "./bindings/AppInfo";
+import type { AuditEntry } from "./bindings/AuditEntry";
+import type { AuditLog } from "./bindings/AuditLog";
 import type { BackupEntry } from "./bindings/BackupEntry";
 import type { BackupKind } from "./bindings/BackupKind";
 import type { BackupListing } from "./bindings/BackupListing";
@@ -65,6 +67,8 @@ export type {
   ApiRequestSpec,
   ApiResponse,
   AppInfo,
+  AuditEntry,
+  AuditLog,
   BackupEntry,
   BackupKind,
   BackupListing,
@@ -162,6 +166,17 @@ export const ipc = {
   notificationMarkRead: (id: string) =>
     call<void>("notification_mark_read", { id }),
   notificationsMarkAllRead: () => call<void>("notifications_mark_all_read"),
+
+  /**
+   * The newest audit entries plus the shape of the whole table.
+   *
+   * Read-only, and there is no sibling: the audit log has no write, edit or
+   * delete command by design. Rows are appended by the code paths that perform
+   * the audited actions, and removed only by the kernel's age-based prune at
+   * boot — an IPC surface that could touch them would be a surface for writing
+   * one's own alibi.
+   */
+  auditLog: (limit: number) => call<AuditLog>("audit_log", { limit }),
 
   backupsList: () => call<BackupListing>("backups_list"),
   /**

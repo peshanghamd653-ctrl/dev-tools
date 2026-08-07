@@ -14,6 +14,32 @@ use crate::state::AppState;
 
 // ---- Secrets (redacted surface) ----
 
+/// Which stored secret a provider authenticates with.
+///
+/// Ollama is local and needs none. Returning `None` rather than an empty
+/// string keeps "no key configured" distinguishable from "key is blank",
+/// which is what lets the setup card appear instead of a 401.
+fn key_secret_for(provider: &str) -> Option<&'static str> {
+    match provider {
+        "claude" => Some("anthropic-api-key"),
+        "gemini" => Some("gemini-api-key"),
+        _ => None,
+    }
+}
+
+/// The API key for a provider, if that provider needs one and it is stored.
+async fn provider_key(state: &AppState, provider: &str) -> Result<Option<String>, String> {
+    let Some(name) = key_secret_for(provider) else {
+        return Ok(None);
+    };
+    Ok(state
+        .secrets
+        .get(name)
+        .await
+        .map_err(|e| e.to_string())?
+        .filter(|value| !value.trim().is_empty()))
+}
+
 #[tauri::command]
 pub async fn secret_set(
     state: State<'_, AppState>,
@@ -24,7 +50,17 @@ pub async fn secret_set(
         .secrets
         .set(&name, &value)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // The **name**, never the value — and enforced by the shape of
+    // `AuditEvent::SecretSet`, which has no field a value could travel in.
+    // The audit log is plaintext in the same database the encryption exists
+    // to survive, so it is the last place a value may ever appear. Recorded
+    // after the write succeeds: a refused `set` changed nothing.
+    state
+        .kernel
+        .audit(devos_kernel::audit::AuditEvent::SecretSet { name })
+        .await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -41,7 +77,18 @@ pub async fn secret_list(state: State<'_, AppState>) -> Result<Vec<String>, Stri
 
 #[tauri::command]
 pub async fn secret_delete(state: State<'_, AppState>, name: String) -> Result<(), String> {
-    state.secrets.delete(&name).await.map_err(|e| e.to_string())
+    state
+        .secrets
+        .delete(&name)
+        .await
+        .map_err(|e| e.to_string())?;
+    // Deletion is the half a `secret.set` row cannot imply. "The token stopped
+    // working on the 3rd" is answerable only if the removal left a mark.
+    state
+        .kernel
+        .audit(devos_kernel::audit::AuditEvent::SecretDeleted { name })
+        .await;
+    Ok(())
 }
 
 // ---- Conversations ----
@@ -112,11 +159,7 @@ pub async fn ai_commit_message(
         return Err("nothing is staged".into());
     }
 
-    let api_key = state
-        .secrets
-        .get("anthropic-api-key")
-        .await
-        .map_err(|e| e.to_string())?;
+    let api_key = provider_key(&state, &provider).await?;
     let base_url = repo::get_setting(&state.kernel.pool, "ai.ollama.url")
         .await
         .map_err(|e| e.to_string())?;
@@ -258,11 +301,7 @@ pub async fn ai_send(
         })
         .collect();
 
-    let api_key = state
-        .secrets
-        .get("anthropic-api-key")
-        .await
-        .map_err(|e| e.to_string())?;
+    let api_key = provider_key(&state, &conversation.provider).await?;
     let base_url = repo::get_setting(pool, "ai.ollama.url")
         .await
         .map_err(|e| e.to_string())?;

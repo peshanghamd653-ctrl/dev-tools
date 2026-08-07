@@ -54,7 +54,8 @@ jobs:
 
       # This action publishes no semver tags; `@stable` names the toolchain
       # channel and is upstream's documented usage, so it is as pinned as this
-      # action gets. See ci-notes for the trade-off.
+      # action gets. The trade-off is real — a stable release that breaks the
+      # build lands here without a version bump to point at.
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -72,10 +73,86 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       # Also runs the ts-rs `export_bindings_*` tests, which regenerate
-      # src/shared/ipc/bindings/*.ts as a side effect. CI does not currently
-      # assert those are committed — see ci-notes.md.
+      # src/shared/ipc/bindings/*.ts as a side effect. The step below turns that
+      # side effect into an assertion.
       - name: Tests
         run: cargo test --workspace
+
+      # Until this existed, regenerating the bindings was the *reason* stale
+      # ones went unnoticed: `cargo test` rewrote every file in
+      # src/shared/ipc/bindings/ on disk, nothing ever looked at them, and the
+      # runner was thrown away — so a PR that changed a Rust DTO without running
+      # `pnpm gen:types` was green. This step is only meaningful immediately
+      # after Tests, which is what leaves freshly generated output in the working
+      # tree to compare against. `shell: bash` (Git Bash, present on the image)
+      # rather than the runner's default pwsh: `-eo pipefail` makes the failure
+      # semantics of a multi-command script explicit.
+      #
+      # `git add --intent-to-add` comes first because the worst drift is an
+      # untracked file, not a modified one: a brand-new DTO whose binding was
+      # never committed at all. `git diff` does not look at untracked files, so
+      # exactly the case most worth catching would pass. Intent-to-add records
+      # the path with no content, which makes such a file appear below as an
+      # ordinary addition. It dirties the index, hence last step in the job.
+      #
+      # Line endings, handled deliberately rather than discovered on a PR that
+      # touched none of this. The bindings are stored with LF, and ts-rs always
+      # writes LF (it assembles the file from "\n" literals and writes raw
+      # bytes, on every platform). But this runner is Windows, where Git for
+      # Windows sets core.autocrlf=true and checkout therefore materializes
+      # CRLF. That happens to be harmless — git's clean filter normalizes CRLF
+      # back to LF before diffing, so the comparison is already line-ending
+      # agnostic — but harmless *by luck*: set autocrlf=false, or add a
+      # .gitattributes, and every file in the directory reads as wholly
+      # rewritten, turning this red on every PR for a reason nobody can act on,
+      # which is how a check
+      # gets deleted within a week. So both sides are pinned instead of assumed:
+      # `--ignore-cr-at-eol` makes the comparison independent of runner config
+      # (a real regeneration diff is never CR-only, so nothing genuine is
+      # masked), and `-c core.autocrlf=input` on both commands keeps the clean
+      # filter normalizing CRLF->LF while suppressing git's "LF will be replaced
+      # by CRLF" advisory — which, printed into the middle of a failure message
+      # about something else entirely, sends the reader after the wrong bug.
+      - name: Bindings up to date
+        shell: bash
+        run: |
+          dir=src/shared/ipc/bindings
+
+          git -c core.autocrlf=input add --intent-to-add -- "$dir"
+
+          status=0
+          diff=$(git -c core.autocrlf=input diff --exit-code --ignore-cr-at-eol -- "$dir") || status=$?
+
+          if [ "$status" -eq 0 ]; then
+            echo "ts-rs bindings in $dir are up to date."
+            exit 0
+          fi
+          # 1 means "there is a diff"; anything else means git itself failed and
+          # the check did not actually run, which must not read as drift.
+          if [ "$status" -gt 1 ]; then
+            echo "git diff exited $status; the bindings check could not run." >&2
+            exit "$status"
+          fi
+
+          # Single line, ASCII only: this is the text GitHub surfaces on the PR,
+          # and annotations do not render multi-line bodies.
+          echo "::error title=ts-rs bindings are out of date::Run 'pnpm gen:types' and commit src/shared/ipc/bindings/ - full diff in the 'Bindings up to date' step log."
+          printf '%s\n' \
+            '' \
+            'The committed TypeScript bindings do not match what ts-rs generates' \
+            'from the Rust DTOs. Added files below are bindings that were never' \
+            'committed; changed files below are stale.' \
+            '' \
+            'Fix, from the repo root:' \
+            '' \
+            '    pnpm gen:types      # = cargo test --workspace export_bindings' \
+            '    git add src/shared/ipc/bindings' \
+            '    git commit -m "chore: regenerate ts-rs bindings"' \
+            '' \
+            '--- diff (committed -> generated) ---' \
+            ''
+          echo "$diff"
+          exit 1
 
   # ---------------------------------------------------------------------------
   e2e:
@@ -185,8 +262,8 @@ jobs:
       # the build works, `edgedriver`/`geckodriver: false` so CI does not
       # download browser drivers the e2e suite never uses. A different major
       # either would not read that map or would not agree on its shape.
-      # (Ideally package.json would carry `"packageManager": "pnpm@11.x"` and
-      # this input could be dropped — see ci-notes.md.)
+      # (Ideally package.json would carry `"packageManager": "pnpm@11.x"`, which
+      # both this action and corepack would read, and this input could go.)
       - uses: pnpm/action-setup@v4
         with:
           version: 11

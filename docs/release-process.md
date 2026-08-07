@@ -12,7 +12,16 @@ release — it does not describe a process that is already running.
     typecheck, test, `vite build`.
   - `rust` job (windows-latest, since the app is Windows-first): `cargo fmt
     --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
-    `cargo test --workspace`.
+    `cargo test --workspace`, then a **generated-bindings check**. Those
+    tests regenerate `src/shared/ipc/bindings/*.ts` through ts-rs as a side
+    effect, so the job diffs that directory immediately afterwards and fails
+    when the committed bindings differ from what the Rust DTOs now produce —
+    without it, a stale binding passed CI silently. Untracked files are
+    included (a new DTO whose binding was never committed is the case most
+    worth catching, and plain `git diff` ignores untracked files), and the
+    comparison ignores CR-at-EOL so a Windows checkout cannot fail it on line
+    endings alone. The failure prints the diff and the fix: `pnpm gen:types`
+    (= `cargo test --workspace export_bindings`), then commit the result.
   - Neither job produces or uploads a build artifact yet — this is a
     correctness gate, not a release pipeline.
 - **Local build**: `pnpm tauri build` produces an installer via Tauri's

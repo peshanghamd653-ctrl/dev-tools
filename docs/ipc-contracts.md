@@ -13,8 +13,15 @@
 - **Errors cross IPC as strings** (`Result<T, String>`), produced from each
   domain error type's `Display`. The UI surfaces them via toasts or inline
   form errors — they're messages for humans, not codes to branch on.
-  Structured error codes become necessary once plugins exist (see
-  [plugin-api.md](plugin-api.md)); not needed yet.
+  **One family is an exception**: the `db_*` commands return
+  `Result<T, DbErrorDto>` — `{ kind, message }`, with `kind` one of
+  `writeBlocked` / `invalid` / `notFound` / `database`. The message is the
+  same `Display` text as before; the discriminant is additive. The exception
+  exists because the SQL editor *branches* on one of those cases to render
+  its blocked-write card, and doing that by matching the message meant a
+  reworded Rust error silently downgraded a safety affordance to a raw dump.
+  Adopt the same shape for any command whose failure the UI must act on
+  differently — not for failures it only displays.
 - **Events, not polling**, for kernel state changes. Mutating commands emit
   a `KernelEvent`; the desktop shell forwards every event on one channel,
   `devos://event`; `useKernelEventBridge` maps events → TanStack Query
@@ -268,6 +275,34 @@ frontend flattens redactions into the exported PNG before anything leaves
 the dialog — `issue_copy_image` takes a *path*, so it is only used when
 nothing was drawn; copying `shot.path` after annotation would put the
 unredacted original on the clipboard.
+
+### Snippets (M5)
+
+| Command | Args | Returns | Notes |
+|---|---|---|---|
+| `snippets_list` | — | `Snippet[]` | newest edit first |
+| `snippets_search` | `query` | `Snippet[]` | substring match over title/language/tags/body; a blank query returns the full list, so the UI has one code path |
+| `snippet_save` | `draft: SnippetDraft` | `Snippet` | `draft.id` is the insert-vs-update switch; an id naming no row is an error, not an insert-with-that-id |
+| `snippet_delete` | `id` | `()` | deleting a missing id is an error |
+
+`Snippet` is `{ id, title, language, body, tags, createdAt, updatedAt }`;
+`SnippetDraft` is `{ id: string | null, title, language, body, tags }`. Blank
+titles are rejected; `language` is trimmed, lowercased and defaults to
+`plaintext`; tags are trimmed, lowercased, deduped, order-preserving; the body
+crosses byte-for-byte.
+
+Search is `LIKE '%…%'`, not FTS5, and that is the interesting choice.
+FTS5's `unicode61` tokenizer breaks on non-alphanumerics, so `Query` would not
+find `useQuery`, and `--no-verify` or `::` would not match at all. For a
+library of code fragments, substring matching *is* the correct semantics
+rather than a cheap approximation of it — full-text search is the
+approximation. A hand-written library is also a few hundred rows, where a scan
+is sub-millisecond and an index would be a second source of truth to keep in
+step; the costs `devos-index` pays for FTS5 buy nothing here. Limits, stated:
+one substring rather than an AND of terms (`docker compose` finds that phrase,
+not both words apart), and case folding is SQLite's ASCII-only `LIKE`. `%` and
+`_` in the query are escaped, so they are characters to look for rather than
+wildcards.
 
 ## Event catalog
 

@@ -12,15 +12,17 @@
 | `devos-index` | 39 | FTS5 indexing over a real temp tree, **not descending into junctions that leave the project** (verified failing before the fix: it indexed 3 files instead of 2, with the outside file searchable), incremental reindex by mtime/size, skip-dir handling, query sanitization, bm25-ranked search hits, cosine similarity (identical/orthogonal/degenerate → `0.0`, never `NaN`), vector BLOB roundtrip, reciprocal-rank fusion of two known rankings, **search staying correct when the embeddings backend is entirely unavailable**, unchanged files never re-embedded, and a later run backfilling what a dead backend missed |
 | `devos-docker` | 5 | container/image mapping from Engine API shapes, port formatting, `Unavailable` vs `Api` error classification (so the UI can degrade rather than error) |
 | `devos-api` | 10 | full request round trip against a **real one-shot local TCP server** (asserting both the parsed response and the raw bytes the server received), invalid method/URL, connection-refused, saved-request CRUD, history recording + pruning to 100 |
-| `devos-db` | 25 | statement classification past comments/case, **a smuggled `; PRAGMA query_only(0); UPDATE …` failing to disable the read guard** (the SEC-001 regression), a read-only connection refusing writes outright, separator detection inside literals/identifiers/comments, setter-vs-introspection PRAGMA classification, write blocked without consent and landing with it, every SQLite value type incl. NULL → `None`, 500-row cap + `truncated`, identifier quoting, schema introspection (PK/NOT NULL/DEFAULT, views, broken view → `-1`), pool cache + refusal to create a missing file |
+| `devos-db` | 30 | statement classification past comments/case, **a smuggled `; PRAGMA query_only(0); UPDATE …` failing to disable the read guard** (the SEC-001 regression), a read-only connection refusing writes outright, separator detection inside literals/identifiers/comments, setter-vs-introspection PRAGMA classification, write blocked without consent and landing with it, every SQLite value type incl. NULL → `None`, 500-row cap + `truncated`, identifier quoting, schema introspection (PK/NOT NULL/DEFAULT, views, broken view → `-1`), pool cache + refusal to create a missing file, and the error->DTO mapping (one kind per variant, the serialized `{kind, message}` shape pinned, and **SQLite's own read-only refusal mapped to `writeBlocked` via its numeric result code** so no prose is load-bearing and the UI never depends on which guard caught the write) |
 | `devos-system` | 6 | snapshot reports plausible hardware (cores/memory/uptime; disks deliberately *not* asserted non-empty), top processes capped and CPU-ordered, and **CPU usage is not stuck at zero across two snapshots** — the failure mode a fresh probe per call would produce |
 | `devos-monitor` | 24 | monitor CRUD, blank name and **non-http scheme rejection** (`file://`, `ftp://`, `javascript:`, `data:`), interval floor clamping, real HTTP checks against a hermetic one-shot TCP server (200 / 500 / connection-refused), **alerts fire only on state transitions** (ok→fail and fail→ok notify; same-state pairs stay silent), first-check-fails-alerts semantics, uptime/latency aggregation incl. the zero-check case, pruning, and deleting a monitor taking its history with it |
 | `devos-deploy` | 16 | Vercel project/deployment parsing against a hermetic one-shot server, the `uid`→`id` / `created`→`createdAt` / `meta.githubCommitMessage`→`commitMessage` field mapping, **a deployment with no `meta` yielding `null` rather than dropping the row**, `Authorization: Bearer` asserted on the raw bytes the server received, 401/403 → `Auth` (distinct from a generic API error), body truncation, and a blank token making no request at all |
 | `devos-issue` | 37 | git-remote parsing across every URL form GitHub emits (https/ssh/scp/`git://`, userinfo including the `x-access-token:<pat>@` form CI clones leave behind, port segments, `.git` and trailing slashes, case-folded dedupe across fetch/push lines) with **non-GitHub hosts rejected by exact match** so Enterprise/GitLab/Bitbucket never produce a bogus target; issue creation asserted on the raw bytes received (bearer token, User-Agent, pinned API version, JSON body); 401/403 → `Auth`, **404 → `NotFound` distinct from a generic API error**, 422 preserved, junk-201 → `Decode`; blank/unsafe inputs rejected against a closed port so no-network is positive proof; screenshot pruning to the newest 20 |
+| `devos-snippets` | 11 | snippet CRUD against a real temp SQLite file, insert-vs-update decided by the draft's id with **an edit not rewriting `created_at`**, blank titles refused on create *and* on edit, a deleted id refusing both a second delete and a resurrecting save, search matched per field (title/body/tag/language) case-insensitively and **inside a word** — the property FTS5 would not have — plus the negatives: a term in no snippet, two words that are not adjacent, and `%`/`_` treated as characters rather than wildcards |
+| `devos-plugin` | 32 | WASM sandbox limits proven rather than assumed: fuel halting an infinite loop and resetting per call, a host-side `ResourceLimiter` capping linear memory using the *host's* ceiling rather than the module's declared maximum, an out-of-range guest `(ptr, len)` becoming an error instead of a host read, and — the structural one — a module importing `devos.http_fetch` **failing to instantiate** without the `net` permission, so the capability is absent rather than refused. Fixtures are checked-in `.wat` compiled at test time, so there is no opaque binary to review |
 | `src-tauri` | 29 | AI tools read/list real files, **path-traversal and absolute-path rejection**, dependency-dir skipping in search, unknown-tool error, approval-gate resolve/deny/timeout, **every tool in `MUTATING_TOOLS` refused on denial** (asserting nothing landed — no edit, no created file, no `run_command` marker, no memory row) with a length check so adding an ungated mutating tool fails the test, `save_memory` persisting only after approval and with the exact text shown, and `write_file` refusing to write through a real dangling junction |
-| Frontend (`src/**/*.test.{ts,tsx}`) | 274 | Zustand UI store, `cn()` merging, unified-diff parser, uptime/percent formatting, the **shared byte formatter** (`shared/lib/format.ts`) covering the GB/TB range the old per-page copies truncated, **write-blocked classification** pinned to the exact strings `DbError::WriteBlocked` and SQLite emit, monitor state derivation + sparkline ordering, deploy state/URL/error classification, secret-name handling — plus **component tests** for six pages: the SQL write toggle defaulting to read-only, keeping one accessible name in both states, and its blocked-write card, Docker's "daemon off" state kept distinct from an ordinary API error, all four monitor status chips, request-spec construction, out-of-shell rendering, and lazy directory loading asking for the full nested path |
+| Frontend (`src/**/*.test.{ts,tsx}`) | 314 | Zustand UI store, `cn()` merging, unified-diff parser, uptime/percent formatting, the **shared byte formatter** (`shared/lib/format.ts`) covering the GB/TB range the old per-page copies truncated, **write-blocked classification** read off the `DbErrorDto.kind` discriminant, with an unrecognised rejection deliberately *not* reaching the write-blocked card, monitor state derivation + sparkline ordering, deploy state/URL/error classification, secret-name handling, snippet tag normalisation and match-field derivation — plus **component tests** for seven pages: the SQL write toggle defaulting to read-only, keeping one accessible name in both states, and its blocked-write card, Docker's "daemon off" state kept distinct from an ordinary API error, all four monitor status chips, request-spec construction, out-of-shell rendering, lazy directory loading asking for the full nested path, and snippets copying the *body* to the clipboard while a refused clipboard says so instead of claiming success |
 
-Rust totals **260** via `cargo test --workspace`. Per-crate counts include the
+Rust totals **308** via `cargo test --workspace`. Per-crate counts include the
 generated `export_bindings_*` tests ts-rs emits for each exported DTO — those
 assert the TypeScript bindings are current, not runtime behavior, so the
 behavioral count per crate is lower than the number above.
@@ -100,10 +102,24 @@ support macOS).
   flakes gets un-required and then ignored, which is worse than this gap. The
   suite itself passes locally on repeated consecutive runs.
   See [release-process.md](release-process.md).
-- **CI does not assert the ts-rs bindings are committed.** `cargo test
-  --workspace` regenerates `src/shared/ipc/bindings/*.ts` as a side effect,
-  so a stale committed binding passes CI silently. A
-  `git diff --exit-code` check on that directory would close it.
+- **The bindings drift check has never run on a GitHub runner.** The gap
+  itself is closed: the `rust` job now diffs `src/shared/ipc/bindings/`
+  straight after `cargo test --workspace` regenerates it, and fails with the
+  diff plus the fix (`pnpm gen:types`, then commit) rather than a bare exit
+  code. Two details make it work rather than annoy — `--intent-to-add`, since
+  plain `git diff` exits 0 for a *new* binding that was never committed
+  (the drift most worth catching), and `--ignore-cr-at-eol` with
+  `core.autocrlf=input`, because with `autocrlf=false` and a CRLF working
+  tree a plain diff reports every file as rewritten, i.e. a red build on
+  every PR for a reason nobody can act on. The step was exercised locally
+  against throwaway repos covering both, but no run has happened on a
+  runner. **One thing to expect:** if the committed bindings already differ
+  from what the DTOs generate, the first run is red — a true positive, but
+  worth knowing before making this required.
+- **Orphan bindings are structurally uncatchable** by regenerate-and-diff:
+  deleting a Rust DTO leaves its `.ts` file behind and nothing regenerates
+  over it, so the check sees no difference. Only an inventory comparison
+  would find those.
 - **Startup timing is a tripwire, not a regression test.** Boot is measured
   and asserted, but only against a loose ceiling: a single cold boot on this
   machine spans ~20x (69 ms quiet → 1375 ms under load), so no wall-clock
@@ -111,10 +127,16 @@ support macOS).
   assertions are structural instead — migrations apply exactly once across
   boots, and module registration does no per-module DB work. See
   [performance.md](performance.md).
-- **The write-blocked card still depends on the backend's error *wording*.**
-  `isWriteBlocked` (`src/features/db/errors.ts`) is now one exported,
-  directly-tested function with its matched strings as named constants and a
-  comment naming `DbError::WriteBlocked` and the Rust file it lives in — but
-  it is still sniffing a string, because Tauri commands flatten typed errors
-  with `.map_err(|e| e.to_string())`. The real fix is a discriminant that
-  survives the IPC boundary, which is a backend change.
+- **An unrecognised database rejection loses its classification, by choice.**
+  `db_*` commands return `Result<T, DbErrorDto>` and `isWriteBlocked`
+  (`src/features/db/errors.ts`) switches on `kind`, so the coupling to the
+  backend's *wording* is gone. What replaces it is a coupling to the *shape*:
+  a rejection that isn't that object — a panic, a serialization failure, a
+  packaged frontend older than the backend it boots against — renders as a
+  generic error rather than the write-blocked card. That is the intended
+  direction. Guessing from the message could only ever produce a false
+  positive, and a card that offers to switch writes on for an unrelated
+  failure is worse than a plain error showing the same text. Drift inside a
+  single build fails `pnpm typecheck` rather than degrading silently
+  (`KNOWN_KINDS` is a total `Record` over the generated union), so the only
+  live window is a version-skewed frontend, and both branches are tested.

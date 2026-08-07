@@ -250,9 +250,34 @@ Backups have a real gap of their own: there is no restore path, so recovery
 means quitting the app and copying a file by hand. See
 [database.md](database.md).
 
-### M5 — Extensibility & polish
-- WASM plugin runtime (Extism-style) + contribution manifests, plugin SDK,
-  marketplace scaffold, docs/wiki module, snippets, theme system
+### M5 — Extensibility & polish (in progress)
+- ✅ **Theme system** — Midnight (default, byte-identical to the pre-M5
+  palette), Daylight, Obsidian, plus System following `prefers-color-scheme`.
+  Applied before first paint by an inline script, so there is no flash of the
+  wrong theme. The terminal's xterm scheme derives from the same tokens; the
+  screenshot annotator's canvas colours are deliberately exempt. See
+  [design-system.md](design-system.md).
+- ✅ **Snippets** — a searchable library of reusable fragments at `/snippets`
+  (`Ctrl+Shift+N`, palette `snippets.open`), list on the left and editor on
+  the right, with copy-to-clipboard as the primary action. Search is a
+  substring `LIKE` scan rather than FTS5, because the content is code and
+  FTS5 would not match `Query` inside `useQuery`; reasoning in
+  [ipc-contracts.md](ipc-contracts.md).
+- **Plugin runtime — spiked, deliberately not shipped.** `crates/devos-plugin`
+  is a working `wasmi` host that proves the sandbox holds on the axes that
+  matter (fuel halts an infinite loop, a host-side limiter caps memory, an
+  out-of-range guest pointer errors rather than reading host memory, and a
+  module needing an ungranted capability *fails to instantiate* rather than
+  being refused at call time). It is **not registered with the app**, and
+  [ADR-0010](adr/0010-wasmi-interpreter-for-plugin-runtime.md) says why: those
+  limits bound a plugin's intended behaviour, not one that finds a bug in the
+  interpreter or a host function — and that path lands in the process holding
+  the decrypted Anthropic key. The ADR lists what would have to be true first,
+  in cost-effectiveness order. Contribution manifests and the plugin SDK
+  follow that decision, not before it.
+- Marketplace scaffold, docs/wiki module — unbuilt. The marketplace in
+  particular is gated on the out-of-process host ADR-0010 asks for, since it
+  is the feature that would expose the runtime to arbitrary authors.
 
 ## Complexity legend
 S ≈ a day · M ≈ days · L ≈ 1–2 weeks · XL ≈ several weeks (single developer,

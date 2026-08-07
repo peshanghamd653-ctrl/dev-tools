@@ -89,6 +89,18 @@ is uptime *across the checks that ran*, not true uptime.
 `devos-system` has no tables at all: system metrics are read live from
 `sysinfo` per call and never persisted, so there is no history to query.
 
+## Snippet tables (`devos-snippets`, implemented)
+
+| Table | Purpose | Notes |
+|---|---|---|
+| `snippets` | One row per saved fragment | `title`, `language`, `body`, `tags`, `created_at`, `updated_at`. `tags` is comma-delimited rather than JSON: normalization strips the separator from every tag, so the join/split round trip is lossless — unlike the free-form header *values* that make `api_requests` need JSON. `body` is stored byte-for-byte; indentation and a trailing newline are content here, not noise. |
+
+Created idempotently at boot, the same pattern as `api_*`, `db_connections`
+and `monitors`. **There is no index and no FTS5 shadow table**, deliberately:
+search is a `LIKE` scan over the four text columns, because the content is
+code and FTS5's word tokenizer would not match `Query` inside `useQuery`. See
+[ipc-contracts.md](ipc-contracts.md) for the full reasoning.
+
 ## Planned per milestone
 
 - **M2 (remainder)** agent definitions/runs · `term_sessions` if session
@@ -104,8 +116,11 @@ is uptime *across the checks that ran*, not true uptime.
 - **M4 (remainder)** `deployments`. `monitors` and `monitor_checks` now
   exist (above); the deploy half of the milestone isn't built, so its table
   isn't either
-- **M5** `plugins` (installed, version, permission grants) · `snippets`,
-  `docs_pages`
+- **M5** `plugins` (installed, version, permission grants) · `docs_pages`.
+  `snippets` now exists (above). The `plugins` table stays planned rather
+  than built: [ADR-0010](adr/0010-wasmi-interpreter-for-plugin-runtime.md)
+  concluded the runtime should not ship in-process yet, and persisting
+  permission grants for something that does not run would be premature.
 
 ## Backups — implemented
 

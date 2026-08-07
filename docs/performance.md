@@ -4,7 +4,7 @@
 
 | Metric | Target | Status |
 |---|---|---|
-| Cold start → kernel ready | < 1000 ms, **release build** | unverified — release has never been measured |
+| Cold start → kernel ready | < 1000 ms, **release build** | **met — 534 ms**, measured 2026-08-07 on an installed release build |
 | `Kernel::boot` (kernel's own share of startup) | no separate budget yet | measured per phase, asserted loosely in CI |
 | Base RAM | < 200 MB | not yet profiled |
 | Interaction | 60 fps | not yet profiled |
@@ -14,10 +14,21 @@ ever recorded is from a `pnpm tauri dev` **debug** build — unoptimized, with a
 dev-only file watcher attached — and a debug number cannot be compared to it in
 either direction. A recent session logged `startup_ms=1175` on a warm start and
 `startup_ms=2699` cold. Those are above 1000 ms, and that tells us nothing about
-whether the budget is met: `cargo build --release` (LTO, `codegen-units = 1`,
-strip — see the workspace `Cargo.toml`) has still not been measured. The budget
-is neither met nor missed today. It is unverified, and measuring it is the
-single most useful thing anyone could do to this document.
+whether the budget is met, because a debug build carries no LTO, no
+`codegen-units = 1`, no strip, and a dev-server round trip for every asset.
+
+**Measured 2026-08-07: `startup_ms=534`, `boot_ms=20`.** Taken from the NSIS
+installer's output running out of `%LOCALAPPDATA%\DevOS` — a real install, not
+`cargo run --release` — with all thirteen modules registering and the frontend
+served from the embedded `frontendDist` rather than Vite. Phase split:
+`pool_open_us=16795`, `migrations_us=1959`, `default_workspace_us=211`.
+
+So the budget is **met, with room**: 534 ms against 1000. Two caveats worth
+keeping. This is one machine, warm — a cold first launch on a slower disk will
+be higher, and nobody has measured that. And `startup_ms` still stops at
+"kernel ready", not at first paint; the webview initialising and React mounting
+happen after that number is logged, so what a user *perceives* is longer than
+534 ms by an amount still nobody has measured.
 
 An older revision of this file reported 854–1461 ms and called the budget "on
 track" in debug. Those numbers predate several modules being added to the boot
@@ -225,9 +236,9 @@ faster is unknown.
 
 ## Planned, not yet done
 
-- **Release-build startup measurement.** The one measurement that would let the
-  headline budget be called met or missed. Nothing else in this list matters as
-  much.
+- ~~Release-build startup measurement.~~ **Done** — 534 ms, see Budgets above.
+  What remains from that item: the same measurement on a *cold* machine, and on
+  hardware slower than the one it was taken on.
 - Phase timing for the part of startup *outside* the kernel — Tauri builder,
   per-module `init()` table creation, first paint. `startup_ms` minus
   `BootTimings::total()` is currently an undifferentiated blob, and on the

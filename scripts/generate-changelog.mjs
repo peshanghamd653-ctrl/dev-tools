@@ -25,16 +25,20 @@
 // Why there is no "changelog is stale" CI gate
 // ---------------------------------------------------------------------------
 // Regenerate-and-diff is the obvious gate, and it is what CI does for the ts-rs
-// bindings. It does not work here yet, because the output is not identical
-// across environments: commit links are derived from `origin`, and a checkout
-// on a runner has one while a clone that was never pushed does not. CI would
-// regenerate with links, compare against a file committed without them, and
-// fail on every PR for a reason that has nothing to do with the PR — which is
-// precisely how a required check gets switched off.
+// bindings. It was unsafe while commit links came from `origin`, which a CI
+// checkout has and an unpushed clone does not: CI would regenerate with links,
+// compare against a file committed without them, and fail every PR for a reason
+// unrelated to the PR — which is how a required check gets switched off.
 //
-// The fix, when the repository has a fixed home: put it in package.json's
-// `repository` field and read the base from there instead of from the remote.
-// The output becomes environment-independent and the gate becomes safe to add.
+// That is fixed: the link base now comes from package.json's `repository`,
+// which is committed and therefore identical everywhere. Output is reproducible
+// and the gate is safe to add.
+//
+// It is still not wired up, for a smaller reason: the changelog legitimately
+// goes stale between a feature commit and the release that ships it, so a
+// per-PR gate would demand a regeneration on every user-facing commit. The
+// sensible home for it is the release workflow, alongside the version check —
+// where a stale changelog is an actual defect rather than a formality.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -72,23 +76,40 @@ function git(args, { quiet = false } = {}) {
 }
 
 /**
- * The commit-link base, or null when there is no remote to link to.
+ * The commit-link base, or null when there is nowhere to link to.
  *
- * Deriving it from the remote rather than hardcoding it means this starts
- * producing links the moment the repository gains an origin, and produces a
- * clean file with plain short SHAs until then — rather than links to a
- * placeholder URL that would 404 for every reader.
+ * package.json's `repository` comes first and the git remote is only a
+ * fallback, because the two differ in an important way: the manifest is
+ * committed, so every environment reads the same value, while `origin` is
+ * ambient — a CI checkout has one, a clone that was never pushed does not, and
+ * a fork's points somewhere else entirely. Deriving links from the manifest is
+ * what makes this script's output reproducible, and therefore what makes a
+ * regenerate-and-diff CI gate safe to add.
  */
 function commitBase() {
-  let url;
-  try {
-    url = git(["remote", "get-url", "origin"], { quiet: true }).trim();
-  } catch {
-    return null;
-  }
+  const fromManifest = () => {
+    const repo = JSON.parse(
+      fs.readFileSync(path.join(root, "package.json"), "utf8"),
+    ).repository;
+    if (!repo) return null;
+    return typeof repo === "string" ? repo : (repo.url ?? null);
+  };
+  const fromRemote = () => {
+    try {
+      return git(["remote", "get-url", "origin"], { quiet: true }).trim();
+    } catch {
+      return null;
+    }
+  };
+
+  const url = fromManifest() ?? fromRemote();
+  if (!url) return null;
+
+  // Accepts scp-style (git@host:owner/repo), https, and npm's `git+` prefix.
+  const cleaned = url.replace(/^git\+/, "");
   const m =
-    /^git@([^:]+):(.+?)(?:\.git)?$/.exec(url) ??
-    /^https?:\/\/([^/]+)\/(.+?)(?:\.git)?$/.exec(url);
+    /^git@([^:]+):(.+?)(?:\.git)?$/.exec(cleaned) ??
+    /^https?:\/\/([^/]+)\/(.+?)(?:\.git)?$/.exec(cleaned);
   return m ? `https://${m[1]}/${m[2]}/commit/` : null;
 }
 

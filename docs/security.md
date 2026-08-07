@@ -37,13 +37,41 @@ the user's OS account.
   UI says so on the page rather than leaving people hunting for a control
   that was never left out by accident.
 - Currently stored: `anthropic-api-key` (entered once via the AI assistant's
-  key-setup card) and `vercel_token` (M4). The Vercel token is an ordinary
-  secret — same master key, same AES-256-GCM, same names-only listing — read
-  only when a Vercel API request is built and sent only to
-  `api.vercel.com`. `devos-deploy` never touches the store itself; the
-  command layer resolves the token and passes it in. See
-  [ADR-0009](adr/0009-deployments-read-only-no-write-actions.md) for why the
-  module holding that token performs no write actions.
+  key-setup card), `vercel_token` (M4) and `github_token` (M4). All are
+  ordinary secrets — same master key, same AES-256-GCM, same names-only
+  listing — read only when the relevant request is built. No module touches
+  the store itself; the command layer resolves the token and passes it in.
+- **`github_token` is the most privileged credential DevOS holds**, and it
+  deserves saying plainly: it backs `issue_create`, the only thing this app
+  writes to the outside world, and a filed issue is public and irreversible.
+  ([ADR-0009](adr/0009-deployments-read-only-no-write-actions.md) explains
+  why the *Vercel* module performs no writes; that rationale is scoped to
+  deployments and does not describe the whole outbound surface.) What bounds
+  it:
+  - The base URL is a compile-time constant at the command layer. The
+    injectable `base_url` exists so tests run against a local server and is
+    not reachable from IPC, so the token cannot be aimed elsewhere.
+  - It is never logged — `devos-issue` and `issue_commands.rs` contain no
+    `tracing`/`println` at all — and no error variant carries it; they carry
+    a status, a truncated body, or a transport string. `reqwest` strips
+    `Authorization` on a cross-host redirect.
+  - `owner`/`name` are allowlisted to `[A-Za-z0-9._-]` with explicit `..`
+    rejection before path interpolation.
+  - The body is reviewed verbatim, and editable, before anything is sent.
+  - Recommended token shape: a fine-grained PAT scoped to one repository
+    with `issues:write` and nothing else. DevOS cannot enforce that — it is
+    the narrowest credential the feature can be given, so it is worth
+    giving.
+- **Screenshots are a fourth at-rest channel**, alongside the DB, backups and
+  logs named at the top of this document. `issue_capture` writes the raw,
+  unredacted, full-resolution desktop to `<data-dir>/screenshots` as a plain
+  PNG with default ACLs. Redaction is destructive in the *export* (verified:
+  it is painted into the same bitmap `toBlob` reads back, and the flow
+  refuses to fall back to the source file if flattening fails) — but the
+  source capture is what the annotator loads, so it exists on disk in the
+  meantime and is what a file-level backup or sync client would pick up.
+  Retention is deliberately short and the directory is documented here
+  rather than left for someone to find while investigating a leak.
 
 ## AI tool-calling — implemented (M2)
 

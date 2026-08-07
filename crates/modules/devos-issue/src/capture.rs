@@ -13,12 +13,22 @@ use xcap::Monitor;
 
 use crate::{CapturedShot, IssueError, IssueResult};
 
-/// How many PNGs survive a capture. This directory is a scratch area between
-/// the screen and the clipboard, not an archive: the user pastes the shot
-/// into the issue and never opens the folder again, so an unbounded pile of
-/// full-resolution screenshots in the app data directory would be a leak with
-/// a filesystem behind it.
-pub const KEEP_SHOTS: usize = 20;
+/// How many PNGs survive a capture.
+///
+/// **One**, and the reason is worth stating rather than tuning. This file is
+/// the *raw, unredacted, full-resolution desktop* — the annotator loads it,
+/// paints redactions into a canvas, and exports a flattened copy. Redaction is
+/// destructive in the export; it does nothing to this file. A security review
+/// found the previous value of 20 kept nineteen unredacted desktops on disk as
+/// plain PNGs with default ACLs, which is exactly what a file-level backup or
+/// a sync client picks up, and exactly where nobody looks when investigating
+/// how a key got out.
+///
+/// One means the directory holds only the capture currently being worked on.
+/// The remaining exposure is that window, and closing it properly means
+/// deleting the source once the flattened export exists — see
+/// `docs/security.md`.
+pub const KEEP_SHOTS: usize = 1;
 
 /// Subdirectory of the app data directory. One place knows this name, so
 /// pruning cannot drift from writing.
@@ -148,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn pruning_keeps_exactly_the_newest_twenty() {
+    fn pruning_keeps_exactly_the_newest_shot() {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path();
         // 25 shots a second apart, written oldest-first so creation order and
@@ -166,13 +176,16 @@ mod tests {
             kept.contains(&"shot-1754400024000.png".to_string()),
             "the newest shot must survive: {kept:?}"
         );
+        // Derived from KEEP_SHOTS rather than hardcoded, so changing the
+        // retention changes what this asserts instead of silently passing.
+        let oldest_kept = 1_754_400_000_000 + (25 - KEEP_SHOTS as u64) * 1_000;
         assert!(
-            kept.contains(&"shot-1754400005000.png".to_string()),
-            "the twentieth-newest is the last one kept: {kept:?}"
+            kept.contains(&format!("shot-{oldest_kept}.png")),
+            "the oldest surviving shot is off: {kept:?}"
         );
         assert!(
-            !kept.contains(&"shot-1754400004000.png".to_string()),
-            "the twenty-first-newest must be gone: {kept:?}"
+            !kept.contains(&format!("shot-{}.png", oldest_kept - 1_000)),
+            "the shot past the window must be gone: {kept:?}"
         );
         assert!(
             !kept.contains(&"shot-1754400000000.png".to_string()),
@@ -181,15 +194,18 @@ mod tests {
     }
 
     #[test]
-    fn pruning_a_directory_under_the_limit_deletes_nothing() {
+    fn pruning_a_directory_at_the_limit_deletes_nothing() {
         let temp = tempfile::tempdir().unwrap();
-        for i in 0..3 {
+        // Exactly at the limit rather than a fixed count: with KEEP_SHOTS at
+        // 1 there is no "under" to test, and hardcoding a number would have
+        // this pass vacuously the next time the retention changes.
+        for i in 0..KEEP_SHOTS as i64 {
             write_shot(temp.path(), 1_754_400_000_000 + i);
         }
 
         prune(temp.path(), KEEP_SHOTS).unwrap();
 
-        assert_eq!(names(temp.path()).len(), 3);
+        assert_eq!(names(temp.path()).len(), KEEP_SHOTS);
     }
 
     #[test]

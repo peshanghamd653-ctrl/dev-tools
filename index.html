@@ -57,14 +57,28 @@
               ? SYSTEM.dark
               : SYSTEM.light;
         }
-        if (!THEMES[id]) id = DEFAULT_THEME;
+        // hasOwnProperty, not `THEMES[id]` — a plain object literal inherits
+        // from Object.prototype, so "constructor", "toString", "__proto__" and
+        // friends all read as truthy and would sail past a bare truth test. A
+        // stored preference of "constructor" then put `theme-constructor` on
+        // <html>, where applyThemeClass (which only removes *known* theme
+        // classes) left it for the rest of the session, and set colorScheme
+        // and backgroundColor to the string "undefined". Not injection — these
+        // are CSSOM property setters and classList rejects whitespace — but
+        // the app painted unthemed. `resolveTheme` uses a Map and was never
+        // affected; only this inline copy was.
+        var meta = Object.prototype.hasOwnProperty.call(THEMES, id) && THEMES[id];
+        if (!meta) {
+          id = DEFAULT_THEME;
+          meta = THEMES[id];
+        }
 
         var root = document.documentElement;
         root.classList.add("theme-" + id);
         // Inline so it beats the not-yet-loaded stylesheet. applyThemeClass()
         // strips both once React mounts, handing control back to the cascade.
-        root.style.colorScheme = THEMES[id][0];
-        root.style.backgroundColor = THEMES[id][1];
+        root.style.colorScheme = meta[0];
+        root.style.backgroundColor = meta[1];
       })();
     </script>
   </head>

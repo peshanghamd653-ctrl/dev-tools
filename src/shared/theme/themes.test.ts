@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 // Raw source, not a fixture: these assertions are only worth anything if they
 // run against the file the app actually ships.
@@ -134,5 +134,72 @@ describe("index.html boot script", () => {
   it("reads the preference at the path zustand persist writes", () => {
     expect(bootScript).toContain("JSON.parse(raw).state");
     expect(bootScript).toContain("state.preference");
+  });
+
+  /**
+   * The assertions above pin the script's *text*. That is structurally unable
+   * to catch a behavioural bug, and it missed one: `THEMES` is an object
+   * literal, so a bare `if (!THEMES[id])` validity test walked
+   * `Object.prototype` and accepted `"constructor"`, `"toString"`,
+   * `"__proto__"` and friends as theme ids. These run the real script.
+   */
+  describe("executed", () => {
+    /** The extracted source is the IIFE's body, so it runs as a function. */
+    const run = () => new Function(bootScript)();
+
+    const applied = () => {
+      const root = document.documentElement;
+      return {
+        classes: [...root.classList],
+        colorScheme: root.style.colorScheme,
+        background: root.style.backgroundColor,
+      };
+    };
+
+    beforeEach(() => {
+      document.documentElement.className = "";
+      document.documentElement.removeAttribute("style");
+      window.localStorage.clear();
+    });
+
+    const store = (preference: string) =>
+      window.localStorage.setItem(
+        THEME_STORAGE_KEY,
+        JSON.stringify({ state: { preference }, version: 0 }),
+      );
+
+    it("applies a stored theme", () => {
+      store("daylight");
+      run();
+      const result = applied();
+      expect(result.classes).toEqual(["theme-daylight"]);
+      expect(result.colorScheme).toBe("light");
+      expect(result.background).not.toBe("");
+    });
+
+    it.each(["constructor", "__proto__", "toString", "valueOf", "hasOwnProperty"])(
+      "falls back to the default for the inherited key %s",
+      (hostile) => {
+        store(hostile);
+        run();
+        const result = applied();
+        expect(result.classes).toEqual([`theme-${DEFAULT_THEME}`]);
+        // The bug set these to the string "undefined", which the CSS parser
+        // drops — so the page painted unthemed rather than defaulting.
+        expect(result.colorScheme).toBe("dark");
+        expect(result.background).not.toBe("");
+      },
+    );
+
+    it("falls back for an unknown id and for corrupt storage", () => {
+      store("bogus");
+      run();
+      expect(applied().classes).toEqual([`theme-${DEFAULT_THEME}`]);
+
+      document.documentElement.className = "";
+      window.localStorage.setItem(THEME_STORAGE_KEY, "{not json");
+      run();
+      expect(applied().classes).toEqual([`theme-${DEFAULT_THEME}`]);
+    });
   });
 });

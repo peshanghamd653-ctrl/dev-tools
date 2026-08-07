@@ -174,6 +174,8 @@ missing, and it is the primary source for everything above:
 Start with [feature-roadmap.md](docs/feature-roadmap.md) for what has shipped
 per milestone and what was deferred within each module, and
 [docs/adr/](docs/adr/) for why the non-obvious calls went the way they did.
+[CHANGELOG.md](CHANGELOG.md) is the same story per release rather than per
+module.
 
 ## Contributing
 

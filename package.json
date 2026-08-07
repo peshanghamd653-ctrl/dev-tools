@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "gen:types": "cargo test --workspace export_bindings",
     "gen:notices": "node scripts/generate-notices.mjs",
-    "check:versions": "node scripts/check-versions.mjs"
+    "check:versions": "node scripts/check-versions.mjs",
+    "gen:changelog": "node scripts/generate-changelog.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

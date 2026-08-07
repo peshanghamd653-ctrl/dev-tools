@@ -110,9 +110,25 @@ signing/updater work and are listed here only so the sequence is visible.
    one, a release publishes with everything green and every installed copy
    ignores it, because the advertised version equals the one already
    installed — a release nobody receives, with nothing red to show for it.
-5. **A changelog.** None exists. Prefer generating it from commit messages —
-   the history already follows Conventional Commits — over hand-maintaining
-   one.
+5. ~~**A changelog.**~~ **Done.** [CHANGELOG.md](../CHANGELOG.md) is generated
+   from the commit history by `pnpm gen:changelog`. Every commit in the history
+   follows Conventional Commits, which is what makes generating it preferable
+   to writing one — a hand-maintained changelog is a second description of the
+   same work, and the two disagree the first time someone is in a hurry.
+
+   Only `feat`, `fix` and `perf` reach the file, plus anything marked breaking.
+   The rest changed nothing for a user, so listing them would bury what did.
+   Each release states how many commits it is *not* showing, because "nothing
+   else happened" and "the rest was not user-facing" are different claims and
+   a reader should not have to guess which one is meant.
+
+   **Regenerate it before tagging.** Nothing enforces freshness, and unlike
+   the version check this one cannot be gated yet: commit links are derived
+   from `origin`, so a CI runner and an unpushed clone produce different files
+   and the gate would fail on unrelated PRs. Setting `repository` in
+   `package.json` once the repo has a fixed home makes the output
+   environment-independent and the gate safe to add — the script says so at the
+   point where someone would try.
 6. ~~**A dependency licence review.**~~ **Done.** The 401 unadjudicated crates
    are adjudicated: `deny.toml` carries a curated `[licenses] allow` list and
    `cargo deny check licenses` runs as a required step in the `audit` job.

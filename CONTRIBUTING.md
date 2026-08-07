@@ -73,6 +73,22 @@ is on you. It is cheap: the script builds the frontend with sourcemaps and
 reads which packages actually ended up in the bundle, so it stays correct
 without anyone maintaining a list by hand.
 
+## Commit messages and the changelog
+
+Commit subjects follow [Conventional Commits](https://www.conventionalcommits.org)
+— `type(scope): subject`, with `!` before the colon for a breaking change.
+Every commit in the history conforms, and that is load-bearing rather than
+decorative: [CHANGELOG.md](CHANGELOG.md) is generated from these subjects by
+`pnpm gen:changelog`, so a subject is the sentence a user will eventually read.
+Write it as one.
+
+`feat`, `fix` and `perf` appear in the changelog. `docs`, `ci`, `test`,
+`chore`, `refactor` and `style` do not — they are counted, not listed, so
+choosing the honest type matters more than choosing a flattering one.
+
+It is regenerated before a release rather than on every commit, so there is no
+need to run it in a normal PR.
+
 ## Generated IPC bindings
 
 Every IPC DTO is defined once in Rust and exported to TypeScript by ts-rs

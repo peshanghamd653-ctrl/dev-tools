@@ -1,0 +1,20 @@
+[package]
+name = "devos-snippets"
+description = "DevOS snippets module: reusable text/code fragments with tags and search"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+devos-kernel = { path = "../../devos-kernel" }
+serde.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tempfile = "3"

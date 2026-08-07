@@ -32,6 +32,7 @@ const NAV_LABELS = [
   "Database",
   "Monitors",
   "Deployments",
+  "Snippets",
   "Settings",
 ];
 

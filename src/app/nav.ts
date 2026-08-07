@@ -1,5 +1,6 @@
 import {
   Activity,
+  Code,
   Container,
   Database,
   FolderKanban,
@@ -34,6 +35,7 @@ export const primaryNav: NavItem[] = [
   { to: "/monitors", label: "Monitors", icon: Activity, shortcut: "Ctrl+0" },
   // The digits ran out at Monitors; Deployments takes a shift-modified key.
   { to: "/deploy", label: "Deployments", icon: Rocket, shortcut: "Ctrl+Shift+D" },
+  { to: "/snippets", label: "Snippets", icon: Code, shortcut: "Ctrl+Shift+N" },
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+," },
 ];
 

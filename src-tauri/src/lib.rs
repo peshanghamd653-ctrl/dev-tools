@@ -12,6 +12,7 @@ mod index_commands;
 mod issue_commands;
 mod monitor_commands;
 mod pathsafe;
+mod snippet_commands;
 mod state;
 mod system_commands;
 mod term_commands;
@@ -164,6 +165,7 @@ pub fn run() {
             kernel.register_module(&devos_monitor::MonitorModule);
             kernel.register_module(&devos_deploy::DeployModule);
             kernel.register_module(&devos_issue::IssueModule);
+            kernel.register_module(&devos_snippets::SnippetsModule);
             let kernel = Arc::new(kernel);
 
             let secrets = tauri::async_runtime::block_on(SecretStore::init(kernel.pool.clone()))?;
@@ -177,6 +179,8 @@ pub fn run() {
                 .map_err(|e| format!("db tables: {e}"))?;
             tauri::async_runtime::block_on(devos_monitor::init(&kernel.pool))
                 .map_err(|e| format!("monitor tables: {e}"))?;
+            tauri::async_runtime::block_on(devos_snippets::init(&kernel.pool))
+                .map_err(|e| format!("snippet tables: {e}"))?;
 
             // Forward every kernel event to the webview on one channel.
             let mut rx = kernel.events.subscribe();
@@ -345,6 +349,10 @@ pub fn run() {
             issue_commands::issue_targets,
             issue_commands::issue_create,
             issue_commands::issue_copy_image,
+            snippet_commands::snippets_list,
+            snippet_commands::snippets_search,
+            snippet_commands::snippet_save,
+            snippet_commands::snippet_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

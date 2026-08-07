@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TerminalRouteImport } from './routes/terminal'
+import { Route as SnippetsRouteImport } from './routes/snippets'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as MonitorsRouteImport } from './routes/monitors'
@@ -25,6 +26,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const TerminalRoute = TerminalRouteImport.update({
   id: '/terminal',
   path: '/terminal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SnippetsRoute = SnippetsRouteImport.update({
+  id: '/snippets',
+  path: '/snippets',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -95,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
+  '/snippets': typeof SnippetsRoute
   '/terminal': typeof TerminalRoute
 }
 export interface FileRoutesByTo {
@@ -109,6 +116,7 @@ export interface FileRoutesByTo {
   '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
+  '/snippets': typeof SnippetsRoute
   '/terminal': typeof TerminalRoute
 }
 export interface FileRoutesById {
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
+  '/snippets': typeof SnippetsRoute
   '/terminal': typeof TerminalRoute
 }
 export interface FileRouteTypes {
@@ -140,6 +149,7 @@ export interface FileRouteTypes {
     | '/monitors'
     | '/projects'
     | '/settings'
+    | '/snippets'
     | '/terminal'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -154,6 +164,7 @@ export interface FileRouteTypes {
     | '/monitors'
     | '/projects'
     | '/settings'
+    | '/snippets'
     | '/terminal'
   id:
     | '__root__'
@@ -168,6 +179,7 @@ export interface FileRouteTypes {
     | '/monitors'
     | '/projects'
     | '/settings'
+    | '/snippets'
     | '/terminal'
   fileRoutesById: FileRoutesById
 }
@@ -183,6 +195,7 @@ export interface RootRouteChildren {
   MonitorsRoute: typeof MonitorsRoute
   ProjectsRoute: typeof ProjectsRoute
   SettingsRoute: typeof SettingsRoute
+  SnippetsRoute: typeof SnippetsRoute
   TerminalRoute: typeof TerminalRoute
 }
 
@@ -193,6 +206,13 @@ declare module '@tanstack/react-router' {
       path: '/terminal'
       fullPath: '/terminal'
       preLoaderRoute: typeof TerminalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/snippets': {
+      id: '/snippets'
+      path: '/snippets'
+      fullPath: '/snippets'
+      preLoaderRoute: typeof SnippetsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -287,6 +307,7 @@ const rootRouteChildren: RootRouteChildren = {
   MonitorsRoute: MonitorsRoute,
   ProjectsRoute: ProjectsRoute,
   SettingsRoute: SettingsRoute,
+  SnippetsRoute: SnippetsRoute,
   TerminalRoute: TerminalRoute,
 }
 export const routeTree = rootRouteImport

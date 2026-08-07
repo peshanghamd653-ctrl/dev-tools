@@ -8,8 +8,8 @@ import { useUiStore } from "@/shared/stores/ui";
  * App-wide keyboard shortcuts. Registered once in the shell.
  *   Ctrl+K  command palette      Ctrl+B  toggle sidebar
  *   Ctrl+1  dashboard            Ctrl+2  projects
- *   Ctrl+Shift+D  deployments    Ctrl+Shift+S  report a bug
- *   Ctrl+,  settings
+ *   Ctrl+Shift+D  deployments    Ctrl+Shift+N  snippets
+ *   Ctrl+Shift+S  report a bug   Ctrl+,  settings
  */
 export function useGlobalHotkeys() {
   const navigate = useNavigate();
@@ -31,6 +31,12 @@ export function useGlobalHotkeys() {
         if (e.code === "KeyD") {
           e.preventDefault();
           void navigate({ to: "/deploy" });
+        }
+        if (e.code === "KeyN") {
+          // Ctrl+Shift+N is the browser's "new incognito window" in a tab;
+          // inside the shell there is no such thing to shadow.
+          e.preventDefault();
+          void navigate({ to: "/snippets" });
         }
         if (e.code === "KeyS") {
           // Opens the dialog, which takes the screenshot before rendering

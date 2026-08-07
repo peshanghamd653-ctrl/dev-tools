@@ -35,6 +35,7 @@ const moduleCommandHandlers: Record<
   | "openDatabase"
   | "openMonitors"
   | "openDeploy"
+  | "openSnippets"
   | "captureIssue"
 > = {
   "core.workspace.create": "createWorkspace",
@@ -48,6 +49,7 @@ const moduleCommandHandlers: Record<
   "db.open": "openDatabase",
   "monitor.open": "openMonitors",
   "deploy.open": "openDeploy",
+  "snippets.open": "openSnippets",
   "issue.capture": "captureIssue",
 };
 
@@ -81,6 +83,7 @@ export function CommandPalette() {
     else if (handler === "openDatabase") void navigate({ to: "/database" });
     else if (handler === "openMonitors") void navigate({ to: "/monitors" });
     else if (handler === "openDeploy") void navigate({ to: "/deploy" });
+    else if (handler === "openSnippets") void navigate({ to: "/snippets" });
     else if (handler === "captureIssue") setCaptureIssueOpen(true);
     else if (handler === "indexProject") {
       if (!paletteProject) {

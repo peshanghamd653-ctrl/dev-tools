@@ -47,6 +47,8 @@ import type { QueryResult } from "./bindings/QueryResult";
 import type { DiskInfo } from "./bindings/DiskInfo";
 import type { ProcessInfo } from "./bindings/ProcessInfo";
 import type { SystemSnapshot } from "./bindings/SystemSnapshot";
+import type { Snippet } from "./bindings/Snippet";
+import type { SnippetDraft } from "./bindings/SnippetDraft";
 import type { TermEvent } from "./bindings/TermEvent";
 import type { SavedRequest } from "./bindings/SavedRequest";
 import type { TermSessionInfo } from "./bindings/TermSessionInfo";
@@ -94,6 +96,8 @@ export type {
   QueryResult,
   DiskInfo,
   ProcessInfo,
+  Snippet,
+  SnippetDraft,
   SystemSnapshot,
   TermEvent,
   TermSessionInfo,
@@ -280,6 +284,14 @@ export const ipc = {
   issueCreate: (owner: string, name: string, title: string, body: string) =>
     call<CreatedIssue>("issue_create", { owner, name, title, body }),
   issueCopyImage: (path: string) => call<void>("issue_copy_image", { path }),
+
+  snippetsList: () => call<Snippet[]>("snippets_list"),
+  // A blank query is not a filter — the backend answers it with the full
+  // list, so the page has one query for both.
+  snippetsSearch: (query: string) =>
+    call<Snippet[]>("snippets_search", { query }),
+  snippetSave: (draft: SnippetDraft) => call<Snippet>("snippet_save", { draft }),
+  snippetDelete: (id: string) => call<void>("snippet_delete", { id }),
 };
 
 /** Subscribe to the kernel event stream. Returns an unsubscribe function. */

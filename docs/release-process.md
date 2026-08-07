@@ -96,8 +96,20 @@ signing/updater work and are listed here only so the sequence is visible.
    missing core-loop feature). Three files carry the version and must move
    together — `package.json`, the workspace `Cargo.toml`
    (`[workspace.package] version`), and `src-tauri/tauri.conf.json`. All three
-   read `0.1.0` today. Nothing enforces that they agree; a release workflow
-   should check it rather than trusting a human to remember.
+   read `0.1.0` today, and this is now enforced rather than remembered:
+   `pnpm check:versions` runs in CI on every PR, and the release workflow runs
+   the same script with the tag before it builds anything.
+
+   The asymmetry is deliberate. CI asks only "do the three agree", which is a
+   question a PR can answer; the tag comparison happens at release time, where
+   the tag exists. Catching it on the PR is worth the duplicate step because
+   the fix there is an amend, whereas after a tag it is a retag.
+
+   `src-tauri/tauri.conf.json` is the one that matters most: it is what the
+   built binary reports and what `latest.json` advertises. If it is the stale
+   one, a release publishes with everything green and every installed copy
+   ignores it, because the advertised version equals the one already
+   installed — a release nobody receives, with nothing red to show for it.
 5. **A changelog.** None exists. Prefer generating it from commit messages —
    the history already follows Conventional Commits — over hand-maintaining
    one.

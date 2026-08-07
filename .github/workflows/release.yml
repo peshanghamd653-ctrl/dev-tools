@@ -43,6 +43,19 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # Before the toolchain, the cache and the twenty-minute build, because it
+      # takes about a second and it is checking the one value that decides
+      # whether this release reaches anybody.
+      #
+      # tauri.conf.json's version is what goes into latest.json. If it is stale
+      # the whole job still succeeds — installers upload, the release is titled
+      # from the tag, latest.json is generated and signed — and every installed
+      # copy compares the advertised version against its own, finds them equal,
+      # and never offers the update. A release nobody receives, with nothing
+      # red to show for it. The script explains this at the failure site.
+      - name: Versions agree and match the tag
+        run: node scripts/check-versions.mjs "${{ github.event.inputs.tag || github.ref_name }}"
+
       - uses: dtolnay/rust-toolchain@stable
 
       # A release build is LTO + codegen-units=1, which is the slowest

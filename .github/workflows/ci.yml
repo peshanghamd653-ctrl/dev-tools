@@ -279,6 +279,17 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # Three files carry the version — package.json, the workspace Cargo.toml
+      # and src-tauri/tauri.conf.json — and nothing but this makes them agree.
+      #
+      # Checked on every PR rather than only at release time on purpose. The
+      # release workflow runs the same script with the tag, but by then the
+      # mismatch is already committed and the fix is a retag; here it is a
+      # one-line amend. No tag argument is passed, so this asks only "do the
+      # three agree", which is the question a PR can answer.
+      - name: Versions agree
+        run: pnpm check:versions
+
       - name: Typecheck
         run: pnpm typecheck
 

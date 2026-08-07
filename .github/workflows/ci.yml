@@ -299,10 +299,22 @@ jobs:
   # ---------------------------------------------------------------------------
   audit:
     name: Audit (advisories)
+    # Both halves of the dependency graph are checked here, npm first then Rust.
+    # This is the only job with no `if:` guard, so it is also the job the weekly
+    # schedule at the top of this file exists for.
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The npm half finishes in seconds. The Rust half is dominated by the
+    # `cargo metadata` that cargo-deny runs underneath, which downloads and
+    # unpacks every crate source named in Cargo.lock — 731 crates, 125 MB of
+    # .crate archives as of today — on a runner with no cargo cache. Warm on a
+    # dev machine that step is ~9 s; cold here it is the unknown. 15 rather than
+    # 10 so that a slow crates.io morning produces a slow job instead of a red
+    # one, which is the failure this whole job is written to avoid.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
+      # --- npm ---------------------------------------------------------------
 
       - uses: pnpm/action-setup@v4
         with:
@@ -350,3 +362,96 @@ jobs:
 
       # `--ignore-registry-errors` on both gates: a registry outage is not a
       # security regression and must not turn the build red.
+
+      # --- Rust --------------------------------------------------------------
+      #
+      # The Rust half is the one holding the encryption, the secret store, the
+      # SQL engine and every network client, and until this existed nothing
+      # checked it at all.
+      #
+      # cargo-deny rather than cargo-audit, and `check advisories` rather than
+      # `check all` — deny.toml at the repo root carries the full reasoning for
+      # both, plus the fail-vs-warn line. The short version: cargo-audit reads
+      # Cargo.lock, which is a feature/target union rather than a build, so it
+      # reports 3 vulnerabilities here of which zero are in the shipped binary;
+      # cargo-deny resolves the graph through `cargo metadata` and sees what is
+      # actually compiled.
+      #
+      # No `dtolnay/rust-toolchain` step on purpose: ubuntu-latest already ships
+      # cargo and rustc (1.97.1 on today's 24.04 image), and this job never
+      # compiles anything — cargo-deny only needs cargo to resolve the graph, so
+      # the toolchain version cannot change the answer. Installing one would
+      # cost time to make no difference.
+      #
+      # No `Swatinem/rust-cache` either. There is no target/ dir here, so the
+      # only thing worth caching is ~/.cargo/registry, and that cache would
+      # compete for the repo's 10 GB budget with the `rust` and `e2e` build
+      # caches, which are the ones that actually pay for themselves. If the
+      # cold `cargo metadata` download turns out to dominate this job in
+      # practice, that is the knob to reach for — with a `prefix-key` so it does
+      # not thrash the other two.
+      #
+      # The binary comes prebuilt and version-pinned. `cargo install cargo-deny
+      # --locked` was measured at 13.7 minutes of compilation, which is not
+      # usable here even behind a cache: GitHub evicts caches untouched for 7
+      # days, and on a quiet week this job's only trigger is the Monday
+      # schedule, so the cache would miss and recompile almost every time. The
+      # pin is there for the same reason tauri-driver's is in the e2e job — a
+      # cargo-deny release that changes a default should arrive in a commit
+      # somebody reviewed, not on a Monday morning.
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.20.2
+
+      # Same shape as the npm report step above, and for the same reason: print
+      # everything first, in a step that cannot fail the build, so the record of
+      # what the gate below chose *not* to block on is visible rather than
+      # inferred. Each finding comes with its inclusion graph, which is the part
+      # worth reading — it says which dependency dragged the crate in.
+      #
+      # `-W` on all four classes rather than the more obvious `-A`. Both make
+      # the run exit 0, but `-A` demotes each diagnostic to a *note*, and
+      # cargo-deny's default log level is `warn` — so the notes are filtered out
+      # before anything is printed and this block comes back containing the
+      # single line "advisories ok", which reads exactly like a clean run. `-W`
+      # is the spelling that actually reports. Verified locally both ways.
+      #
+      # `--color never` is load-bearing too. cargo-deny reads CARGO_TERM_COLOR,
+      # which this workflow sets to `always`, and a step summary is markdown,
+      # not a terminal — without it the block fills with escape sequences.
+      # `2>&1` likewise: cargo-deny writes diagnostics to stderr, so a bare pipe
+      # into tee records an empty block.
+      - name: Rust advisory report (informational)
+        continue-on-error: true
+        run: |
+          {
+            echo '### cargo deny check advisories'
+            echo ''
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cargo deny --color never check advisories --show-stats \
+            -W vulnerability -W unmaintained -W unsound -W yanked 2>&1 \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # The gate. Fails on `vulnerability` and `unsound` — the two classes that
+      # describe a defect in code that compiles into the Windows binary — and
+      # only for crates cargo's own resolver puts in that binary.
+      #
+      # `-W unmaintained` is the deliberate exception, and the direct analogue
+      # of the npm job leaving low/moderate devDependency advisories ungated
+      # above. An unmaintained crate is a maintenance signal, not a defect;
+      # today's five are `unic-*` crates arriving via urlpattern → tauri-utils,
+      # with no upgrade available and nothing this repo can do about them.
+      # Blocking on that is a red build for a month over somebody else's
+      # roadmap. They stay printed, both here and in the report step.
+      #
+      # This is a level override rather than a deny.toml setting because
+      # cargo-deny's `unmaintained` config field selects *scope* (which crates
+      # are considered), not severity — setting it to "workspace" would make
+      # these disappear entirely, and invisible is worse than warned.
+      #
+      # Run the identical command locally; see docs/testing.md.
+      - name: Fail on vulnerabilities and unsoundness in the shipped Rust graph
+        run: cargo deny check advisories -W unmaintained

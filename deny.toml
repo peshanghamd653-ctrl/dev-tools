@@ -1,0 +1,109 @@
+# cargo-deny — advisory scanning for the Rust half of the dependency graph.
+#
+# The npm half is gated by `pnpm audit` in the `audit` job of
+# .github/workflows/ci.yml. This file is the Rust equivalent and follows the
+# same house rule that job's comments spell out: a check that goes red on a
+# morning when nobody changed anything gets un-required, and then the real
+# finding is ignored too. So the gate is narrow enough to mean something, and
+# everything it does not block on is printed rather than hidden.
+#
+# ---------------------------------------------------------------------------
+# Why cargo-deny and not cargo-audit
+# ---------------------------------------------------------------------------
+# Because cargo-audit reads Cargo.lock and nothing else, and a lock file is a
+# feature/target *union*, not a build. 731 crates are locked here; 670 are
+# reachable in any build; 46 crate names are locked and never compiled on any
+# target — including the whole MySQL/Postgres driver chain (`sqlx-mysql`,
+# `rsa`, `pkcs1`, `num-bigint-dig`, …) and the whole rustls stack (`rustls`,
+# `ring`, `webpki`), because sqlx is built with `features = ["runtime-tokio",
+# "sqlite"]` and reqwest with its default native-TLS backend.
+#
+# Concretely, today: `cargo audit` reports 3 vulnerabilities against this lock
+# file and **none of them is in the shipped binary** — `rsa 0.9.10`
+# (RUSTSEC-2023-0071, unfixed upstream) is an optional dependency of
+# `sqlx-mysql`, and `quick-xml 0.30.0` (RUSTSEC-2026-0194/0195) is pulled only
+# by `xcb`, the X11 backend of `xcap`. cargo-audit cannot tell the difference:
+# its `--target-os`/`--target-arch` flags filter on the *advisory's* metadata,
+# not on the build graph, and were measured to change nothing here.
+#
+# cargo-deny builds its graph from `cargo metadata`, so cargo's own resolver
+# decides what is in scope. `rsa` is dropped by feature resolution without
+# anyone writing an ignore for it — which matters, because an ignore entry is a
+# permanent hole, and this one would also have hidden any *future* rsa advisory
+# on the day someone enables the mysql feature.
+#
+# The rest of cargo-deny is deliberately not turned on. Only
+# `cargo deny check advisories` is run — never `check all`. Measured against
+# this workspace with cargo-deny's own defaults:
+#   * `check licenses` → 401 errors, because the allow-list starts empty and
+#     must be curated crate by crate. That is a whole project, and the wrong
+#     one to bolt onto a security check. Worth doing before DevOS is
+#     distributed to anyone (see docs/release-process.md), not today.
+#   * `check bans`     → 24 duplicate-version warnings, essentially all of them
+#     inside Tauri's tree, which this repo cannot resolve.
+#   * `check sources`  → passes trivially; every crate already comes from
+#     crates.io and there is no git dependency to guard against yet.
+# More surface is not automatically better. An unwanted gate is how the whole
+# job gets switched off.
+
+[graph]
+# DevOS builds and ships Windows only: the `rust` and `e2e` CI jobs are both
+# `windows-latest`, and docs/release-process.md puts macOS/Linux explicitly out
+# of scope. Tauri still drags the entire GTK3/X11 desktop stack into Cargo.lock
+# for the Linux target, and `xcap` drags in `xcb`; none of it is compiled here.
+# Gating on advisories in code that is never built and never shipped is exactly
+# the noise this file exists to avoid.
+#
+# !! If a platform is ever added to docs/release-process.md, add its triple
+# !! here in the same commit. Otherwise its advisories stay invisible to the
+# !! gate. This is the one line in this file that can silently under-report.
+#
+# Note the informational step in ci.yml prints everything this list admits at
+# note level, so narrowing the *gate* does not narrow what a reader sees.
+targets = ["x86_64-pc-windows-msvc"]
+
+[advisories]
+# Scope, not severity: these say which crates an advisory class is considered
+# for, and "all" means "every crate in the graph above, however deep".
+# Deliberately the widest setting for both — the decision about what *blocks*
+# is made in ci.yml with a lint-level override, not by making cargo-deny blind.
+#
+#   unsound      → blocks. This is the class that describes memory-safety and
+#                  thread-safety holes in code that actually compiles into the
+#                  binary. Today exactly one applies: RUSTSEC-2026-0221 against
+#                  `event-listener 5.4.1`, reached through `sqlx-core`. It is
+#                  not ignored below, on purpose — it is fixable in one command
+#                  (`cargo update -p event-listener` → 5.4.2, the patched
+#                  release), and ignoring a finding that has a fix is how a real
+#                  problem gets parked forever.
+#   unmaintained → does not block; ci.yml passes `-W unmaintained` on the gate
+#                  step so these are warnings. Real signal, no urgency, and no
+#                  fix under this repo's control: the five `unic-*` crates
+#                  flagged today arrive via `urlpattern` → `tauri-utils`, and
+#                  nothing DevOS does will change that. Failing on them is a
+#                  good way to be red for a month.
+unmaintained = "all"
+unsound = "all"
+
+# A yank is a maintainer's decision, not an advisory — it can land on a
+# lockfile that nobody touched, for reasons as mundane as a bad publish. Worth
+# seeing, never worth blocking a PR that changed something else.
+yanked = "warn"
+
+# Empty, and that is the point.
+#
+# The bar for adding an entry: the advisory is real, it applies to a crate that
+# is genuinely built into the Windows binary, and there is no fix available.
+# "It is inconvenient" is not on that list. Every entry must use the
+# `{ id, reason }` form — a bare id string is an unexplained hole — and the
+# reason must say what would make the entry removable.
+#
+# Nothing needs to be ignored for `rsa`/RUSTSEC-2023-0071 despite it being in
+# Cargo.lock: the `[graph]` above means cargo-deny never sees it. That is the
+# whole reason this file exists rather than an audit.toml.
+#
+# cargo-deny helps keep this list honest: an entry that stops matching is
+# reported as `warning[advisory-not-detected]` against its line number here, so
+# a stale ignore announces itself instead of quietly suppressing a later
+# advisory against the same crate.
+ignore = []

@@ -57,11 +57,38 @@ impl ApprovalRegistry {
     }
 }
 
+/// What came back from asking.
+///
+/// This used to be `Result<bool, String>`, where every refusal that was not a
+/// button press arrived as prose. That was survivable while the only consumer
+/// was the model — "denied" is "denied" to a retry loop — but the audit log
+/// has to record *why*, and a user who pressed Deny and a user who walked away
+/// from the machine for three minutes are not the same event. Recovering that
+/// distinction by matching words in an error string is the mistake
+/// `DbErrorDto` was introduced to undo on the database side; this is the same
+/// fix applied before it can become the same bug.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApprovalOutcome {
+    Approved,
+    /// The user pressed Deny.
+    Declined,
+    /// Nobody answered within [`APPROVAL_TIMEOUT`]. Carries the timeout so the
+    /// audit entry can say "no answer within 180s" without a second constant
+    /// somewhere else drifting away from this one.
+    TimedOut {
+        after_secs: u64,
+    },
+    /// The request never reached anyone, or the channel died mid-wait. Fails
+    /// closed like every other non-approval.
+    Unreachable(String),
+}
+
 /// How mutating tools ask for consent. Trait so tests can stub it.
 #[async_trait::async_trait]
 pub trait ApprovalGate: Send + Sync {
-    /// Resolves to `true` only if the user explicitly approved this call.
-    async fn request(&self, name: &str, input: &Value) -> Result<bool, String>;
+    /// Resolves to [`ApprovalOutcome::Approved`] only if the user explicitly
+    /// approved this call. Every other variant means the call must not run.
+    async fn request(&self, name: &str, input: &Value) -> ApprovalOutcome;
 }
 
 /// Production gate: emits an `ApprovalRequest` frame and waits on the registry.
@@ -83,26 +110,32 @@ impl ChannelApprovalGate {
 
 #[async_trait::async_trait]
 impl ApprovalGate for ChannelApprovalGate {
-    async fn request(&self, name: &str, input: &Value) -> Result<bool, String> {
+    async fn request(&self, name: &str, input: &Value) -> ApprovalOutcome {
         let id = uuid::Uuid::new_v4().to_string();
         let rx = self.registry.register(id.clone());
-        self.channel
-            .send(AiDelta::ApprovalRequest {
-                id: id.clone(),
-                name: name.to_string(),
-                input: input.to_string(),
-            })
-            .map_err(|e| format!("could not reach the UI for approval: {e}"))?;
+        if let Err(e) = self.channel.send(AiDelta::ApprovalRequest {
+            id: id.clone(),
+            name: name.to_string(),
+            input: input.to_string(),
+        }) {
+            self.registry.forget(&id);
+            return ApprovalOutcome::Unreachable(format!(
+                "could not reach the UI for approval: {e}"
+            ));
+        }
 
         match tokio::time::timeout(self.timeout, rx).await {
-            Ok(Ok(approved)) => Ok(approved),
+            Ok(Ok(true)) => ApprovalOutcome::Approved,
+            Ok(Ok(false)) => ApprovalOutcome::Declined,
             Ok(Err(_)) => {
                 self.registry.forget(&id);
-                Err("approval channel closed".into())
+                ApprovalOutcome::Unreachable("approval channel closed".into())
             }
             Err(_) => {
                 self.registry.forget(&id);
-                Err("approval request timed out".into())
+                ApprovalOutcome::TimedOut {
+                    after_secs: self.timeout.as_secs(),
+                }
             }
         }
     }
@@ -127,5 +160,102 @@ mod tests {
         assert!(!registry.resolve("nope", true));
         assert!(registry.resolve("req-2", false));
         assert!(!registry.resolve("req-2", true), "second resolve must fail");
+    }
+
+    /// A gate wired to a real channel, with the id of whatever it just asked
+    /// about — the registry key is generated inside `request`, so a test that
+    /// wants to answer has to read the frame the UI would have read.
+    fn test_gate(timeout: Duration) -> (std::sync::Arc<ApprovalRegistry>, ChannelApprovalGate) {
+        let registry = std::sync::Arc::new(ApprovalRegistry::default());
+        let gate = ChannelApprovalGate {
+            registry: registry.clone(),
+            channel: Channel::new(|_| Ok(())),
+            timeout,
+        };
+        (registry, gate)
+    }
+
+    /// The distinction the audit log is built on: a pressed Deny and an
+    /// unattended machine are different outcomes, carrying different data.
+    /// Before this was a typed enum both arrived as `Err(String)` and the only
+    /// way to tell them apart was to match words in the message.
+    #[tokio::test]
+    async fn the_gate_reports_approval_refusal_and_silence_as_different_things() {
+        let (registry, gate) = test_gate(APPROVAL_TIMEOUT);
+
+        // Approve: answer from another task once the request is registered.
+        let answering = registry.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let id = answering
+                    .pending
+                    .lock()
+                    .expect("approval registry lock poisoned")
+                    .keys()
+                    .next()
+                    .cloned();
+                match id {
+                    Some(id) => {
+                        answering.resolve(&id, true);
+                        return;
+                    }
+                    None => tokio::task::yield_now().await,
+                }
+            }
+        });
+        assert_eq!(
+            gate.request("write_file", &serde_json::json!({"path": "a.rs"}))
+                .await,
+            ApprovalOutcome::Approved
+        );
+
+        // Deny.
+        let (registry, gate) = test_gate(APPROVAL_TIMEOUT);
+        let refusing = registry.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let id = refusing
+                    .pending
+                    .lock()
+                    .expect("approval registry lock poisoned")
+                    .keys()
+                    .next()
+                    .cloned();
+                match id {
+                    Some(id) => {
+                        refusing.resolve(&id, false);
+                        return;
+                    }
+                    None => tokio::task::yield_now().await,
+                }
+            }
+        });
+        assert_eq!(
+            gate.request("run_command", &serde_json::json!({"command": "rm -rf ."}))
+                .await,
+            ApprovalOutcome::Declined
+        );
+    }
+
+    /// Nobody answers. The outcome carries the timeout it waited, so the audit
+    /// entry says "no answer within 180s" from the same constant the wait used
+    /// rather than from a number retyped somewhere else. A short timeout here
+    /// because this asserts the *shape*, not the duration.
+    #[tokio::test]
+    async fn silence_times_out_carrying_the_wait_and_forgets_the_request() {
+        let (registry, gate) = test_gate(Duration::from_secs(1));
+        let outcome = gate
+            .request("edit_file", &serde_json::json!({"path": "a.rs"}))
+            .await;
+
+        assert_eq!(outcome, ApprovalOutcome::TimedOut { after_secs: 1 });
+        assert!(
+            registry
+                .pending
+                .lock()
+                .expect("approval registry lock poisoned")
+                .is_empty(),
+            "a timed-out request must not stay resolvable"
+        );
     }
 }

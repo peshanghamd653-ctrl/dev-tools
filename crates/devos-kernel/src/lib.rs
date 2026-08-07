@@ -5,6 +5,7 @@
 //! through the [`module::Module`] trait and never depend on each other
 //! directly; they communicate via [`events::EventBus`].
 
+pub mod audit;
 pub mod backup;
 pub mod commands;
 pub mod db;

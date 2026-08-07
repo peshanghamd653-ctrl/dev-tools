@@ -115,6 +115,47 @@ pub struct NotificationDto {
     pub created_at: i64,
 }
 
+/// One appended row of the audit log. See [`crate::audit`] for what is
+/// recorded and — more importantly — what deliberately is not.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct AuditEntry {
+    #[ts(type = "number")]
+    pub id: i64,
+    /// "user" | "ai" | "system"
+    pub actor: String,
+    /// Stable dotted event type, e.g. `ai.tool.denied`. The outcome is part
+    /// of the identifier so the UI never parses prose to find one.
+    pub action: String,
+    pub detail: Option<String>,
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
+/// The audit log as one screen sees it: the newest entries, plus the numbers
+/// that let the page state its own retention honestly instead of implying the
+/// list is everything that ever happened.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct AuditLog {
+    pub entries: Vec<AuditEntry>,
+    /// Rows in the table, which may exceed `entries.len()`.
+    #[ts(type = "number")]
+    pub total: i64,
+    /// Timestamp of the oldest surviving row — how far back the record
+    /// actually reaches, which is not the same as the retention window on a
+    /// fresh install.
+    #[ts(type = "number | null")]
+    pub oldest: Option<i64>,
+    /// Days kept, from [`crate::audit::RETENTION_DAYS`]. Sent rather than
+    /// duplicated in TypeScript so the screen cannot promise a window the
+    /// backend does not keep.
+    #[ts(type = "number")]
+    pub retention_days: i64,
+}
+
 /// One entry of a project directory listing (file explorer).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../src/shared/ipc/bindings/")]

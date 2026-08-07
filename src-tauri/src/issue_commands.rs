@@ -90,6 +90,17 @@ pub async fn issue_targets(
         .map_err(|e| e.to_string())
 }
 
+/// File an issue — the only thing DevOS writes to the outside world, and the
+/// only audited event whose effect is public and irreversible.
+///
+/// The row records `owner/name#number` and nothing else. Not the title and not
+/// the body: the body is free-form prose that routinely quotes logs, config
+/// and stack traces, it was assembled from a screenshot the user annotated,
+/// and it already exists in a durable, linkable place — GitHub. Copying it
+/// into the security log would duplicate arbitrary user text into a plaintext
+/// table with no delete button, to record something the issue itself records
+/// better. What only this table can tell you is *that DevOS sent it, with
+/// this install's token, at this time*.
 #[tauri::command]
 pub async fn issue_create(
     state: State<'_, AppState>,
@@ -99,9 +110,17 @@ pub async fn issue_create(
     body: String,
 ) -> Result<CreatedIssue, String> {
     let token = require_token(&state).await?;
-    devos_issue::create_issue(&token, DEFAULT_BASE_URL, &owner, &name, &title, &body)
+    let created = devos_issue::create_issue(&token, DEFAULT_BASE_URL, &owner, &name, &title, &body)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    state
+        .kernel
+        .audit(devos_kernel::audit::AuditEvent::IssueCreated {
+            repo: format!("{owner}/{name}"),
+            number: created.number,
+        })
+        .await;
+    Ok(created)
 }
 
 /// A capture this app took, and nothing else.

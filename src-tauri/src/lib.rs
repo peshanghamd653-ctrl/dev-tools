@@ -1,6 +1,7 @@
 mod ai_commands;
 mod api_commands;
 mod approvals;
+mod audit_commands;
 mod backup_commands;
 mod commands;
 mod core_module;
@@ -289,6 +290,7 @@ pub fn run() {
             commands::notifications_unread_count,
             commands::notification_mark_read,
             commands::notifications_mark_all_read,
+            audit_commands::audit_log,
             backup_commands::backups_list,
             backup_commands::backup_restore_stage,
             backup_commands::backup_restore_cancel,

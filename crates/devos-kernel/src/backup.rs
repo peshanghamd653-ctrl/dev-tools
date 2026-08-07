@@ -792,6 +792,29 @@ impl RestoreOutcome {
             ),
         }
     }
+
+    /// The same outcome as an audit row.
+    ///
+    /// Deliberately alongside [`Self::notification`] rather than assembled at
+    /// the call site: a notification is read once and cleared, an audit row is
+    /// what is still there in a month, and the two must not be able to
+    /// disagree about which file replaced which.
+    pub fn audit_event(&self) -> crate::audit::AuditEvent {
+        match self {
+            RestoreOutcome::Restored { source, preserved } => {
+                crate::audit::AuditEvent::DatabaseRestored {
+                    source: source.clone(),
+                    preserved: preserved.clone(),
+                }
+            }
+            RestoreOutcome::Refused { source, error, .. } => {
+                crate::audit::AuditEvent::DatabaseRestoreRefused {
+                    source: source.clone(),
+                    error: error.clone(),
+                }
+            }
+        }
+    }
 }
 
 /// Apply a staged restore, if one is waiting.

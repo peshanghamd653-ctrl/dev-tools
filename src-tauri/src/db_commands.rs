@@ -56,6 +56,23 @@ pub async fn db_schema(state: State<'_, AppState>, id: String) -> Result<DbSchem
         .map_err(DbErrorDto::from)
 }
 
+/// Run one statement against a saved connection.
+///
+/// A write that actually executes is audited; a read is not, and neither is a
+/// write the guards refused. The reasoning, since both halves are choices:
+///
+/// - **Reads are omitted** because they are the volume, they change nothing,
+///   and a row per `SELECT` would be a log of the user browsing their own
+///   data — which the connection list already records the existence of.
+/// - **Refusals are omitted** because nothing happened. The refusal is
+///   surfaced in the editor at the time, and a guard doing its job every time
+///   somebody forgets the write toggle is noise, not history.
+/// - **The statement is not recorded**, only the connection and how many rows
+///   moved. A statement is where the *data* lives — `INSERT INTO users VALUES
+///   ('…')` carries whatever the user's database carries — and this table is
+///   plaintext beside the encrypted one. "A write ran against Local notes and
+///   moved 400 rows, at 14:02" is the fact worth keeping; reconstructing it
+///   verbatim is the SQL editor's own history's job, not the security log's.
 #[tauri::command]
 pub async fn db_query(
     state: State<'_, AppState>,
@@ -63,14 +80,27 @@ pub async fn db_query(
     sql: String,
     allow_write: bool,
 ) -> Result<QueryResult, DbErrorDto> {
-    let (_, read_pool, write_pool) = state
+    let (connection, read_pool, write_pool) = state
         .db
         .resolve(&state.kernel.pool, &id)
         .await
         .map_err(DbErrorDto::from)?;
-    devos_db::run_query(&read_pool, &write_pool, &sql, allow_write)
+    let result = devos_db::run_query(&read_pool, &write_pool, &sql, allow_write)
         .await
-        .map_err(DbErrorDto::from)
+        .map_err(DbErrorDto::from)?;
+    // `read_only` is set by the executor from the path the statement actually
+    // took, not from the caller's `allow_write` flag — so this records writes
+    // that ran, and cannot be talked into recording one that did not.
+    if !result.read_only {
+        state
+            .kernel
+            .audit(devos_kernel::audit::AuditEvent::SqlWrite {
+                connection: connection.name.clone(),
+                rows_affected: result.rows_affected,
+            })
+            .await;
+    }
+    Ok(result)
 }
 
 #[tauri::command]

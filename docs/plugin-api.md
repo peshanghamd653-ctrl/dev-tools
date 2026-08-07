@@ -196,8 +196,15 @@ rather than opening a socket, which keeps the tests hermetic without changing
 anything about the gating.
 
 Every call crossing the boundary is recorded in a journal, including every
-denial with its reason. That journal is what `audit_log` should be fed from;
-nothing writes to `audit_log` yet.
+denial with its reason. That journal is what `audit_log` should be fed from.
+`audit_log` is now written — AI tool approvals and denials, secret writes,
+SQL writes, issue creation and restores all land there — which satisfies
+[ADR-0010](adr/0010-wasmi-interpreter-for-plugin-runtime.md)'s third
+precondition. **The plugin journal is still not wired to it**, because the
+crate is unregistered: whoever registers it has to add `AuditEvent` variants
+for plugin calls, which do not exist yet. Registering the runtime without
+that would mean the one subsystem the audit log was demanded for is the one
+it does not cover.
 
 The journal is **scoped to one call**, like fuel. `Sandbox::take_journal()` is
 the app-facing accessor and the next invocation starts empty whether or not

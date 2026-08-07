@@ -26,7 +26,7 @@ WAL mode, foreign keys on, opened via SQLx. All timestamps are Unix epoch
 | `settings` | Key-value app settings | upsert via `ON CONFLICT` |
 | `jobs` | Durable background jobs | `status: pending/running/succeeded/failed` |
 | `notifications` | Notification center (bell in the topbar) | `read` flag; written by `Kernel::notify` and failed jobs |
-| `audit_log` | Security-relevant actions | append-only, not yet written to |
+| `audit_log` | Security-relevant actions | append-only; written by `devos_kernel::audit`. `actor` (`user`/`ai`/`system`), `action` (stable dotted id, outcome included — `ai.tool.denied`), `detail` (one line naming what was acted on), `created_at`. Pruned by age at boot, see below |
 
 ## AI tables (`devos-ai`, implemented)
 
@@ -121,6 +121,62 @@ code and FTS5's word tokenizer would not match `Query` inside `useQuery`. See
   than built: [ADR-0010](adr/0010-wasmi-interpreter-for-plugin-runtime.md)
   concluded the runtime should not ship in-process yet, and persisting
   permission grants for something that does not run would be premature.
+
+## Audit log — implemented
+
+`audit_log` is the durable half of things that are otherwise only visible
+while they happen. Every tool call renders in the chat, every refused write
+renders in the SQL editor, every restore raises a notification — and none of
+that survives a deleted conversation or a cleared bell. Rows are appended
+through `devos_kernel::audit::record`, never by a module writing its own SQL.
+
+**The columns are M0's, unchanged.** `actor`/`action`/`detail`/`created_at`
+is the classic audit tuple and it fits, so no migration was needed:
+
+| Column | Holds |
+|---|---|
+| `actor` | `user`, `ai`, or `system` — "did I do this, or did the model do it with my permission?" is most of what someone opens this table to answer |
+| `action` | A stable dotted identifier, with the **outcome as part of it**: `ai.tool.approved` vs `ai.tool.denied`. So "show me every refusal" is a prefix match, not a prose search |
+| `detail` | One line naming what was acted on, plus the reason when there is one. Truncated at 160 characters with an explicit `… (truncated)` marker |
+| `created_at` | Unix ms, like every other timestamp here |
+
+The vocabulary is a Rust enum (`AuditEvent`) rather than free-form strings, so
+a call site cannot invent an `action` nobody can query, and a variant like
+`SecretSet { name }` has **no field a secret value could travel in** — the
+redaction is a compile-time property, not a format string somebody remembered
+to get right. See [security.md](security.md) for what is recorded and, more
+importantly, what deliberately is not.
+
+**Listed and pruned by `id`, not `created_at`.** The column is `INTEGER
+PRIMARY KEY AUTOINCREMENT`, so it *is* insertion order; it breaks the tie two
+events in the same millisecond would leave undefined, and it reads straight
+off the primary key — which is why this table carries no second index.
+
+**Retention: 90 days, pruned at boot.** An append-only table that grows
+forever is a real problem on a long-lived install, and both ways out are bad
+in different ways — so the choice is stated rather than implied:
+
+- An **age** window is used because it answers the question people ask ("what
+  happened to my machine last month?") and cannot discard something still
+  inside its own stated window. A row cap would let one busy afternoon evict a
+  year of history, which is the precise failure this table exists to prevent.
+- **No second, size-based axis** on top of it, because every recorded event
+  needs a human gesture — an approval click (or a 180-second wait), a Run in
+  the SQL editor, a Save on a secret, a restart to apply a restore. The write
+  rate is bounded by a person, not by a loop, so 90 days is a promise that can
+  be kept without a silent truncation behind it.
+- **Neither truncation is silent.** The Settings viewer prints the window, the
+  total row count, and the date the record actually reaches back to — and says
+  so when the list on screen is a slice of a bigger table.
+
+Pruning runs from `Kernel::boot`, best effort: a boot that died pruning the
+audit log would be a boot the audit log broke.
+
+**There is no write, edit, delete or clear command.** `audit_log` (read) is
+the only IPC surface. Rows are appended by the code paths that perform the
+audited actions and removed only by the age-based prune, so nothing reachable
+from the webview — or from a prompt injection that reaches the webview — can
+edit its own trail.
 
 ## Backups — implemented
 

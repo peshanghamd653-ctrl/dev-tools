@@ -9,9 +9,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use devos_ai::{ToolDef, ToolExecutor};
+use devos_kernel::audit::{AuditEvent, DenialReason};
 use serde_json::{json, Value};
 
-use crate::approvals::ApprovalGate;
+use crate::approvals::{ApprovalGate, ApprovalOutcome};
 
 const MAX_FILE_BYTES: u64 = 256 * 1024;
 const MAX_OUTPUT_BYTES: usize = 64 * 1024;
@@ -221,15 +222,71 @@ impl ProjectTools {
     /// The single consent choke point. Every mutating tool goes through this
     /// before it touches anything; a missing gate or a denial is an error the
     /// model has to work around, never a silent success.
+    ///
+    /// It is also the single *audit* point, and for the same reason: this is
+    /// the one place every mutating call provably passes through, so a tool
+    /// added later cannot be forgotten here without also being ungated.
+    /// `docs/security.md` promises every tool call is visible in the chat in
+    /// real time — true, and useless a week later, because that history dies
+    /// with the conversation. This is the half that survives it.
+    ///
+    /// The audit row is written *after* the decision and *before* the work, so
+    /// a tool that then fails still leaves a record that it was allowed to
+    /// try. Recording never fails the call: `Kernel::audit` returns `()`.
     async fn approve(&self, name: &str, input: &Value) -> Result<(), String> {
-        let gate = self
-            .gate
-            .as_ref()
-            .ok_or("this conversation has no approval channel, so mutating tools are disabled")?;
-        if !gate.request(name, input).await? {
-            return Err("denied by user".into());
-        }
-        Ok(())
+        let target = audit_target(name, input);
+
+        let Some(gate) = self.gate.as_ref() else {
+            devos_kernel::audit::record(
+                &self.pool,
+                AuditEvent::AiToolDenied {
+                    tool: name.to_string(),
+                    target,
+                    reason: DenialReason::NoApprovalChannel,
+                },
+            )
+            .await;
+            return Err(
+                "this conversation has no approval channel, so mutating tools are disabled".into(),
+            );
+        };
+
+        let outcome = gate.request(name, input).await;
+        let (event, result) = match outcome {
+            ApprovalOutcome::Approved => (
+                AuditEvent::AiToolApproved {
+                    tool: name.to_string(),
+                    target,
+                },
+                Ok(()),
+            ),
+            ApprovalOutcome::Declined => (
+                AuditEvent::AiToolDenied {
+                    tool: name.to_string(),
+                    target,
+                    reason: DenialReason::Declined,
+                },
+                Err("denied by user".to_string()),
+            ),
+            ApprovalOutcome::TimedOut { after_secs } => (
+                AuditEvent::AiToolDenied {
+                    tool: name.to_string(),
+                    target,
+                    reason: DenialReason::TimedOut { after_secs },
+                },
+                Err("approval request timed out".to_string()),
+            ),
+            ApprovalOutcome::Unreachable(message) => (
+                AuditEvent::AiToolDenied {
+                    tool: name.to_string(),
+                    target,
+                    reason: DenialReason::Unreachable,
+                },
+                Err(message),
+            ),
+        };
+        devos_kernel::audit::record(&self.pool, event).await;
+        result
     }
 
     /// Join + canonicalize + verify containment (shared guard).
@@ -528,6 +585,40 @@ impl ProjectTools {
     }
 }
 
+/// What the audit row names as the thing acted on.
+///
+/// The rule this encodes is **record the action, never the payload**, and the
+/// three cases are each a deliberate answer rather than an oversight:
+///
+/// - `edit_file` / `write_file` → the **path**. Which file changed is the
+///   action; what was written into it is payload, is unbounded, and would put
+///   arbitrary file content into a plaintext table in the same database whose
+///   whole point is that secrets are not in it.
+/// - `run_command` → the **command line**. Here the argument *is* the action:
+///   "run_command was approved" without the command does not answer the
+///   question this table exists to answer. It is the one recorded field with
+///   no natural ceiling, so [`devos_kernel::audit`] truncates it, and the
+///   residual risk — a command that embeds a credential lands here in
+///   plaintext — is stated in `docs/security.md` rather than shrugged at. The
+///   user saw and approved that exact text, so it is not data the log
+///   introduces to the machine.
+/// - `save_memory` → **nothing beyond the tool name**. What it stores is
+///   already durable, already listed in the Memory panel with a delete button,
+///   and is free-form model output; copying it here would duplicate the text
+///   into a table that has no delete button, which is a worse privacy trade
+///   than the entry is worth. That a memory was written, and when, is the part
+///   only this log can tell you.
+///
+/// Read tools never reach here — they do not pass through `approve`.
+fn audit_target(name: &str, input: &Value) -> Option<String> {
+    let field = match name {
+        "edit_file" | "write_file" => "path",
+        "run_command" => "command",
+        _ => return None,
+    };
+    input[field].as_str().map(str::to_string)
+}
+
 fn walk(root: &Path, dir: &Path, query: &str, depth: usize, matches: &mut Vec<String>) {
     if depth > MAX_WALK_DEPTH || matches.len() >= MAX_FIND_RESULTS {
         return;
@@ -602,6 +693,10 @@ impl ToolExecutor for ProjectTools {
 mod tests {
     use super::*;
 
+    /// A real SQLite file with the kernel schema applied, because the consent
+    /// choke point now writes `audit_log` and a pool without that table would
+    /// exercise the *failure* path on every test in this module — silently,
+    /// since recording never propagates.
     async fn test_pool(dir: &Path) -> sqlx::SqlitePool {
         let options = sqlx::sqlite::SqliteConnectOptions::new()
             .filename(dir.join("tools-test.db"))
@@ -611,8 +706,16 @@ mod tests {
             .connect_with(options)
             .await
             .unwrap();
+        devos_kernel::db::run_migrations(&pool).await.unwrap();
         devos_index::init(&pool).await.unwrap();
         pool
+    }
+
+    /// Every audit row in a tools pool, newest first.
+    async fn audit_rows(tools: &ProjectTools) -> Vec<devos_kernel::types::AuditEntry> {
+        devos_kernel::repo::list_audit_entries(&tools.pool, 50)
+            .await
+            .unwrap()
     }
 
     async fn fixture() -> (tempfile::TempDir, ProjectTools) {
@@ -687,7 +790,7 @@ mod tests {
     // ---- write/execute tools ----
 
     struct StubGate {
-        approve: bool,
+        answer: ApprovalOutcome,
         /// Name *and* arguments, so a test can assert the user was shown the
         /// exact text a call would persist — not merely that something asked.
         calls: std::sync::Mutex<Vec<(String, Value)>>,
@@ -695,8 +798,16 @@ mod tests {
 
     impl StubGate {
         fn new(approve: bool) -> Arc<Self> {
+            Self::answering(if approve {
+                ApprovalOutcome::Approved
+            } else {
+                ApprovalOutcome::Declined
+            })
+        }
+
+        fn answering(answer: ApprovalOutcome) -> Arc<Self> {
             Arc::new(Self {
-                approve,
+                answer,
                 calls: std::sync::Mutex::new(Vec::new()),
             })
         }
@@ -712,12 +823,12 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ApprovalGate for StubGate {
-        async fn request(&self, name: &str, input: &Value) -> Result<bool, String> {
+        async fn request(&self, name: &str, input: &Value) -> ApprovalOutcome {
             self.calls
                 .lock()
                 .unwrap()
                 .push((name.to_string(), input.clone()));
-            Ok(self.approve)
+            self.answer.clone()
         }
     }
 
@@ -1143,6 +1254,218 @@ mod tests {
             );
         }
         assert!(tool_defs().iter().any(|d| d.name == "save_memory"));
+    }
+
+    // ---- the audit trail (docs/security.md, "Audit log") ----
+
+    /// The highest-value entry: an approved mutating call names the tool and
+    /// the thing it touched, and says the model was the actor.
+    #[tokio::test]
+    async fn an_approved_mutating_call_lands_in_the_audit_log() {
+        let (_dir, tools, _gate) = write_fixture(true).await;
+        tools
+            .execute(
+                "edit_file",
+                &json!({"path": "src/lib.rs", "old_string": "fn one()", "new_string": "fn renamed()"}),
+            )
+            .await
+            .unwrap();
+
+        let rows = audit_rows(&tools).await;
+        assert_eq!(rows.len(), 1, "one call, one row");
+        assert_eq!(rows[0].action, "ai.tool.approved");
+        assert_eq!(rows[0].actor, "ai");
+        let detail = rows[0].detail.clone().unwrap();
+        assert!(detail.contains("edit_file"), "{detail}");
+        assert!(detail.contains("src/lib.rs"), "{detail}");
+    }
+
+    /// `run_command` is the tool where the argument *is* the action, so the
+    /// command line is recorded — "run_command was approved" without it does
+    /// not answer the question this table exists for.
+    #[tokio::test]
+    async fn an_approved_command_records_the_command_line() {
+        let (_dir, tools, _gate) = write_fixture(true).await;
+        tools
+            .execute("run_command", &json!({"command": "echo devos_ok"}))
+            .await
+            .unwrap();
+
+        let detail = audit_rows(&tools).await[0].detail.clone().unwrap();
+        assert!(detail.contains("echo devos_ok"), "{detail}");
+    }
+
+    /// A denial records the denial *and* which kind it was. Both branches, in
+    /// one test, because the point is that they are distinguishable — a stub
+    /// that always says "denied" would pass half of this.
+    #[tokio::test]
+    async fn a_denied_call_records_the_denial_and_why() {
+        let (_dir, tools, _gate) = write_fixture(false).await;
+        let refused = tools
+            .execute("write_file", &json!({"path": "new.txt", "content": "x"}))
+            .await;
+        assert_eq!(refused.unwrap_err(), "denied by user");
+
+        let declined = audit_rows(&tools).await;
+        assert_eq!(declined.len(), 1);
+        assert_eq!(declined[0].action, "ai.tool.denied");
+        let detail = declined[0].detail.clone().unwrap();
+        assert!(detail.contains("write_file"), "{detail}");
+        assert!(detail.contains("new.txt"), "{detail}");
+        assert!(detail.contains("denied by the user"), "{detail}");
+
+        // The same refusal for the model, a different story for whoever reads
+        // this table: nobody was at the machine.
+        let dir = tempfile::tempdir().unwrap();
+        let pool = test_pool(dir.path()).await;
+        let silent = ProjectTools::with_write_access(
+            dir.path().to_path_buf(),
+            pool,
+            StubGate::answering(ApprovalOutcome::TimedOut { after_secs: 180 }),
+        );
+        let timed_out = silent
+            .execute("run_command", &json!({"command": "rm -rf build"}))
+            .await;
+        assert_eq!(timed_out.unwrap_err(), "approval request timed out");
+
+        let rows = audit_rows(&silent).await;
+        assert_eq!(rows[0].action, "ai.tool.denied");
+        let detail = rows[0].detail.clone().unwrap();
+        assert!(detail.contains("rm -rf build"), "{detail}");
+        assert!(
+            detail.contains("180s"),
+            "a timeout must say so, not read as a refusal: {detail}"
+        );
+        assert!(!detail.contains("denied by the user"), "{detail}");
+    }
+
+    /// Fail-closed refusals are recorded too. An executor with nowhere to ask
+    /// refusing is the interesting event, not a non-event.
+    #[tokio::test]
+    async fn a_gateless_refusal_is_recorded_as_a_denial() {
+        let (_dir, tools) = fixture().await; // ProjectTools::new — no gate
+        devos_ai::repo::init(&tools.pool).await.unwrap();
+        assert!(tools
+            .execute("save_memory", &json!({"content": "planted"}))
+            .await
+            .is_err());
+
+        let rows = audit_rows(&tools).await;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].action, "ai.tool.denied");
+        assert!(rows[0]
+            .detail
+            .as_deref()
+            .unwrap()
+            .contains("no approval channel"));
+    }
+
+    /// The action, never the payload. Three tools, three deliberate answers —
+    /// and the file *content* the model wrote is absent from the whole table.
+    #[tokio::test]
+    async fn the_audit_row_records_the_action_and_not_the_payload() {
+        let (_dir, tools, _gate) = write_fixture(true).await;
+        devos_ai::repo::init(&tools.pool).await.unwrap();
+        const SECRET_CONTENT: &str = "ANTHROPIC_API_KEY=sk-ant-not-in-the-audit-log";
+        const MEMORY_TEXT: &str = "the deploy key lives in 1password under devos";
+
+        tools
+            .execute(
+                "write_file",
+                &json!({"path": "src/.env", "content": SECRET_CONTENT}),
+            )
+            .await
+            .unwrap();
+        tools
+            .execute("save_memory", &json!({"content": MEMORY_TEXT}))
+            .await
+            .unwrap();
+
+        let rows = audit_rows(&tools).await;
+        assert_eq!(rows.len(), 2);
+
+        // save_memory: recorded as having happened, without copying the text.
+        // It is already durable and deletable in the Memory panel; the audit
+        // log has no delete button.
+        let memory = rows.iter().find(|r| {
+            r.detail
+                .as_deref()
+                .is_some_and(|d| d.starts_with("save_memory"))
+        });
+        assert_eq!(memory.unwrap().detail.as_deref(), Some("save_memory"));
+
+        // write_file: the path, not the bytes.
+        let written = rows
+            .iter()
+            .find(|r| {
+                r.detail
+                    .as_deref()
+                    .is_some_and(|d| d.contains("write_file"))
+            })
+            .unwrap();
+        assert!(written.detail.as_deref().unwrap().contains("src/.env"));
+
+        let whole_table: String = rows
+            .iter()
+            .map(|r| {
+                format!(
+                    "{}{}{}",
+                    r.actor,
+                    r.action,
+                    r.detail.clone().unwrap_or_default()
+                )
+            })
+            .collect();
+        assert!(
+            !whole_table.contains(SECRET_CONTENT),
+            "file content reached the audit log: {whole_table}"
+        );
+        assert!(
+            !whole_table.contains(MEMORY_TEXT),
+            "memory text reached the audit log: {whole_table}"
+        );
+    }
+
+    /// Read tools are the high-volume ones and are deliberately absent: they
+    /// are side-effect-free and containment-checked, and a row per read would
+    /// be a browsing history of the user's own source tree that buries the
+    /// entries someone actually came looking for.
+    #[tokio::test]
+    async fn read_only_tools_write_no_audit_rows() {
+        let (_dir, tools) = fixture().await;
+        for (name, input) in [
+            ("read_file", json!({"path": "src/main.rs"})),
+            ("list_dir", json!({})),
+            ("find_files", json!({"query": "main"})),
+            ("search_code", json!({"query": "hello"})),
+        ] {
+            tools.execute(name, &input).await.unwrap();
+        }
+        assert!(
+            audit_rows(&tools).await.is_empty(),
+            "reads must not be audited"
+        );
+    }
+
+    /// The contract that lets this sit in the consent path at all: an
+    /// unwritable audit log cannot break the tool call it was describing.
+    #[tokio::test]
+    async fn an_unwritable_audit_log_does_not_break_the_call_it_records() {
+        let (dir, tools, _gate) = write_fixture(true).await;
+        sqlx::query("DROP TABLE audit_log")
+            .execute(&tools.pool)
+            .await
+            .unwrap();
+
+        let result = tools
+            .execute(
+                "write_file",
+                &json!({"path": "src/still_written.rs", "content": "// yes\n"}),
+            )
+            .await;
+
+        assert!(result.is_ok(), "the call must still run: {result:?}");
+        assert!(dir.path().join("src/still_written.rs").exists());
     }
 
     #[tokio::test]

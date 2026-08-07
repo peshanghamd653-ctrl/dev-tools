@@ -1,0 +1,21 @@
+[package]
+name = "devos-plugin"
+description = "DevOS plugin runtime spike: manifest, capability-gated host functions, wasmi sandbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+# A pure-Rust WebAssembly *interpreter*. Chosen over a JIT deliberately —
+# see docs/adr/0010-wasmi-for-the-plugin-runtime-spike.md.
+wasmi = { version = "1.1", default-features = false, features = ["std"] }
+toml = "0.9"
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+# Compiles the checked-in .wat fixtures to wasm at test time, so the
+# repository holds no opaque binary blobs.
+wat = "1"

@@ -5,6 +5,9 @@ members = [
     "crates/devos-kernel",
     "crates/devos-secrets",
     "crates/devos-ai",
+    # Not under crates/modules/ on purpose: this is a runtime spike, not a
+    # live Module, and it is not registered with the app. See ADR-0010.
+    "crates/devos-plugin",
     "crates/modules/*",
 ]
 

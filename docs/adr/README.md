@@ -44,3 +44,4 @@ superseded — supersede with a new number and a note in both files.
 | [0007](0007-sqlite-only-database-manager-first.md) | Database manager ships SQLite-only behind a driver-shaped abstraction |
 | [0008](0008-in-process-watchers-notify-on-transitions.md) | Background watchers run in-process and notify on state transitions |
 | [0009](0009-deployments-read-only-no-write-actions.md) | Deployment integration ships read-only, with no write actions |
+| [0010](0010-wasmi-interpreter-for-plugin-runtime.md) | Plugin runtime uses the wasmi interpreter, and does not ship in-process |

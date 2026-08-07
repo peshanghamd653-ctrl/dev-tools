@@ -12,41 +12,41 @@ using the app. Each release says how many other commits it contains.
 
 ### Added
 
-- self-update, release pipeline, and public-repo groundwork `d6fc8b4`
-- **ai** — add Gemini as a provider `2707c8a`
-- **audit** — write the audit log that has existed since M0 `4b3bbc8`
-- **backups** — restore a snapshot from inside the app `80fa800`
-- snippet library (M5) `fd3aa4f`
-- **terminal** — derive the xterm scheme from theme tokens `e764c51`
-- **ui** — theme system with Midnight, Daylight and Obsidian (M5) `7ec23b0`
-- **index** — tree-sitter symbol extraction completes M2 retrieval `aa2d6bc`
-- pick project folders from the file explorer `257c873`
-- screenshot to GitHub issue (M4) — completes the milestone `f31fa61`
-- **index** — hybrid lexical + vector code search `bedda09`
-- **kernel** — automatic backups + boot phase timings `ae6d821`
-- Vercel deployments (read-only) + secret manager UI (M4) `49127aa`
-- system metrics + website uptime monitor (M4 watchers) `cfb0f12`
-- database manager — SQLite browser, schema explorer, SQL editor (M3) `62ca122`
-- Docker module + API client (M3) `38e940a`
-- file explorer with tree, preview, and dual search `e75d0ba`
-- automatic command-failure watcher via OSC 133 shell integration `3aa95c8`
-- project memory, notification center, terminal AI diagnosis `5d21bab`
-- write/execute AI tools with per-call approval + FTS5 project index `eedf4da`
-- AI tool calling with read-only tools and explicit grant `1b0976a`
-- DevOS foundation (M0) + daily-driver core (M1) `c1310e7`
+- self-update, release pipeline, and public-repo groundwork `19609fd`
+- **ai** — add Gemini as a provider `b3d0ea8`
+- **audit** — write the audit log that has existed since M0 `895f3e9`
+- **backups** — restore a snapshot from inside the app `b85afd8`
+- snippet library (M5) `540e645`
+- **terminal** — derive the xterm scheme from theme tokens `4e1712d`
+- **ui** — theme system with Midnight, Daylight and Obsidian (M5) `4738ef3`
+- **index** — tree-sitter symbol extraction completes M2 retrieval `61d5106`
+- pick project folders from the file explorer `5035b02`
+- screenshot to GitHub issue (M4) — completes the milestone `5cb7884`
+- **index** — hybrid lexical + vector code search `e339c69`
+- **kernel** — automatic backups + boot phase timings `a9af306`
+- Vercel deployments (read-only) + secret manager UI (M4) `cbb2718`
+- system metrics + website uptime monitor (M4 watchers) `d8a201f`
+- database manager — SQLite browser, schema explorer, SQL editor (M3) `18bcaf7`
+- Docker module + API client (M3) `59795c6`
+- file explorer with tree, preview, and dual search `0e2d997`
+- automatic command-failure watcher via OSC 133 shell integration `81f4724`
+- project memory, notification center, terminal AI diagnosis `a80469b`
+- write/execute AI tools with per-call approval + FTS5 project index `40959cc`
+- AI tool calling with read-only tools and explicit grant `111fa86`
+- DevOS foundation (M0) + daily-driver core (M1) `3e18e3d`
 
 ### Fixed
 
-- **security** — screenshot retention, path containment, prototype-chain themes `a4ddd9b`
-- **plugin** — the sandbox did not hold on three axes it claimed to `1bd4b0e`
-- **db** — give database errors a discriminant that survives IPC `4a7f8e8`
-- screenshots follow DEVOS_DATA_DIR like the rest of the app's data `a3d6d1a`
-- **security** — close the remaining findings from the tool-surface review `2b40f94`
-- **db** — close a bypass of the SQL write gate `7bb7142`
+- **security** — screenshot retention, path containment, prototype-chain themes `8693faa`
+- **plugin** — the sandbox did not hold on three axes it claimed to `a2b9dbc`
+- **db** — give database errors a discriminant that survives IPC `232ca8f`
+- screenshots follow DEVOS_DATA_DIR like the rest of the app's data `3dce4a4`
+- **security** — close the remaining findings from the tool-surface review `4f19cfd`
+- **db** — close a bypass of the SQL write gate `9a13971`
 
 ### Performance
 
-- **web** — defer the boot-blocking overlays, 650 kB -> 506 kB entry chunk `5952fb2`
+- **web** — defer the boot-blocking overlays, 650 kB -> 506 kB entry chunk `66d9390`
 
-_13 further commits in this release changed no user-facing behaviour (documentation, CI, tests, refactors) and are not listed. `git log` has them._
+_14 further commits in this release changed no user-facing behaviour (documentation, CI, tests, refactors) and are not listed. `git log` has them._
 

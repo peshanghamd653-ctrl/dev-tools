@@ -26,6 +26,15 @@ impl Kernel {
         let boot_started = Instant::now();
         let mut timings = BootTimings::default();
 
+        // Before the pool opens is the *only* moment the database file can be
+        // swapped: after this line there are live connections, sidecars, and
+        // `Arc<Kernel>` handles that would all be pointing at the old file.
+        // Applying a staged restore here — rather than from a command — is
+        // what makes in-app restore possible at all. Best effort by design;
+        // it reports through `RestoreOutcome` and never fails the boot.
+        // See [`crate::backup::apply_pending_restore`].
+        let restore = crate::backup::apply_pending_restore(db_path).await;
+
         let phase = Instant::now();
         let pool = db::connect(db_path).await?;
         timings.pool_open = phase.elapsed();
@@ -56,6 +65,18 @@ impl Kernel {
         let phase = Instant::now();
         crate::repo::ensure_default_workspace(&kernel.pool).await?;
         kernel.timings.default_workspace = phase.elapsed();
+
+        // Now that the notifications table exists (and, after a restore, in
+        // the *restored* database), record what happened to it. A restore
+        // that only ever appeared in a log file is a restore nobody can audit
+        // — and the body carries the name of the preserved database, which is
+        // the one thing someone needs if the restore was a mistake.
+        if let Some(outcome) = &restore {
+            let (level, title, body) = outcome.notification();
+            if let Err(e) = kernel.notify("backup", level, &title, Some(&body)).await {
+                tracing::warn!(error = %e, "could not record the restore notification");
+            }
+        }
 
         kernel.timings.boot = boot_started.elapsed();
         tracing::info!(

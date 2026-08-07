@@ -132,6 +132,7 @@ chronological order:
 |---|---|---|
 | Pre-migration | `devos-premigration-YYYYMMDD-HHMMSS-vNNNN.db` | only when migrations have run before *and* an embedded migration is pending — not on first run, not on an up-to-date boot |
 | Daily | `devos-daily-YYYY-MM-DD.db` | at most one per calendar day, newest `DAILY_RETENTION = 7` kept |
+| Replaced by a restore | `devos-replaced-YYYYMMDD-HHMMSS.db` | written immediately before an in-app restore replaces the live database; **never pruned**, because it is the only copy of what the restore displaced |
 
 **The WAL problem is the reason this is not a file copy.** In WAL mode
 (ADR-0004) copying `devos.db` alone yields a backup missing the most recent
@@ -145,11 +146,60 @@ test proving a naive `fs::copy` loses a just-committed row — the failure
 this design exists to prevent.
 
 **A backup failure never breaks boot**: both entry points return `None` on
-error and log a warning. Two honest gaps follow from that, neither closed:
+error and log a warning. One honest gap follows from that, not closed:
 
 - A failing backup is visible only in the log. If backups are ever to be
   *trusted*, "silently failing for three months" is the failure mode to
   close, and a warning notification is the cheapest fix.
-- **There is no restore path.** Recovery means quitting the app and copying
-  a file by hand. In-app restore is a real design question because it has
-  to happen before the pool opens.
+
+## Restore — implemented
+
+Restoring cannot overwrite `devos.db` while the pool is open, so it does not
+try. It happens in two halves:
+
+1. **Stage** (`backup_restore_stage`, app running) validates the chosen file,
+   copies it to `restore-pending/staged.db` beside the database, then writes
+   `restore-pending/RESTORE.json` **via a rename**. That marker is the commit
+   point, so a request is never half-made. Nothing about the live database
+   changes, and `backup_restore_cancel` undoes it completely.
+2. **Apply** (`backup::apply_pending_restore`) runs as the first statement of
+   `Kernel::boot`, before `db::connect` — the only moment the file can be
+   swapped. It re-validates, preserves, deletes the sidecars, and renames the
+   staged file into place. It never fails the boot: a refusal leaves the
+   existing database in use and is reported as a notification.
+
+**The current database is always preserved first**, as
+`backups/devos-replaced-<timestamp>.db`, written with `VACUUM INTO` for the
+same WAL reason as every other snapshot — the swap is about to delete
+`devos.db-wal`, and a plain copy would preserve a database missing exactly the
+commits someone is most likely to want back. That file is listed like any
+other backup and can itself be restored, so a mistaken restore is recoverable.
+If preservation fails the restore does not happen at all.
+
+**Sidecars are deleted before the rename, never after.** A `devos.db-wal` left
+beside a restored database is replayed on the next open: at best it fails a
+checksum, at worst it silently reapplies frames from the database that was just
+replaced. `-shm` is removed first, so if another process still holds the
+database the failure lands on the rebuildable file rather than on someone
+else's write-ahead log. (Windows unmaps `-shm` asynchronously after a pool
+closes, so removal retries briefly — without that, whether a restore worked was
+a coin flip.)
+
+**Interruption is decided by two files.** Marker absent → nothing applies, and
+any staged debris is swept. Marker present with a staged file → apply. Marker
+present with *no* staged file → the swap already landed, because the staged
+file stops existing at the instant it becomes the database; the restore is
+complete and only the marker is cleared. A marker that will not parse is read
+as no marker. There is no state in which a restore half-applies.
+
+**A candidate is refused rather than installed** when it is not a SQLite file,
+is truncated (checked arithmetically against the page size and page count in
+its header, because SQLite will often open a truncated file without
+complaining), fails `PRAGMA integrity_check` on a read-only connection, or has
+no `_sqlx_migrations` table — a healthy database belonging to some other
+application would otherwise restore "successfully" with the real one already
+moved aside.
+
+Restoring an older file is safe with respect to schema: migrations run
+immediately afterwards in the same boot, and the pre-migration snapshot fires
+first, so the restored file is itself backed up before it is brought forward.

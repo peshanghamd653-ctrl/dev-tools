@@ -3,6 +3,7 @@ import { Check, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAppInfo } from "@/features/app/hooks";
+import { BackupsSection } from "@/features/backups/BackupsSection";
 import { SecretsSection } from "@/features/secrets/SecretsSection";
 import {
   useDeleteWorkspace,
@@ -46,6 +47,8 @@ export function SettingsPage() {
       </Card>
 
       <SecretsSection />
+
+      <BackupsSection />
 
       <Card>
         <CardHeader>

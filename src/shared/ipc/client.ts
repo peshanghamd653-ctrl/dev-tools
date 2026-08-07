@@ -12,6 +12,10 @@ import type { ApiHistoryEntry } from "./bindings/ApiHistoryEntry";
 import type { ApiRequestSpec } from "./bindings/ApiRequestSpec";
 import type { ApiResponse } from "./bindings/ApiResponse";
 import type { AppInfo } from "./bindings/AppInfo";
+import type { BackupEntry } from "./bindings/BackupEntry";
+import type { BackupKind } from "./bindings/BackupKind";
+import type { BackupListing } from "./bindings/BackupListing";
+import type { PendingRestore } from "./bindings/PendingRestore";
 import type { CapturedShot } from "./bindings/CapturedShot";
 import type { ChatMessage } from "./bindings/ChatMessage";
 import type { CreatedIssue } from "./bindings/CreatedIssue";
@@ -61,6 +65,10 @@ export type {
   ApiRequestSpec,
   ApiResponse,
   AppInfo,
+  BackupEntry,
+  BackupKind,
+  BackupListing,
+  PendingRestore,
   SavedRequest,
   CapturedShot,
   ChatMessage,
@@ -154,6 +162,22 @@ export const ipc = {
   notificationMarkRead: (id: string) =>
     call<void>("notification_mark_read", { id }),
   notificationsMarkAllRead: () => call<void>("notifications_mark_all_read"),
+
+  backupsList: () => call<BackupListing>("backups_list"),
+  /**
+   * Stage a restore. Nothing about the live database changes until the app
+   * restarts — `backupRestart` is what makes it happen, and
+   * `backupRestoreCancel` un-makes it until then.
+   */
+  backupRestoreStage: (name: string) =>
+    call<PendingRestore>("backup_restore_stage", { name }),
+  backupRestoreCancel: () => call<void>("backup_restore_cancel"),
+  /**
+   * Ask the shell to exit and come back up, which is what applies a staged
+   * restore. Resolving means the request was accepted, not that the restart
+   * finished — the window is closing, so there is no "after" to observe.
+   */
+  backupRestart: () => call<void>("backup_restart"),
 
   termCreate: (
     opts: { shell?: string; cwd?: string; cols: number; rows: number },

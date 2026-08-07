@@ -1,6 +1,7 @@
 mod ai_commands;
 mod api_commands;
 mod approvals;
+mod backup_commands;
 mod commands;
 mod core_module;
 mod db_commands;
@@ -54,6 +55,14 @@ use state::AppState;
 ///     was never meant to go. Screenshots follow deliberately: leaving them
 ///     in the real app-data directory while everything else moved would
 ///     surprise someone in exactly the place surprise is least affordable.
+///   * It does **not** move the WebView2 profile, and that is worth knowing
+///     because the note's whole value is being exhaustive. `localStorage`
+///     stays where the webview keeps it, so a redirected data directory still
+///     carries over the persisted AI *read*-tool grant (`devos-ai`), the theme
+///     preference, and UI state. Someone pointing this at a sandbox expecting
+///     a clean boot gets a clean database and a grant they made earlier.
+///     Nothing escalates — the write grant is deliberately session-scoped and
+///     is not persisted at all — but a "fresh" profile is not fresh.
 ///   * It grants no privilege that isn't already held. Setting a variable in
 ///     this process's environment requires being the user the app runs as, and
 ///     that user can already read the default database directly. The footgun
@@ -280,6 +289,10 @@ pub fn run() {
             commands::notifications_unread_count,
             commands::notification_mark_read,
             commands::notifications_mark_all_read,
+            backup_commands::backups_list,
+            backup_commands::backup_restore_stage,
+            backup_commands::backup_restore_cancel,
+            backup_commands::backup_restart,
             term_commands::term_create,
             term_commands::term_write,
             term_commands::term_resize,

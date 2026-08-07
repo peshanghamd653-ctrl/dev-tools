@@ -184,3 +184,8 @@ bindings rule, and the testing conventions. Security reports go through
 ## License
 
 [MIT](LICENSE) © 2026 peshang
+
+DevOS links a lot of other people's work. Their licenses and copyright notices
+are reproduced in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) — 401 Rust
+crates and 141 npm packages, all permissive, with no GPL or AGPL anywhere in
+the graph.

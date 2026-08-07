@@ -32,19 +32,22 @@
 # permanent hole, and this one would also have hidden any *future* rsa advisory
 # on the day someone enables the mysql feature.
 #
-# The rest of cargo-deny is deliberately not turned on. Only
-# `cargo deny check advisories` is run — never `check all`. Measured against
-# this workspace with cargo-deny's own defaults:
-#   * `check licenses` → 401 errors, because the allow-list starts empty and
-#     must be curated crate by crate. That is a whole project, and the wrong
-#     one to bolt onto a security check. Worth doing before DevOS is
-#     distributed to anyone (see docs/release-process.md), not today.
+# `advisories` and `licenses` are both run; `bans` and `sources` are not.
+# Measured against this workspace with cargo-deny's own defaults:
 #   * `check bans`     → 24 duplicate-version warnings, essentially all of them
 #     inside Tauri's tree, which this repo cannot resolve.
 #   * `check sources`  → passes trivially; every crate already comes from
 #     crates.io and there is no git dependency to guard against yet.
 # More surface is not automatically better. An unwanted gate is how the whole
 # job gets switched off.
+#
+# `check licenses` was the 401-error hole in this file for a long time, on the
+# grounds that curating an allow-list was a whole project and the wrong one to
+# bolt onto a security check. That reasoning expired the moment DevOS started
+# shipping installers to strangers: publishing source triggers no attribution
+# duty, but handing someone a binary does. The list is curated below, and
+# THIRD-PARTY-NOTICES.md is generated from the same set of licenses by
+# `pnpm gen:notices`.
 
 [graph]
 # DevOS builds and ships Windows only: the `rust` and `e2e` CI jobs are both
@@ -107,3 +110,50 @@ yanked = "warn"
 # a stale ignore announces itself instead of quietly suppressing a later
 # advisory against the same crate.
 ignore = []
+
+[licenses]
+# Curated from what the Windows build graph actually contains. Keep this in
+# step with `about.toml`'s `accepted` list — that file generates the notices,
+# this one enforces that nothing new slips in unattributed.
+#
+# Ordering is not significant here (unlike about.toml, where the first match
+# wins for dual-licensed crates); it is grouped for reading.
+allow = [
+    # The permissive mainstream. Nearly every crate is `MIT OR Apache-2.0`.
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "BSL-1.0",
+    "Zlib",
+    "0BSD",
+
+    # Public-domain dedications. No attribution required; allowed so the check
+    # does not fail on crates that ask for nothing.
+    "CC0-1.0",
+    "Unlicense",
+
+    # The ICU stack (icu_*, zerovec, yoke, tinystr, …), reached through `idna`.
+    "Unicode-3.0",
+
+    # Weak, file-level copyleft — cssparser, selectors, dtoa-short,
+    # option-ext, cssparser-macros. It reaches those files, not the program
+    # that links them, so distributing the binary is fine while they stay
+    # unmodified. Vendoring and patching one would oblige us to publish that
+    # file's source, which is why this entry is worth a comment rather than a
+    # bare string.
+    "MPL-2.0",
+]
+
+# Below this, cargo-deny stops trusting its own guess about which license a
+# crate is under and asks a human. The default is 0.8; 0.9 is deliberately
+# stricter, because a misidentified license in a notices file is worse than a
+# build failure that makes someone look.
+confidence-threshold = 0.9
+
+# The sixteen first-party `devos-*` crates, identified by `publish = false`.
+# Attributing ourselves in our own third-party notices would be nonsense.
+private = { ignore = true }

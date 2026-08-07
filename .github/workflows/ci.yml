@@ -298,7 +298,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   audit:
-    name: Audit (advisories)
+    name: Audit (advisories + licenses)
     # Both halves of the dependency graph are checked here, npm first then Rust.
     # This is the only job with no `if:` guard, so it is also the job the weekly
     # schedule at the top of this file exists for.
@@ -455,3 +455,20 @@ jobs:
       # Run the identical command locally; see docs/testing.md.
       - name: Fail on vulnerabilities and unsoundness in the shipped Rust graph
         run: cargo deny check advisories -W unmaintained
+
+      # Licenses, which is an attribution gate rather than a security one.
+      #
+      # It exists because THIRD-PARTY-NOTICES.md is generated, and a generated
+      # file that nothing checks goes stale the first time somebody adds a
+      # dependency. This step cannot verify the notices are regenerated, but it
+      # does catch the case that matters: a new crate arriving under a license
+      # nobody has looked at. That is the point at which someone has to decide,
+      # and the decision belongs in a commit rather than in a release.
+      #
+      # No `-W` escape hatch here, unlike the advisories gate above. An
+      # unmaintained crate is somebody else's roadmap; an unreviewed license is
+      # a question this repo can always answer immediately, by adding it to the
+      # allow list in deny.toml with a note or by dropping the dependency. The
+      # allow list is curated, so a failure means something genuinely new.
+      - name: Fail on unapproved licenses in the shipped Rust graph
+        run: cargo deny check licenses

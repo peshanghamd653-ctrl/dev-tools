@@ -64,3 +64,8 @@ coverage
 *.njsproj
 *.sln
 *.sw?
+
+# Scratch output from `pnpm gen:notices` (a sourcemap build used only to
+# discover which npm packages actually ship). Removed on success; ignored so a
+# failed run cannot leave a build tree staged.
+.notices-build/

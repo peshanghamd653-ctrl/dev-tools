@@ -45,12 +45,33 @@ run the advisory gate:
 
 ```sh
 cargo deny check advisories -W unmaintained   # cargo install cargo-deny --locked
+cargo deny check licenses
 pnpm audit
 ```
 
 `deny.toml` at the repo root carries the reasoning and has an empty ignore
 list. Adding an entry to it needs a justification in the file, not just in the
 PR.
+
+## Third-party notices
+
+**If you add or remove a dependency, regenerate the attribution file:**
+
+```sh
+pnpm gen:notices    # needs: cargo install cargo-about --locked --features cli
+git add THIRD-PARTY-NOTICES.md
+```
+
+Most of what DevOS ships is other people's code under licenses that require
+their copyright notice to travel with the binary. Publishing source triggers
+none of that; shipping an installer triggers all of it.
+
+Unlike the bindings above, **CI does not check that this file is current** —
+`cargo deny check licenses` fails only when a genuinely *new* license appears,
+which is a different question from whether the notices are stale. Regenerating
+is on you. It is cheap: the script builds the frontend with sourcemaps and
+reads which packages actually ended up in the bundle, so it stays correct
+without anyone maintaining a list by hand.
 
 ## Generated IPC bindings
 

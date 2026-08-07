@@ -1,0 +1,49 @@
+# Configuration for `cargo about`, which generates THIRD-PARTY-NOTICES.md.
+#
+# Regenerate with:  pnpm gen:notices
+#
+# Why this file exists: DevOS is MIT, but the binary it ships is mostly other
+# people's code. Nearly every license below requires the copyright notice to
+# travel with the binary. Source-only distribution does not trigger that;
+# handing someone an installer does.
+
+# Order is significant. For a crate offered under `MIT OR Apache-2.0` — which
+# is most of the Rust ecosystem — cargo-about takes the first match here, so
+# listing MIT first makes dual-licensed crates resolve to MIT and keeps the
+# notices consistent with the license DevOS itself uses.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "MIT-0",
+    "0BSD",
+    "CC0-1.0",
+    "Unlicense",
+    "Zlib",
+    "Unicode-3.0",
+    # Weak, file-level copyleft. It reaches the MPL-licensed files themselves,
+    # not the program that links them, so shipping a binary is fine as long as
+    # those files are unmodified — and they are: all five arrive unchanged from
+    # crates.io. Modifying one would oblige us to publish that file's source.
+    "MPL-2.0",
+]
+
+# DevOS ships for Windows only. Restricting the target keeps macOS- and
+# Linux-only crates out of the notices — attributing code that was never
+# compiled into the artifact is noise that makes the real obligations harder
+# to see.
+targets = ["x86_64-pc-windows-msvc"]
+
+# Test-only crates are not distributed, so they carry no attribution duty.
+# Build dependencies are deliberately NOT ignored: some of them generate code
+# that ends up inside the binary.
+ignore-dev-dependencies = true
+ignore-build-dependencies = false
+
+# The sixteen `devos-*` crates are this repository. They are first-party, and
+# cargo-about identifies them by `publish = false`.
+private = { ignore = true }

@@ -143,6 +143,18 @@ support macOS).
   the patched release (confirmed with `--dry-run`). Do that before making this
   check required. Everything the gate does not block on is still printed by the
   informational step into the job summary.
+- **License checking is gated and has never run on a runner either.** The same
+  `audit` job now also runs `cargo deny check licenses` against a curated
+  `[licenses] allow` list in `deny.toml`. This is an attribution gate, not a
+  security one: it exists so a dependency arriving under a license nobody has
+  looked at becomes a commit-time decision instead of a discovery made after
+  installers are in the wild. It passes locally today, and it is not vacuous —
+  removing a single entry from the allow list was verified to turn it red.
+  **What it deliberately does not check:** whether
+  [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) is up to date. A new
+  license failing the gate and stale notices are different failures, and only
+  the first is mechanically detectable — regenerating with `pnpm gen:notices`
+  is a contributor responsibility documented in CONTRIBUTING.md.
 - **Orphan bindings are structurally uncatchable** by regenerate-and-diff:
   deleting a Rust DTO leaves its `.ts` file behind and nothing regenerates
   over it, so the check sees no difference. Only an inventory comparison

@@ -1,0 +1,32 @@
+{{!--
+  Template for `cargo about generate`, rendered into THIRD-PARTY-NOTICES.md.
+
+  Every interpolation is a triple-stache on purpose. Handlebars escapes HTML by
+  default, which turns the quotation marks all over the Apache-2.0 text into
+  &quot; — 556 of them across this file when it was first generated. The point
+  of a notices file is to reproduce license terms verbatim, so an escaping pass
+  that silently rewrites them defeats it. Do not "fix" these back to {{ }}.
+--}}
+Summary of what the Rust half of the binary is licensed under:
+
+{{#each overview}}
+- **{{{name}}}** ({{count}})
+{{/each}}
+
+{{#each licenses}}
+### {{{name}}}
+
+<details>
+<summary>Crates distributed under this notice</summary>
+
+{{#each used_by}}
+- **{{{crate.name}}} {{{crate.version}}}**
+{{/each}}
+
+</details>
+
+```text
+{{{text}}}
+```
+
+{{/each}}

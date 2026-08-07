@@ -347,6 +347,7 @@ pub async fn table_rows(pool: &SqlitePool, table: &str, limit: i64) -> DbResult<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{DbErrorDto, DbErrorKind};
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
     async fn fixture() -> (tempfile::TempDir, SqlitePool) {
@@ -471,7 +472,17 @@ mod tests {
         assert_eq!(classify(disguised), StatementKind::Read, "parsed as a read");
 
         let result = run_query(&pool, &pool, disguised, false).await;
-        assert!(matches!(result, Err(DbError::Db(_))), "got {result:?}");
+        assert!(matches!(&result, Err(DbError::Db(_))), "got {result:?}");
+        // Which guard catches a write is an implementation detail; the user is
+        // in the same position either way, so both must reach the UI as one
+        // kind. Otherwise the explanatory card depends on how the statement
+        // happened to be disguised.
+        assert_eq!(
+            DbErrorDto::from(result.unwrap_err()).kind,
+            DbErrorKind::WriteBlocked,
+            "a refusal from the read guard is still a blocked write"
+        );
+
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
             .fetch_one(&pool)
             .await

@@ -6,11 +6,13 @@
 //! without a frontend change; the extra sqlx driver features aren't worth
 //! their compile cost until that work actually starts.
 
+mod error;
 mod manager;
 mod query;
 mod repo;
 mod schema;
 
+pub use error::{DbError, DbErrorDto, DbErrorKind, DbResult};
 pub use manager::DbManager;
 pub use query::{run_query, table_rows, MAX_ROWS};
 pub use repo::{delete_connection, get_connection, init, list_connections, save_connection};
@@ -21,20 +23,6 @@ use ts_rs::TS;
 
 use devos_kernel::module::{Module, ModuleCtx};
 use devos_kernel::types::CommandDescriptor;
-
-#[derive(Debug, thiserror::Error)]
-pub enum DbError {
-    #[error("database error: {0}")]
-    Db(#[from] sqlx::Error),
-    #[error("invalid input: {0}")]
-    Invalid(String),
-    #[error("not found: {0}")]
-    NotFound(String),
-    #[error("write blocked: {0}")]
-    WriteBlocked(String),
-}
-
-pub type DbResult<T> = Result<T, DbError>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../../src/shared/ipc/bindings/")]

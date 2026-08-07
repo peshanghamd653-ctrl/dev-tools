@@ -34,7 +34,7 @@ import {
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 import { Skeleton } from "@/shared/ui/skeleton";
-import { isWriteBlocked } from "./errors";
+import { dbErrorMessage, isWriteBlocked } from "./errors";
 import {
   useDbConnect,
   useDbConnectionDelete,
@@ -69,7 +69,10 @@ export function DatabasePage() {
   const [allowWrite, setAllowWrite] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [result, setResult] = useState<QueryResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // The rejection itself, not its text: `ErrorPane` classifies it on the
+  // `kind` the backend sends, and flattening it to a string here would throw
+  // that away (`String(dto)` is "[object Object]").
+  const [error, setError] = useState<unknown>(null);
   const [source, setSource] = useState("");
 
   if (!isDesktopShell()) {
@@ -106,7 +109,7 @@ export function DatabasePage() {
         },
         onError: (failure) => {
           setResult(null);
-          setError(String(failure));
+          setError(failure);
           setSource(`Query · ${target.name}`);
         },
       },
@@ -127,7 +130,7 @@ export function DatabasePage() {
         },
         onError: (failure) => {
           setResult(null);
-          setError(String(failure));
+          setError(failure);
           setSource(`${table} · ${target.name}`);
         },
       },
@@ -195,7 +198,7 @@ export function DatabasePage() {
                         }
                         toast.success(`Removed "${c.name}"`);
                       },
-                      onError: (failure) => toast.error(String(failure)),
+                      onError: (failure) => toast.error(dbErrorMessage(failure)),
                     })
                   }
                 >
@@ -333,7 +336,7 @@ export function DatabasePage() {
                 clearResults();
                 toast.success(`Connected to "${created.name}"`);
               },
-              onError: (failure) => toast.error(String(failure)),
+              onError: (failure) => toast.error(dbErrorMessage(failure)),
             },
           )
         }
@@ -365,7 +368,7 @@ function SchemaTree({
   if (error) {
     return (
       <p className="py-1 pl-4 pr-2 text-[11px] text-destructive">
-        {String(error)}
+        {dbErrorMessage(error)}
       </p>
     );
   }
@@ -582,10 +585,11 @@ function ErrorPane({
   error,
   onEnableWrites,
 }: {
-  error: string;
+  error: unknown;
   onEnableWrites: () => void;
 }) {
   const blocked = isWriteBlocked(error);
+  const message = dbErrorMessage(error);
 
   return (
     <div className="h-full overflow-auto p-4">
@@ -626,7 +630,7 @@ function ErrorPane({
             </p>
           )}
           <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2.5 font-mono text-[11px] text-muted-foreground">
-            {error}
+            {message}
           </pre>
         </CardContent>
       </Card>

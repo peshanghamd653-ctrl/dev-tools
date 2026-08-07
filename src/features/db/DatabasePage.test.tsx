@@ -19,6 +19,7 @@ vi.mock("@/shared/ipc/client", async () => {
   return createClientMock();
 });
 
+import type { DbErrorDto } from "@/shared/ipc/bindings/DbErrorDto";
 import {
   ipc,
   type DbConnection,
@@ -53,11 +54,20 @@ function queryResult(over: Partial<QueryResult> = {}): QueryResult {
 }
 
 /**
- * The real backend refuses a write with this exact shape: `DbError::WriteBlocked`
- * formatted by thiserror, handed to the webview as a bare string by Tauri.
+ * The real backend refuses a write with this exact payload: `DbError::WriteBlocked`
+ * mapped to `DbErrorDto`, which is what `db_query` rejects with. The page reads
+ * `kind`; `message` is only ever displayed.
  */
-const BLOCKED =
-  "write blocked: INSERT modifies the database; enable writes to run it";
+const BLOCKED: DbErrorDto = {
+  kind: "writeBlocked",
+  message: "write blocked: INSERT modifies the database; enable writes to run it",
+};
+
+/** An ordinary SQL mistake — same envelope, different discriminant. */
+const SQL_ERROR: DbErrorDto = {
+  kind: "database",
+  message: "database error: no such table: usrs",
+};
 
 /** Mount the page and get to the state where the Run button is usable. */
 async function renderConnected() {
@@ -182,7 +192,7 @@ describe("DatabasePage error rendering", () => {
       screen.getByRole("button", { name: /Enable writes/ }),
     ).toBeInTheDocument();
     // The explanation replaces the raw dump as the headline, but does not hide it.
-    expect(screen.getByText(BLOCKED)).toBeInTheDocument();
+    expect(screen.getByText(BLOCKED.message)).toBeInTheDocument();
   });
 
   it("offers a one-click way out of the blocked state", async () => {
@@ -199,19 +209,42 @@ describe("DatabasePage error rendering", () => {
 
   it("does not dress an ordinary SQL error up as a permissions problem", async () => {
     await renderConnected();
-    vi.mocked(ipc.dbQuery).mockRejectedValue(
-      "database error: no such table: usrs",
-    );
+    vi.mocked(ipc.dbQuery).mockRejectedValue(SQL_ERROR);
 
     typeSql("SELECT * FROM usrs");
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
 
     expect(await screen.findByText("Query failed")).toBeInTheDocument();
+    expect(screen.getByText(SQL_ERROR.message)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Enable writes/ }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText(/this statement writes to the database/),
+    ).not.toBeInTheDocument();
+  });
+
+  /**
+   * Not every rejection is a `DbErrorDto` — a panic in the command layer, or a
+   * frontend older than the backend it is talking to, arrives as a bare
+   * string. It renders as a plain failure with its text intact, and pointedly
+   * does *not* reach the write-blocked card even though the words are there:
+   * a wrong explanation offering to switch writes on is worse than no
+   * explanation.
+   */
+  it("keeps an unrecognised rejection readable without guessing at it", async () => {
+    await renderConnected();
+    vi.mocked(ipc.dbQuery).mockRejectedValue(
+      "write blocked: INSERT modifies the database; enable writes to run it",
+    );
+
+    typeSql("INSERT INTO users VALUES (1)");
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    expect(await screen.findByText("Query failed")).toBeInTheDocument();
+    expect(screen.getByText(BLOCKED.message)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Enable writes/ }),
     ).not.toBeInTheDocument();
   });
 });

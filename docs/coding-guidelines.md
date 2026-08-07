@@ -12,7 +12,13 @@ inventing a new one.
 - **IPC commands are thin.** A `#[tauri::command]` function validates input,
   calls exactly one domain function, maps the error, optionally emits an
   event. No branching business logic in `src-tauri/src/*_commands.rs`.
-- **Errors are typed internally, stringly-typed at the IPC boundary.**
+- **Errors are typed internally, stringly-typed at the IPC boundary — unless
+  the UI has to branch on them.** The `db_*` commands return a
+  `DbErrorDto { kind, message }` because the SQL editor renders a different
+  affordance for a refused write than for a failed query, and deciding that
+  by matching the message text made a safety feature depend on prose. If the
+  frontend only *shows* an error, a string is right; if it *acts* on one, give
+  it a discriminant. See [ipc-contracts.md](ipc-contracts.md).
   Domain code returns `thiserror`-derived enums (`KernelError`, `GitError`,
   `AiError`, `SecretError`, `TermError`). Tauri commands `.map_err(|e|
   e.to_string())` — the frontend gets a human-readable message, not a code

@@ -23,6 +23,24 @@ import {
  * Canvas takes colour strings, not Tailwind classes, so these are the one
  * place in the feature with literal colours; they track the design system's
  * red = destructive / yellow = attention convention.
+ *
+ * **Deliberately exempt from the theme system**, unlike the terminal's
+ * palette (`src/features/terminal/theme.ts`), which was moved onto the
+ * tokens. Two reasons, and the second is the one that settles it:
+ *
+ * 1. These are painted *over a screenshot*, so they have to contrast with
+ *    whatever the user happened to capture — someone else's app, a browser,
+ *    a photo. They have no relationship to DevOS's chrome, and tracking the
+ *    page background would tell them nothing about what they sit on.
+ * 2. They are baked into an exported PNG that leaves the app and gets pasted
+ *    into GitHub. A themed redaction would mean the same picture obscures
+ *    differently depending on which theme happened to be active when it was
+ *    taken, and under a light theme `--foreground` is nearly white — a
+ *    "redaction" the colour of paper, over a screenshot, is the one failure
+ *    this whole feature exists to prevent.
+ *
+ * Redaction black in particular is not a colour choice; it is the absence of
+ * information, and it must not be themeable.
  */
 const REDACT_FILL = "#000000";
 const REDACT_EDGE = "#f43f5e";

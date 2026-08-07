@@ -192,7 +192,46 @@ once the core flows are stable — don't add per-component animation ad hoc.
   inherited from the original dark palette and kept consistent rather than
   fixed in two themes only; focus is what carries state, and `--ring` clears
   3:1 everywhere (Midnight 4.05, Daylight 6.69, Obsidian 5.92).
-- The terminal's xterm palette (`src/features/terminal/registry.ts`) and the
-  screenshot annotator's overlay colours
+- The screenshot annotator's overlay colours
   (`src/features/issues/ShotAnnotator.tsx`) are hex literals outside the token
-  system, so they do not follow the theme.
+  system. This one is **deliberate, not outstanding**: they are painted over
+  an arbitrary screenshot and baked into a PNG that leaves the app, so they
+  must contrast with whatever the user captured rather than with DevOS's
+  chrome — and a themed redaction would obscure differently depending on
+  which theme was active when the shot was taken. Under a light theme
+  `--foreground` is nearly white; a redaction the colour of paper is the one
+  failure that feature exists to prevent. See the comment at its definition.
+
+## The terminal
+
+The xterm colour scheme is derived from the tokens
+(`src/features/terminal/theme.ts`), so the terminal is the same surface as
+the page rather than a dark rectangle on a light app. Two things about it are
+worth knowing before touching it.
+
+**Resolving a token for xterm needs rasterising.** `getComputedStyle` returns
+this app's `oklch()` tokens *unresolved*, and xterm's colour parser handles
+only hex/rgb/hsl — it would reject the string. The value is therefore painted
+into a 1×1 canvas and read back as sRGB bytes. If that is unavailable (jsdom,
+or any engine that will not rasterise the token) the terminal falls back to
+the pre-theme Midnight colours rather than coming up unstyled.
+
+**The 16 ANSI colours are not tokens, on purpose.** Mapping them onto the
+Tailwind palette variables would have been the obvious move and is a trap:
+no `cyan` or `fuchsia`/`purple` family is re-pointed by `.theme-daylight`, so
+ANSI cyan and magenta would read correctly in the dark themes and vanish on
+white — exactly the lone-family failure warned about above. Instead there are
+two explicit schemes, chosen by the measured luminance of the resolved
+background (so a future theme gets a readable terminal without anyone
+updating a list). The dark scheme sets only the two slots the app has always
+overridden, leaving xterm's defaults, so the dark themes are unchanged. The
+light scheme is GitHub's, with four values darkened because terminal output
+is body text and theirs are built for UI accents: `brightBlue` 3.28→4.67,
+`brightMagenta` 3.13→4.63, `brightCyan` 3.49→4.63, `brightWhite` 2.93→3.26.
+`theme.test.ts` holds the whole scheme to 4.5:1 (3:1 for the two "white"
+slots, which mean *dim* on a light background) and is what caught all four.
+
+Note the terminal background now tracks `--background` exactly. It previously
+hardcoded `#121214` while Midnight's `--background` rasterises to `#0f0f12` —
+the terminal was a shade lighter than the page it sat on, which is corrected
+rather than preserved.

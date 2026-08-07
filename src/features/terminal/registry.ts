@@ -7,6 +7,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
+import { buildXtermTheme } from "./theme";
+
 export interface TermInstance {
   term: Terminal;
   fit: FitAddon;
@@ -23,15 +25,7 @@ export function createInstance(id: string): TermInstance {
     lineHeight: 1.25,
     cursorBlink: true,
     scrollback: 5000,
-    theme: {
-      background: "#121214",
-      foreground: "#d7d7de",
-      cursor: "#8f8ff5",
-      cursorAccent: "#121214",
-      selectionBackground: "rgba(120, 119, 240, 0.32)",
-      black: "#1f1f23",
-      brightBlack: "#5c5c66",
-    },
+    theme: buildXtermTheme(),
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
@@ -47,6 +41,20 @@ export function createInstance(id: string): TermInstance {
 
 export function getInstance(id: string): TermInstance | undefined {
   return instances.get(id);
+}
+
+/**
+ * Re-colour every live instance after a theme change.
+ *
+ * All of them, not just the visible one: instances outlive React unmounts by
+ * design, so a session the user navigates back to later would otherwise still
+ * be wearing the previous theme.
+ */
+export function applyThemeToAll() {
+  const theme = buildXtermTheme();
+  for (const instance of instances.values()) {
+    instance.term.options.theme = theme;
+  }
 }
 
 export function disposeInstance(id: string) {

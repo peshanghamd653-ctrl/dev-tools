@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 
 import { ipc } from "@/shared/ipc/client";
-import { getInstance } from "./registry";
+import { useResolvedTheme } from "@/shared/theme/useTheme";
+import { applyThemeToAll, getInstance } from "./registry";
 
 /**
  * Mounts a persistent xterm instance into this pane. The instance and its
@@ -9,6 +10,15 @@ import { getInstance } from "./registry";
  */
 export function TerminalView({ sessionId }: { sessionId: string }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const theme = useResolvedTheme();
+
+  // Re-colour on mount as well as on change: an instance created while a
+  // different theme was active is still cached, and this is where it gets
+  // caught up. Runs after the class swap, so the tokens read here are the
+  // new ones.
+  useEffect(() => {
+    applyThemeToAll();
+  }, [theme]);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -51,7 +61,7 @@ export function TerminalView({ sessionId }: { sessionId: string }) {
   return (
     <div
       ref={wrapperRef}
-      className="h-full w-full overflow-hidden bg-[#121214] p-2"
+      className="h-full w-full overflow-hidden bg-background p-2"
     />
   );
 }

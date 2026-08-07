@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use devos_issue::{CapturedShot, CreatedIssue, IssueError, IssueTarget, DEFAULT_BASE_URL};
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 
 use crate::state::AppState;
 
@@ -38,8 +38,11 @@ pub async fn issue_configured(state: State<'_, AppState>) -> Result<bool, String
 }
 
 #[tauri::command]
-pub async fn issue_capture(app: AppHandle) -> Result<CapturedShot, String> {
-    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+pub async fn issue_capture(state: State<'_, AppState>) -> Result<CapturedShot, String> {
+    // From state, not `app_data_dir()` — screenshots follow `DEVOS_DATA_DIR`
+    // like everything else this app writes, and `setup` grants the asset
+    // protocol that same directory so the annotator can load the result.
+    let app_data = state.data_dir.clone();
     // Capture reads from the display driver and then encodes several
     // megabytes of PNG. On the async runtime that would stall every other IPC
     // call for its duration, so it goes to a blocking thread.

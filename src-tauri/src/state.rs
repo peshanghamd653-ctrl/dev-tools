@@ -23,6 +23,10 @@ pub struct AppState {
     pub system: Arc<SystemProbe>,
     /// Milliseconds from process start to kernel ready, for the startup budget.
     pub startup_ms: i64,
+    /// The directory holding this process's data — `app_data_dir()` normally,
+    /// or whatever `DEVOS_DATA_DIR` pointed at. Everything the app writes
+    /// hangs off this, so a redirect moves all of it and not just the DB.
+    pub data_dir: std::path::PathBuf,
     /// The database file this process actually opened.
     ///
     /// Carried rather than re-derived: `DEVOS_DATA_DIR` can move it, and a

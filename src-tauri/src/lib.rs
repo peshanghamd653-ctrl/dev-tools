@@ -46,8 +46,13 @@ use state::AppState;
 ///     (`devos-secrets`), so a redirected database is inert on its own.
 ///   * It does move everything secrets-*adjacent*: secret names, saved API
 ///     requests and their history, database connection entries, indexed file
-///     content, notifications. Pointing this at a synced or shared folder
-///     would put that data somewhere it was never meant to go.
+///     content, notifications — and **screenshots**, which are the most
+///     sensitive thing this app writes, since a desktop capture routinely
+///     contains `.env` contents or a token sitting in a terminal. Pointing
+///     this at a synced or shared folder would put that data somewhere it
+///     was never meant to go. Screenshots follow deliberately: leaving them
+///     in the real app-data directory while everything else moved would
+///     surprise someone in exactly the place surprise is least affordable.
 ///   * It grants no privilege that isn't already held. Setting a variable in
 ///     this process's environment requires being the user the app runs as, and
 ///     that user can already read the default database directly. The footgun
@@ -115,8 +120,8 @@ pub fn run() {
                 Some(_) => DATA_DIR_ENV,
                 None => "app_data_dir",
             };
-            let db_path =
-                data_dir(raw_override.as_deref(), || app.path().app_data_dir())?.join("devos.db");
+            let data_dir = data_dir(raw_override.as_deref(), || app.path().app_data_dir())?;
+            let db_path = data_dir.join("devos.db");
 
             // Logged *before* boot, and unconditionally: "which database am I
             // looking at" is the first question a confusing e2e failure or a
@@ -127,6 +132,24 @@ pub fn run() {
                 source,
                 "devos database selected"
             );
+
+            // Screenshots follow the data directory rather than always landing
+            // in the real app-data dir. A desktop capture is the most sensitive
+            // thing DevOS writes to disk — it routinely contains `.env`
+            // contents or a token sitting in a terminal — so someone who
+            // redirects application data to a sandbox or an encrypted volume
+            // and finds screenshots of their desktop left behind in %APPDATA%
+            // has been surprised in the one place surprise is least affordable.
+            //
+            // The asset-protocol scope in tauri.conf.json is static and
+            // resolves `$APPDATA` itself, so it cannot describe an env
+            // override. Granting the resolved directory here is what keeps the
+            // annotator able to load the capture it just took; without it the
+            // webview refuses the file and the feature fails at image load.
+            let screenshots = data_dir.join("screenshots");
+            app.asset_protocol_scope()
+                .allow_directory(&screenshots, false)
+                .map_err(|e| format!("asset scope for {}: {e}", screenshots.display()))?;
 
             let mut kernel = tauri::async_runtime::block_on(Kernel::boot(&db_path))?;
             kernel.register_module(&core_module::CoreModule);
@@ -232,6 +255,7 @@ pub fn run() {
                 system: Arc::new(SystemProbe::new()),
                 startup_ms,
                 db_path: db_path.display().to_string(),
+                data_dir,
             });
             Ok(())
         })

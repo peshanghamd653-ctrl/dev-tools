@@ -101,8 +101,13 @@ support macOS).
   branch protection until it has a green streak**; a required check that
   flakes gets un-required and then ignored, which is worse than this gap. The
   suite itself passes locally on repeated consecutive runs.
+
+  The `if:` guard is confirmed working: both pushes to GitHub on 2026-08-08
+  reported this job as `skipped`, which is exactly what a push run should do.
+  That proves the trigger logic, not the job — everything above about the
+  runner stays unverified until a pull request exists to run it on.
   See [release-process.md](release-process.md).
-- **The bindings drift check has never run on a GitHub runner.** The gap
+- **The bindings drift check now runs on GitHub, and passes.** The gap
   itself is closed: the `rust` job now diffs `src/shared/ipc/bindings/`
   straight after `cargo test --workspace` regenerates it, and fails with the
   diff plus the fix (`pnpm gen:types`, then commit) rather than a bare exit
@@ -111,13 +116,18 @@ support macOS).
   (the drift most worth catching), and `--ignore-cr-at-eol` with
   `core.autocrlf=input`, because with `autocrlf=false` and a CRLF working
   tree a plain diff reports every file as rewritten, i.e. a red build on
-  every PR for a reason nobody can act on. The step was exercised locally
-  against throwaway repos covering both, but no run has happened on a
-  runner. **One thing to expect:** if the committed bindings already differ
-  from what the DTOs generate, the first run is red — a true positive, but
-  worth knowing before making this required.
-- **Rust advisory scanning is now gated, has never run on a GitHub runner, and
-  is red today.** The gap itself is closed: the `audit` job in
+  every PR for a reason nobody can act on.
+
+  This entry used to predict that the first real run would be red, on the
+  theory that the committed bindings had probably already drifted. **That
+  prediction was wrong.** The first push to GitHub (2026-08-08) ran the whole
+  `rust` job green — fmt, clippy, tests and this check — so the CRLF and
+  `--intent-to-add` handling that was only ever exercised against throwaway
+  repos holds on a real runner too. Worth recording as evidence rather than
+  quietly deleting: the local rehearsal was accurate, and the pessimism was
+  not.
+- **Rust advisory scanning is gated and green on GitHub.** The gap itself is
+  closed: the `audit` job in
   `.github/workflows/ci.yml` covered npm only, so nothing checked the half of
   the graph holding the encryption, the secret store, the SQL engine and every
   network client. It now runs `cargo deny check advisories` against a
@@ -136,20 +146,27 @@ support macOS).
   unsoundness fail; unmaintained crates warn, because today's five are `unic-*`
   crates arriving via `urlpattern` → `tauri-utils` with no upgrade available,
   and blocking on somebody else's roadmap is how a required check gets
-  un-required. **One thing to expect:** the first run is red, and it is a true
-  positive — RUSTSEC-2026-0221, an unsoundness in `event-listener 5.4.1`
-  reached through `sqlx-core`. It is deliberately not ignored because it is
-  fixable in one command: `cargo update -p event-listener` moves it to 5.4.2,
-  the patched release (confirmed with `--dry-run`). Do that before making this
-  check required. Everything the gate does not block on is still printed by the
+  un-required. Everything the gate does not block on is still printed by the
   informational step into the job summary.
-- **License checking is gated and has never run on a runner either.** The same
+
+  This entry also used to predict a red first run, over RUSTSEC-2026-0221 (an
+  unsoundness in `event-listener 5.4.1` reached through `sqlx-core`). That was
+  true when written and was fixed before the repository was ever pushed —
+  `cargo update -p event-listener` to the patched 5.4.2 — so the first real run
+  was green.
+- **License checking is gated and green on GitHub.** The same
   `audit` job now also runs `cargo deny check licenses` against a curated
   `[licenses] allow` list in `deny.toml`. This is an attribution gate, not a
   security one: it exists so a dependency arriving under a license nobody has
   looked at becomes a commit-time decision instead of a discovery made after
-  installers are in the wild. It passes locally today, and it is not vacuous —
-  removing a single entry from the allow list was verified to turn it red.
+  installers are in the wild. It is not vacuous — removing a single entry from
+  the allow list was verified to turn it red.
+
+  Note it did not run on the *first* push: the npm audit step ahead of it
+  failed, and every later step in the job was skipped. A job that goes red
+  early reports nothing about the checks behind it, which is worth remembering
+  before reading a failed run as evidence about anything but the first
+  failure.
   **What it deliberately does not check:** whether
   [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md) is up to date. A new
   license failing the gate and stale notices are different failures, and only

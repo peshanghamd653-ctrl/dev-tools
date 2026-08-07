@@ -6,6 +6,7 @@ import { useAppInfo } from "@/features/app/hooks";
 import { AuditSection } from "@/features/audit/AuditSection";
 import { BackupsSection } from "@/features/backups/BackupsSection";
 import { SecretsSection } from "@/features/secrets/SecretsSection";
+import { UpdatesSection } from "@/features/updates/UpdatesSection";
 import {
   useDeleteWorkspace,
   useRenameWorkspace,
@@ -53,6 +54,8 @@ export function SettingsPage() {
 
       {/* After secrets and backups deliberately: the audit log is what you
           read when one of those went somewhere you did not expect. */}
+      <UpdatesSection />
+
       <AuditSection />
 
       <Card>

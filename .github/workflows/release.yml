@@ -1,0 +1,139 @@
+name: Release
+
+# Cutting a release is a deliberate act, so this runs on a pushed tag and
+# nothing else. `workflow_dispatch` is kept for re-running a failed publish
+# without inventing a new version number.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build (e.g. v0.1.0)"
+        required: true
+
+# The only job in this repository that writes anything: it creates a GitHub
+# Release and uploads artifacts to it.
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Build and publish (Windows)
+    # Windows-only because DevOS is Windows-only — see docs/release-process.md.
+    # When macOS or Linux land, this becomes a matrix and tauri-action merges
+    # the platforms into one release.
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # A release build is LTO + codegen-units=1, which is the slowest
+      # configuration cargo has. Without a cache this job is ~30 minutes.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # ---------------------------------------------------------------------
+      # Authenticode signing — optional, and absent by default.
+      #
+      # This is NOT the same thing as the updater signature below. Authenticode
+      # is what stops Windows SmartScreen showing "Windows protected your PC"
+      # on first install; the updater key is what stops a compromised release
+      # host pushing a malicious update. Neither substitutes for the other, and
+      # this project ships with only the second until someone buys a
+      # certificate.
+      #
+      # To enable, add two repository secrets and nothing else changes:
+      #   WINDOWS_CERTIFICATE           base64 of a .pfx  (base64 -w0 cert.pfx)
+      #   WINDOWS_CERTIFICATE_PASSWORD  its password
+      #
+      # Free options worth checking before paying: SignPath's Foundation tier
+      # is free for open-source projects, and Azure Trusted Signing is cheap
+      # but requires an identity check. A self-signed certificate is worse than
+      # useless here — it does not satisfy SmartScreen and it implies a trust
+      # relationship that does not exist.
+      - name: Import signing certificate
+        id: cert
+        if: ${{ env.WINDOWS_CERTIFICATE != '' }}
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          $pfx = "$env:RUNNER_TEMP\cert.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $pass = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $pass
+          # The thumbprint is what tauri.conf.json's bundle.windows config wants;
+          # it is derived here rather than hardcoded so rotating the certificate
+          # needs no commit.
+          "thumbprint=$($imported.Thumbprint)" >> $env:GITHUB_OUTPUT
+          Remove-Item $pfx -Force
+
+      # ---------------------------------------------------------------------
+      # The build and publish.
+      #
+      # TAURI_SIGNING_PRIVATE_KEY signs the update manifest. Its public half is
+      # compiled into the app via tauri.conf.json, and Tauri refuses to install
+      # an update whose signature does not match — which is why the private key
+      # must live only here, in repository secrets, and never in the tree.
+      #
+      # If that secret is missing the build still succeeds, but it produces no
+      # .sig files, latest.json is unsigned, and every installed copy will
+      # refuse the update. That failure is silent at build time and loud for
+      # users, so the guard step below fails the job instead.
+      - name: Check updater key is present
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error title=Missing TAURI_SIGNING_PRIVATE_KEY::Releases must be signed or installed copies will reject the update. Add the secret, or remove the updater plugin deliberately."
+            exit 1
+          fi
+          echo "updater signing key present"
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: "DevOS __VERSION__"
+          releaseBody: |
+            See CHANGELOG or the commit log for what changed.
+
+            **Windows only.** Download the `.exe` installer below (or the `.msi`).
+            The build is currently **unsigned**, so Windows SmartScreen will warn
+            on first run — choose *More info* then *Run anyway*. Signing is
+            tracked in docs/release-process.md.
+          # Drafted rather than published: it gives a human the chance to read
+          # the notes and check the artifacts before anyone's updater sees them.
+          releaseDraft: true
+          prerelease: false
+          # Generates and uploads latest.json, which is what the endpoint in
+          # tauri.conf.json points at.
+          includeUpdaterJson: true
+          args: ${{ steps.cert.outputs.thumbprint && format('--config {{"bundle":{{"windows":{{"certificateThumbprint":"{0}"}}}}}}', steps.cert.outputs.thumbprint) || '' }}

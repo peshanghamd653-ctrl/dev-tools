@@ -11,13 +11,52 @@ node_modules
 dist
 dist-ssr
 *.local
+coverage
 
 # Rust (workspace target dir lives at the repo root)
 /target
 
+# TanStack Router codegen scratch dir
+.tanstack
+
+# Signing material and credentials — never commit any of these.
+#
+# The updater's PRIVATE signing key is the one that matters most: whoever holds
+# it can sign an update that every installed copy will accept. Keep it outside
+# the repo entirely (a directory like ~/.devos-keys/) and treat the pattern
+# below as a second line of defence, not the plan.
+#
+# Note the asymmetry: `*.key` matches `devos.key` but NOT `devos.key.pub`,
+# because a gitignore glob has to match the whole filename. The public half is
+# safe to commit and is meant to be. The negation is spelled out anyway so that
+# broadening the pattern later cannot silently start ignoring the public key.
+*.key
+!*.key.pub
+*.pem
+*.pfx
+*.p12
+*.jks
+*.keystore
+.tauri/
+.env
+.env.*
+!.env.example
+
+# Build artifacts that can land outside /target when copied by hand
+*.msi
+*.exe
+
+# Local databases — DEVOS_DATA_DIR pointed inside the repo would drop one here
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+.claude/settings.local.json
 .idea
 .DS_Store
 *.suo

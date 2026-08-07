@@ -125,6 +125,16 @@ pub fn run() {
         // Native folder picker, used by "Add project". Only `dialog:allow-open`
         // is granted in capabilities — no save dialogs, no message boxes.
         .plugin(tauri_plugin_dialog::init())
+        // Self-update. The update *manifest* is signed with a minisign key
+        // whose public half lives in tauri.conf.json — that signature, not
+        // TLS, is what makes an update trustworthy: a compromised release
+        // host still cannot hand this app a payload it will install. The
+        // private half must never enter the repository; it belongs in the
+        // release workflow's secrets. Note this is entirely separate from
+        // Authenticode code signing, which is what stops SmartScreen warning
+        // on first install — the two solve different problems and one does
+        // not substitute for the other.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let raw_override = std::env::var(DATA_DIR_ENV).ok();
             let source = match effective_override(raw_override.as_deref()) {

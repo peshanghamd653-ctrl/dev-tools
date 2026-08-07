@@ -42,6 +42,10 @@
 │                                        │  uptime checks + scheduler    │ │
 │                                        │ modules/devos-deploy          │ │
 │                                        │  Vercel API (read-only)       │ │
+│                                        │ modules/devos-issue           │ │
+│                                        │  capture + GitHub issues      │ │
+│                                        │ modules/devos-snippets        │ │
+│                                        │  saved fragments              │ │
 │                                        └──────────────┬────────────────┘ │
 │                                                       │                  │
 │                                                SQLite (WAL)              │
@@ -90,12 +94,13 @@ Rules that keep the system modular:
   `git` currently import each other's stores, which is the one place this
   has gone wrong and is worth untangling.
 
-Live modules today: `core`, `terminal`, `git`, `ai`, `index`, `docker`,
-`api`, `db`, `system`, `monitor`, `deploy`. Several deliberately hold no
-state: `system` reads live hardware metrics and stores nothing, while
-`docker` and `deploy` read from external APIs rather than caching locally.
-A module is not required to own tables — only to own whatever tables it
-does create.
+Live modules today (thirteen, matching the `register_module` calls in
+`src-tauri/src/lib.rs`): `core`, `terminal`, `git`, `ai`, `index`, `docker`,
+`api`, `db`, `system`, `monitor`, `deploy`, `issue`, `snippets`. Several
+deliberately hold no state: `system` reads live hardware metrics and stores
+nothing, while `docker` and `deploy` read from external APIs rather than
+caching locally. A module is not required to own tables — only to own
+whatever tables it does create.
 
 ## Event & command flow
 
@@ -143,7 +148,7 @@ dev tools/
 ├─ crates/
 │  ├─ devos-kernel/        # module registry, command/event bus, jobs, SQLx pool
 │  ├─ devos-secrets/       # keyring master key + AES-256-GCM secret store
-│  ├─ devos-ai/            # provider trait, Claude/Ollama adapters, agent loop
+│  ├─ devos-ai/            # provider trait, Claude/Gemini/Ollama, agent loop
 │  └─ modules/
 │     ├─ devos-terminal/   # portable-pty session manager, OSC 133 scanner
 │     ├─ devos-git/        # git CLI wrapper + porcelain-v2 parser
@@ -153,7 +158,9 @@ dev tools/
 │     ├─ devos-db/         # SQLite browser, schema introspection, SQL editor
 │     ├─ devos-system/     # sysinfo probe (live metrics, no persistence)
 │     ├─ devos-monitor/    # uptime checks + background scheduler
-│     └─ devos-deploy/     # Vercel REST client (read-only)
+│     ├─ devos-deploy/     # Vercel REST client (read-only)
+│     ├─ devos-issue/      # screen capture, GitHub issues, clipboard
+│     └─ devos-snippets/   # snippet library (LIKE search, no FTS)
 ├─ src-tauri/              # Tauri app: IPC commands, tool executor, window
 ├─ src/
 │  ├─ app/                 # shell: routes, layout, palette, nav

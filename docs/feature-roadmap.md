@@ -112,9 +112,9 @@ project templates, repository cloning.
   (tables/views with columns, plus the file's size on disk), SQL editor,
   and a read-only result grid capped at 500 rows with an explicit
   `truncated` flag. Writes are refused unless a toggle that is **off by
-  default** is turned on, and the read path additionally sets
-  runs on a read-only connection and accepts one statement per call, so the
-  engine rather than the classifier carries the guarantee — see
+  default** is turned on, and the read path runs on a read-only connection
+  and accepts one statement per call, so the engine rather than the
+  classifier carries the guarantee — see
   [security.md](security.md). Postgres and MySQL are deferred: the
   `driver` column exists so they slot in behind the same DTOs, but their
   sqlx driver features were deliberately not enabled — see
@@ -246,9 +246,10 @@ than it is:
   the user pastes it. That is the deliberate shape, not a shortfall, but it
   does mean the flow has one manual step.
 
-Backups have a real gap of their own: there is no restore path, so recovery
-means quitting the app and copying a file by hand. See
-[database.md](database.md).
+Backups can now be restored from inside the app (Settings → Backups), which
+closes the gap this paragraph used to describe. The database in use is always
+preserved first, as `devos-replaced-<timestamp>.db`, so a mistaken restore is
+itself undoable. See [database.md](database.md).
 
 ### M5 — Extensibility & polish (in progress)
 - ✅ **Theme system** — Midnight (default, byte-identical to the pre-M5

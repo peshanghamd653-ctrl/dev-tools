@@ -87,6 +87,30 @@ describe("DockerPage degraded states", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("Docker isn't running")).not.toBeInTheDocument();
   });
+
+  /**
+   * The other half of that split used to render nothing at all: an
+   * unclassified ping failure left an empty page under a header that said
+   * "Connecting…" and never stopped saying it.
+   */
+  it("names the failure instead of leaving the page blank", async () => {
+    vi.mocked(ipc.dockerPing).mockRejectedValue("permission denied on /var/run/docker.sock");
+    renderWithClient(<DockerPage />);
+
+    expect(await screen.findByText("Couldn't reach Docker")).toBeInTheDocument();
+    expect(
+      screen.getByText("permission denied on /var/run/docker.sock"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Connecting/)).not.toBeInTheDocument();
+  });
+
+  it("says it is still looking while the ping is in flight", async () => {
+    vi.mocked(ipc.dockerPing).mockReturnValue(new Promise(() => {}));
+    renderWithClient(<DockerPage />);
+
+    expect(await screen.findByText("Looking for Docker")).toBeInTheDocument();
+    expect(ipc.dockerContainers).not.toHaveBeenCalled();
+  });
 });
 
 describe("DockerPage container list", () => {

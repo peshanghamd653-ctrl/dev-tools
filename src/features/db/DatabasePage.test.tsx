@@ -111,6 +111,39 @@ describe("DatabasePage outside the desktop shell", () => {
   });
 });
 
+describe("DatabasePage with nothing connected", () => {
+  /**
+   * The first-run state used to say "Select a connection to start querying"
+   * beside an empty list, which is an instruction the user cannot follow. It
+   * has to name what the module wants and offer the way to give it.
+   */
+  it("asks for a SQLite file rather than for a selection", async () => {
+    vi.mocked(ipc.dbConnections).mockResolvedValue([]);
+    renderWithClient(<DatabasePage />);
+
+    expect(await screen.findByText("No databases yet")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Select a connection to start querying."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the add-connection dialog from the empty pane", async () => {
+    vi.mocked(ipc.dbConnections).mockResolvedValue([]);
+    renderWithClient(<DatabasePage />);
+
+    // Two controls carry that name: the icon in the sidebar header, which is
+    // always there, and the empty-state call to action, which is the one a
+    // first-run user will actually see.
+    const buttons = await screen.findAllByRole("button", {
+      name: "Add connection",
+    });
+    fireEvent.click(buttons.at(-1) as HTMLElement);
+
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.getByLabelText("File path")).toBeInTheDocument();
+  });
+});
+
 describe("DatabasePage write safety", () => {
   it("starts read-only, with no warning on screen", async () => {
     await renderConnected();

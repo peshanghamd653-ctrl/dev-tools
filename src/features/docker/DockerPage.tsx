@@ -70,7 +70,10 @@ export function DockerPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Docker</h1>
           <p className="text-sm text-muted-foreground">
-            {ping.data ?? "Connecting…"}
+            {ping.data ??
+              (ping.isError
+                ? "Not connected"
+                : "Looking for the Docker daemon…")}
           </p>
         </div>
         <div className="flex gap-1">
@@ -86,6 +89,27 @@ export function DockerPage() {
           />
         </div>
       </div>
+
+      {/* "The daemon isn't running" already returned above, so what is left
+          here is a ping still in flight or one that failed for some other
+          reason. Both used to render nothing at all, under a header that said
+          "Connecting…" and never stopped saying it. */}
+      {!available &&
+        (ping.isError ? (
+          <Notice title="Couldn't reach Docker">
+            <>
+              Docker answered with something other than a version, so there is
+              nothing to list. DevOS keeps retrying every 10 seconds.
+              <span className="mt-2 block break-words rounded-md bg-card px-2.5 py-1.5 text-left font-mono text-[11px]">
+                {String(ping.error)}
+              </span>
+            </>
+          </Notice>
+        ) : (
+          <Notice title="Looking for Docker">
+            Checking whether the Docker Engine is running on this machine.
+          </Notice>
+        ))}
 
       {isLoading && (
         <div className="space-y-2">
@@ -295,7 +319,9 @@ function Notice({
           <Container className="size-6 text-muted-foreground" />
           <p className="font-medium">{title}</p>
           {children && (
-            <p className="text-sm text-muted-foreground">{children}</p>
+            <div className="max-w-md text-sm text-muted-foreground">
+              {children}
+            </div>
           )}
         </CardContent>
       </Card>

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Brain,
   Check,
   ChevronsUpDown,
+  ExternalLink,
   KeyRound,
   Loader2,
   Plus,
@@ -33,6 +35,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { Input } from "@/shared/ui/input";
 import { ApprovalCard } from "./ApprovalCard";
+import { credentialHint, ollamaMenuMessage } from "./providers";
 import {
   aiKeys,
   useConversations,
@@ -64,13 +67,20 @@ export function AiPage() {
   const provider = useAiStore((s) => s.provider);
   const model = useAiStore((s) => s.model);
   const setProvider = useAiStore((s) => s.setProvider);
-  const setModel = useAiStore((s) => s.setModel);
 
   const queryClient = useQueryClient();
   const { data: secretNames } = useSecretNames();
   const hasClaudeKey = secretNames?.includes("anthropic-api-key") ?? false;
   const hasGeminiKey = secretNames?.includes("gemini-api-key") ?? false;
-  const { data: ollamaModels } = useOllamaModels(provider === "ollama");
+  /**
+   * Ollama is the only provider that needs no key, so it is the one a new
+   * user is most likely to want — and it used to be unreachable: the model
+   * list only loaded while Ollama was *already* selected, and selecting it is
+   * exactly what the list is for. Opening the menu is what asks now.
+   */
+  const [providerMenuOpen, setProviderMenuOpen] = useState(false);
+  const ollama = useOllamaModels(provider === "ollama" || providerMenuOpen);
+  const ollamaModels = ollama.data;
 
   const attachProject = useAiStore((s) => s.attachProject);
   const setAttachProject = useAiStore((s) => s.setAttachProject);
@@ -86,6 +96,10 @@ export function AiPage() {
 
   const active =
     conversations?.find((c) => c.id === activeId) ?? conversations?.[0] ?? null;
+  const startHint = credentialHint(
+    provider,
+    provider === "claude" ? hasClaudeKey : hasGeminiKey,
+  );
   const { data: messages } = useMessages(active?.id ?? null);
   const send = useSendMessage(
     active?.id ?? null,
@@ -157,7 +171,10 @@ export function AiPage() {
             <Plus className="size-4" />
             New chat
           </Button>
-          <DropdownMenu>
+          <DropdownMenu
+            open={providerMenuOpen}
+            onOpenChange={setProviderMenuOpen}
+          >
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1 px-2 text-xs">
                 {PROVIDER_LABELS[provider] ?? provider}
@@ -191,7 +208,7 @@ export function AiPage() {
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
-              <DropdownMenuLabel>Ollama (local)</DropdownMenuLabel>
+              <DropdownMenuLabel>Ollama (local, no key)</DropdownMenuLabel>
               {ollamaModels?.length ? (
                 ollamaModels.map((m) => (
                   <DropdownMenuItem
@@ -205,14 +222,9 @@ export function AiPage() {
                   </DropdownMenuItem>
                 ))
               ) : (
-                <DropdownMenuItem
-                  disabled
-                  onSelect={() => setModel(model)}
-                >
+                <DropdownMenuItem disabled>
                   <span className="text-xs text-muted-foreground">
-                    {provider === "ollama"
-                      ? "No local models found"
-                      : "Select to load local models"}
+                    {ollamaMenuMessage(ollama)}
                   </span>
                 </DropdownMenuItem>
               )}
@@ -285,7 +297,7 @@ export function AiPage() {
         ) : active?.provider === "gemini" && !hasGeminiKey ? (
           <ProviderKeySetup provider="gemini" />
         ) : !active ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
             <Sparkles className="size-6 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
               Start a conversation — it runs on{" "}
@@ -293,6 +305,11 @@ export function AiPage() {
                 {PROVIDER_LABELS[provider] ?? provider} · {model}
               </span>
             </p>
+            {startHint && (
+              <p className="max-w-md text-xs text-muted-foreground">
+                {startHint}
+              </p>
+            )}
             <Button size="sm" onClick={newConversation}>
               <Plus className="size-4" />
               New chat
@@ -603,6 +620,7 @@ const KEY_SETUP = {
     secret: "anthropic-api-key",
     placeholder: "sk-ant-…",
     where: "console.anthropic.com",
+    href: "https://console.anthropic.com/settings/keys",
     note: "Anthropic requires a billing account.",
   },
   gemini: {
@@ -610,6 +628,7 @@ const KEY_SETUP = {
     secret: "gemini-api-key",
     placeholder: "AIza…",
     where: "aistudio.google.com/apikey",
+    href: "https://aistudio.google.com/apikey",
     note: "Gemini has a free tier, so a billing account is not required to start.",
   },
 } as const;
@@ -631,7 +650,25 @@ function ProviderKeySetup({ provider }: { provider: "claude" | "gemini" }) {
             The key is encrypted with a master key held in Windows Credential
             Manager and never leaves this machine except to call the API.{" "}
             {setup.note} Create one at{" "}
-            <span className="text-foreground">{setup.where}</span>.
+            {/* Handed to the OS rather than followed in place: this webview is
+                the whole app, and navigating it away leaves no way back. */}
+            <a
+              href={setup.href}
+              target="_blank"
+              rel="noreferrer"
+              title={`Open ${setup.href} in your browser`}
+              onClick={(event) => {
+                event.preventDefault();
+                void openUrl(setup.href).catch((failure) =>
+                  toast.error(`Could not open your browser: ${failure}`),
+                );
+              }}
+              className="inline-flex items-center gap-1 text-foreground hover:underline"
+            >
+              {setup.where}
+              <ExternalLink className="size-3 text-muted-foreground" />
+            </a>
+            .
           </p>
           <Input
             type="password"
@@ -657,6 +694,14 @@ function ProviderKeySetup({ provider }: { provider: "claude" | "gemini" }) {
           >
             Save key
           </Button>
+          {/* The way out for someone who has no key and does not want one.
+              It has to say "new chat" rather than "switch": the provider
+              belongs to the conversation, so changing the menu leaves this
+              one where it is. */}
+          <p className="text-[11px] text-muted-foreground">
+            No key to hand? Ollama runs locally and needs none — pick a local
+            model from the menu beside New chat, then start a new chat.
+          </p>
         </CardContent>
       </Card>
     </div>

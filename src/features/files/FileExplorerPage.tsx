@@ -9,6 +9,7 @@ import {
   File as FileIcon,
   Folder,
   FolderOpen,
+  FolderPlus,
   FolderTree,
   Search,
   X,
@@ -21,6 +22,7 @@ import { useGitStore } from "@/features/git/store";
 import { isDesktopShell } from "@/shared/ipc/client";
 import { formatBytes } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
+import { useDialogStore } from "@/shared/stores/dialogs";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
 import {
@@ -42,6 +44,7 @@ export function FileExplorerPage() {
   const setSelectedProject = useGitStore((s) => s.setSelectedProject);
   const project =
     projects?.find((p) => p.id === selectedProjectId) ?? projects?.[0] ?? null;
+  const setAddProjectOpen = useDialogStore((s) => s.setAddProjectOpen);
 
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -55,7 +58,19 @@ export function FileExplorerPage() {
     );
   }
   if (!project) {
-    return <Notice title="No project selected — add one first" />;
+    return (
+      <Notice title="No project yet">
+        <p className="max-w-md text-sm text-muted-foreground">
+          The explorer browses one project folder: a lazy tree, a preview with
+          line numbers, and search across file names and content. Register a
+          folder and it opens here.
+        </p>
+        <Button size="sm" className="mt-2" onClick={() => setAddProjectOpen(true)}>
+          <FolderPlus className="size-4" />
+          Add project
+        </Button>
+      </Notice>
+    );
   }
 
   function openFile(relative: string) {
@@ -392,13 +407,20 @@ function SearchResults({
   );
 }
 
-function Notice({ title }: { title: string }) {
+function Notice({
+  title,
+  children,
+}: {
+  title: string;
+  children?: React.ReactNode;
+}) {
   return (
     <div className="mx-auto max-w-3xl p-6">
       <Card>
         <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
           <FolderTree className="size-6 text-muted-foreground" />
           <p className="font-medium">{title}</p>
+          {children}
         </CardContent>
       </Card>
     </div>

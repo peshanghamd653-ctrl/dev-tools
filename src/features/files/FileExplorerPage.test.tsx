@@ -20,6 +20,7 @@ import {
   type FsEntry,
   type Project,
 } from "@/shared/ipc/client";
+import { useDialogStore } from "@/shared/stores/dialogs";
 import { resetClientMock, setDesktopShell } from "@/shared/test/ipc";
 import { renderWithClient } from "@/shared/test/render";
 import { FileExplorerPage } from "./FileExplorerPage";
@@ -90,10 +91,27 @@ describe("FileExplorerPage preconditions", () => {
     vi.mocked(ipc.projectsList).mockResolvedValue([]);
     renderWithClient(<FileExplorerPage />);
 
-    expect(
-      await screen.findByText("No project selected — add one first"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("No project yet")).toBeInTheDocument();
     expect(ipc.fsListDir).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The empty state is where a first-run user actually lands, so it has to be
+   * a way forward and not a full stop: say what the module is for, and offer
+   * the one action that ends the state.
+   */
+  it("offers the add-project dialog from the empty state", async () => {
+    useDialogStore.setState({ addProjectOpen: false });
+    vi.mocked(ipc.workspacesList).mockResolvedValue([WORKSPACE]);
+    vi.mocked(ipc.projectsList).mockResolvedValue([]);
+    renderWithClient(<FileExplorerPage />);
+
+    expect(
+      await screen.findByText(/browses one project folder/),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add project" }));
+
+    expect(useDialogStore.getState().addProjectOpen).toBe(true);
   });
 });
 

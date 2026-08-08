@@ -103,13 +103,16 @@ export function SecretsSection() {
             <AddSecretForm existing={stored} />
 
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              DevOS reads two names itself today:{" "}
+              DevOS reads three names itself today:{" "}
               <code className="font-mono text-foreground">vercel_token</code>{" "}
-              for the deployments page and{" "}
+              for the deployments page, and{" "}
               <code className="font-mono text-foreground">
                 anthropic-api-key
               </code>{" "}
-              for the AI assistant. Every other name is yours — a module that
+              or{" "}
+              <code className="font-mono text-foreground">gemini-api-key</code>{" "}
+              for the AI assistant — which can also run a local Ollama model
+              with no key at all. Every other name is yours: a module that
               needs a credential says which name it looks for.
             </p>
           </>

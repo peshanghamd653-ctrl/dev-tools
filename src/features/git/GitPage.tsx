@@ -4,6 +4,7 @@ import {
   ArrowUpFromLine,
   Check,
   ChevronsUpDown,
+  FolderPlus,
   GitBranch as GitBranchIcon,
   History,
   Loader2,
@@ -19,6 +20,7 @@ import { useActiveWorkspace } from "@/features/workspaces/hooks";
 import { isDesktopShell, ipc, type GitFileEntry } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
 import { useAiModelStore } from "@/shared/stores/ai-model";
+import { useDialogStore } from "@/shared/stores/dialogs";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
@@ -52,6 +54,7 @@ export function GitPage() {
   const { data: projects } = useProjects(activeWorkspace?.id);
   const selectedProjectId = useGitStore((s) => s.selectedProjectId);
   const setSelectedProject = useGitStore((s) => s.setSelectedProject);
+  const setAddProjectOpen = useDialogStore((s) => s.setAddProjectOpen);
 
   const project =
     projects?.find((p) => p.id === selectedProjectId) ?? projects?.[0] ?? null;
@@ -96,8 +99,17 @@ export function GitPage() {
   }
   if (!project) {
     return (
-      <Notice title="No project selected">
-        Add a project first — git operates on a project folder.
+      <Notice
+        title="No project yet"
+        action={
+          <Button size="sm" onClick={() => setAddProjectOpen(true)}>
+            <FolderPlus className="size-4" />
+            Add project
+          </Button>
+        }
+      >
+        Git works on a project folder — stage, commit, switch branches, push and
+        pull without leaving DevOS. Register a folder and this page fills in.
       </Notice>
     );
   }
@@ -550,9 +562,12 @@ function TabButton({
 function Notice({
   title,
   children,
+  action,
 }: {
   title: string;
   children: React.ReactNode;
+  /** The one button that resolves the state, when there is one. */
+  action?: React.ReactNode;
 }) {
   return (
     <div className="mx-auto max-w-3xl p-6">
@@ -560,7 +575,8 @@ function Notice({
         <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
           <GitBranchIcon className="size-6 text-muted-foreground" />
           <p className="font-medium">{title}</p>
-          <p className="text-sm text-muted-foreground">{children}</p>
+          <p className="max-w-md text-sm text-muted-foreground">{children}</p>
+          {action && <div className="pt-2">{action}</div>}
         </CardContent>
       </Card>
     </div>

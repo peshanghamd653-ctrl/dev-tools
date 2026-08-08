@@ -158,7 +158,7 @@ export function DatabasePage() {
 
         {connections?.length === 0 && (
           <p className="px-2 text-xs text-muted-foreground">
-            No databases yet — add a SQLite file to get started.
+            Connections you add appear here.
           </p>
         )}
 
@@ -308,6 +308,23 @@ export function DatabasePage() {
             <ErrorPane error={error} onEnableWrites={() => setAllowWrite(true)} />
           ) : result ? (
             <ResultPane result={result} source={source} />
+          ) : connections?.length === 0 ? (
+            /* Nothing to select yet, so "select a connection" would be a dead
+               end — point at the SQLite file the module needs instead. */
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+              <Table2 className="size-6 text-muted-foreground" />
+              <p className="text-sm font-medium">No databases yet</p>
+              <p className="max-w-md text-sm text-muted-foreground">
+                Point DevOS at a SQLite file on this machine and you get its
+                schema, a SQL editor and a result grid. Connections are
+                read-only until you turn writes on, and nothing is uploaded
+                anywhere.
+              </p>
+              <Button size="sm" className="mt-2" onClick={() => setAddOpen(true)}>
+                <Plus className="size-4" />
+                Add connection
+              </Button>
+            </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
               <Table2 className="size-6" />

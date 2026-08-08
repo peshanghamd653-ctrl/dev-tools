@@ -4,18 +4,19 @@
 
 | Metric | Target | Status |
 |---|---|---|
-| Cold start → kernel ready | < 1000 ms, **release build** | **not met on a real database — 2141/2436 ms** (2026-08-08, 107 MB DB). 534 ms on a small one (2026-08-07). See below; the cause is unattributed |
+| Cold start → kernel ready | < 1000 ms, **release build** | **not met — 2.7–6.3 s over 30 launches**, and 18.1 s on the one launch a day that snapshots the database (2026-08-08, machine not idle). 90–96% of the 2.7–6.3 s is WebView2 creation, now measured. 534 ms on 2026-08-07 and **not reproducible today, on the same binary** |
 | `Kernel::boot` (kernel's own share of startup) | no separate budget yet | measured per phase, asserted loosely in CI |
 | Base RAM | < 200 MB | not yet profiled |
 | Interaction | 60 fps | not yet profiled |
 
-**The startup target is a release-build target.** Every number the project has
-ever recorded is from a `pnpm tauri dev` **debug** build — unoptimized, with a
-dev-only file watcher attached — and a debug number cannot be compared to it in
-either direction. A recent session logged `startup_ms=1175` on a warm start and
-`startup_ms=2699` cold. Those are above 1000 ms, and that tells us nothing about
-whether the budget is met, because a debug build carries no LTO, no
-`codegen-units = 1`, no strip, and a dev-server round trip for every asset.
+**The startup target is a release-build target,** and a debug number cannot be
+compared to it in either direction. The project's early numbers were all from a
+`pnpm tauri dev` **debug** build — unoptimized, with a dev-only file watcher
+attached: one session logged `startup_ms=1175` warm and `2699` cold. Those are
+above 1000 ms and tell us nothing about whether the budget is met, because a
+debug build carries no LTO, no `codegen-units = 1`, no strip, and a dev-server
+round trip for every asset. Every number below this paragraph is from a release
+build, and says which one.
 
 **Measured 2026-08-07: `startup_ms=534`, `boot_ms=20`.** Taken from the NSIS
 installer's output running out of `%LOCALAPPDATA%\DevOS` — a real install, not
@@ -30,49 +31,182 @@ launch on a slower disk will be higher, and nobody had measured that. And
 initialising and React mounting happen after that number is logged, so what a
 user *perceives* is longer.
 
-### The budget is not met against a real database
+### The budget is not met, and it is the webview
 
 **Measured 2026-08-08 on the v0.1.0 release install: `startup_ms=2141` and
 `2436` across two launches.** Same machine, same installed binary, read off the
-dashboard's own "Kernel startup" tile. That is 4x the figure above and well
-over the 1000 ms budget.
+dashboard's own "Kernel startup" tile. That is 4x the 534 ms figure and well
+over the 1000 ms budget. It was recorded here first, before anything measured
+where the time went, alongside three candidates: database size, the updater
+plugin, and machine load.
 
-The difference between the two measurements is the database. The 534 ms run
-used a small one; these used the author's real 107 MB database, whose bulk is
-the code index (`index_chunks`, `index_embeddings`).
+**Later the same day, with per-phase instrumentation, the answer came back:
+90–96% of `startup_ms` is tauri creating the window and its WebView2
+control, before this app's setup hook runs at all.** The database is not it,
+and the updater is not it. What the readings above have in common with the
+readings below is the machine, not the data.
 
-**The cause is not established, and this entry deliberately does not guess.**
-What is known: kernel boot itself stays fast — a debug run against the same
-107 MB database logged `boot_ms=61`, with `pool_open_us=47570` and
-`migrations_us=6379`, so the phases this file already tracks account for well
-under a tenth of a second. The remaining ~2 seconds is somewhere in process
-start before "kernel ready", which nothing currently instruments.
+#### The controlled experiment
 
-Three candidates, none confirmed: database size affecting something outside the
-measured phases; the updater plugin, which was added *after* the 534 ms
-measurement and pulls in a reqwest/rustls stack that has to initialise; and
-ordinary machine load, since both readings were taken on a busy desktop.
+Same instrumented release binary (`cargo build --release`), `DEVOS_DATA_DIR`
+pointed at (a) an empty directory and (b) a **copy** of the author's 107 MB
+database — never the original — several launches each, plus deliberate
+variations in machine load and in how the previous launch was shut down. 31
+instrumented launches; the table below holds 30 of them, and the 31st is the
+day's first launch against the 107 MB copy, which is a different story and gets
+its own [section](#the-daily-backup-13-seconds-once-a-day).
 
-Distinguishing them needs a measurement nobody has taken: the same binary
-against a fresh database on an idle machine. Until then the honest statement is
-that the documented 534 ms describes a small database and does not generalise,
-and the sub-second claim should not be repeated anywhere user-facing.
+The machine was **not idle** — that is stated first because it is the caveat
+that matters. Throughout: ~25–38% CPU across 8 logical cores, 14 `claude.exe`
+processes, 6 unrelated `msedgewebview2.exe` processes. Getting to a genuinely
+idle desktop was not possible in this session.
+
+| condition | n | `startup_ms` | of which `webview_us` | share |
+|---|---|---|---|---|
+| empty database | 6 | 5338–6263 ms | 5057–5835 ms | 91–95% |
+| 107 MB database (steady state) | 5 | 4930–5853 ms | 4711–5258 ms | 90–96% |
+| 107 MB database, 20 s between launches | 8 | 3499–4411 ms | 3268–4211 ms | 92–96% |
+| 107 MB database, graceful window close | 6 | 2872–5407 ms | 2700–5129 ms | 93–95% |
+| 107 MB database, 8 CPU burners at 100% | 5 | 2666–6126 ms | 2141–5492 ms | 73–91% |
+
+Everything else, across all 31 launches, is small and stable:
+
+| phase | range | what it spans |
+|---|---|---|
+| `tracing_init_us` | 0.2–2.3 ms | the subscriber |
+| `plugins_registered_us` | 0.2–2.0 ms | building the three plugins |
+| `context_us` | 1.9–321 ms | `generate_context!` |
+| `app_build_us` | 25–306 ms | `App::build`, **including every plugin's `initialize`** |
+| `kernel_boot_us` | 62–269 ms | all of `Kernel::boot` |
+| `modules_us` | 9–26 ms | 13 × `register_module` |
+| `tables_us` | 11–203 ms | seven modules' `CREATE TABLE IF NOT EXISTS` |
+
+#### What each hypothesis turned out to be
+
+**Database size — not the cause of the 2141/2436 ms, but a real cost
+elsewhere.** An empty database is if anything *slower* than the 107 MB one
+(median 5.7 s vs 5.2 s in the same session); the difference is noise, and it
+points the wrong way for the hypothesis. An independent reading the same day
+agrees — 5375 ms against a freshly created empty database on the installed
+build. So database size does not explain `startup_ms`.
+
+It does, however, own the single largest number measured all day, in a place
+nobody was looking — see [The daily backup](#the-daily-backup-13-seconds-once-a-day).
+
+**The updater plugin — cleared.** Constructing the three plugins is
+`plugins_registered_us`, 0.2–2.0 ms. *Initialising* them happens inside
+`App::build`, and `app_build_us` — which contains opener, dialog and updater
+initialisation together — is 25–306 ms. Whatever reqwest/rustls costs at
+startup, it is bounded above by that and cannot be seconds. The plugin was
+added after the 534 ms measurement, which made it a fair suspect; it is not
+the culprit.
+
+**Machine load — correlated, and not sufficient.** At ~25% CPU the webview
+phase was 3.3–4.2 s; at ~35% it was ~5 s. But driving the machine to 100% with
+eight CPU burners did *not* make it monotonically worse — it went bimodal,
+producing both the fastest launch of the day (2666 ms) and one of the slowest
+(6126 ms). Load moves this number and does not control it, and no condition
+tried came within 3x of the ~400 ms webview phase that a 534 ms total requires.
+
+#### What is still unexplained
+
+**The 534 ms of 2026-08-07 does not reproduce.** The **shipped, uninstrumented
+v0.1.0 binary** from `%LOCALAPPDATA%\DevOS`, run four times in the same session
+against an empty database, logged `startup_ms` of 5285, 5368, 5052 and 5074 ms.
+Same binary, same machine, a database at least as cheap as the small one the
+534 ms reading used — and 9x slower.
+
+So this is **not a code regression introduced after 2026-08-07** — the binary
+that produced 534 ms produces ~5 s today, with none of the code written since.
+Something about the machine, or the WebView2 runtime installed on it, changed
+between the two dates, and this file does not know what. Ordinary load is
+measured above and does not cover the gap. The disk agrees that something is
+different: `pool_open_us` was 16795 µs on 2026-08-07 and is 99000–257000 µs
+(0.10–0.26 s) in every launch since, a 6–15x change in a phase that only opens
+a file.
+
+The honest position: **`startup_ms` is now fully attributed to a phase
+(`webview_us`), but why that phase costs 2–6 s on this machine today, when the
+same binary once reached 534 ms end to end, is not attributed.** It needs a
+launch on a genuinely idle desktop, and ideally on a second machine — neither
+of which this session could produce. Do not repeat the sub-second figure
+anywhere user-facing until one of them does.
 
 An older revision of this file reported 854–1461 ms and called the budget "on
 track" in debug. Those numbers predate several modules being added to the boot
 path; the 1175 / 2699 ms figures above supersede them.
 
+### The daily backup: 13 seconds, once a day
+
+The one place database size does show up, and it is worse than anything the
+budget discussion was arguing about.
+
+`Kernel::boot` takes a rotating snapshot of the database at most once per
+calendar day (`crate::backup::run_daily_backup`, `VACUUM INTO`). On the first
+launch of the day against the 107 MB copy this took **13.02 s**
+(`daily_backup_us=13024172`), producing an 80 MB file and pushing that launch's
+`startup_ms` to **18074 ms**. The next five launches skipped it in 4–8 ms. The
+same phase against an empty database costs 58 ms.
+
+This was invisible before today for a structural reason worth naming: it fires
+on exactly one launch per calendar day, so a user hits it once and a developer
+measuring the next launch never sees it. It is also **not** what produced the
+2141/2436 ms readings — those are far too small — and it is inside `boot_ms`,
+so `BootTimings` was always going to show it; nothing was reading `boot_ms` on
+the launch that mattered.
+
+Nothing has been changed about it. The snapshot is taken before the app can
+write anything, which is the property that makes it worth having, and moving it
+off the boot path is a correctness question about restore, not a performance
+tweak. **Recommendation, not done here:** run the daily snapshot after the app
+is interactive rather than before, or skip it when the database is large enough
+that it would dominate startup and take it on a schedule instead. Either is a
+change to `crates/devos-kernel/src/backup.rs` and deserves its own review.
+
 ## What is measured
 
-### `startup_ms` — the whole-process number
+### `startup_ms` — the whole-process number, and its phases
 
 Logged once per boot by `src-tauri/src/lib.rs`
-(`tracing::info!(startup_ms, "devos kernel ready")`) and surfaced in
-Settings → About via the `app_info` command. It spans process start →
-tracing init → `Kernel::boot` → module registration → each module's table
-init, and stops *before* the webview necessarily finishes its first paint.
-It is the honest end-to-end number, and it is also a single scalar: it tells
-you *that* startup regressed, never *where*.
+(`tracing::info!(startup_ms, …, "devos kernel ready")`) and surfaced in
+Settings → About via the `app_info` command. It spans the top of `run()` →
+tracing init → tauri builder → window and webview creation → `Kernel::boot` →
+module registration → each module's table init, and stops *before* the webview
+necessarily finishes its first paint.
+
+It used to be a single scalar — it told you *that* startup regressed, never
+*where*, which is what made the 2026-08-08 regression take a day to place. It
+now carries a phase breakdown on the same line, in the same `Instant`/`elapsed`
+style as `BootTimings`:
+
+| Field | Phase |
+|---|---|
+| `tracing_init_us` | installing the tracing subscriber |
+| `plugins_registered_us` | constructing opener, dialog, updater |
+| `context_us` | `generate_context!` — config, embedded assets, icons |
+| `app_build_us` | `App::build`: runtime creation and **every plugin's `initialize`** |
+| `webview_us` | event-loop start + window + **WebView2 environment and controller** |
+| `data_dir_us` | resolving `DEVOS_DATA_DIR` / `app_data_dir` |
+| `kernel_boot_us` | all of `Kernel::boot` (see `BootTimings` for its inside) |
+| `modules_us` | 13 × `register_module` |
+| `tables_us` | seven modules' `CREATE TABLE IF NOT EXISTS`, also logged individually as `module tables initialised` |
+
+`webview_us` is the one that needs explaining, and it is the one that turned
+out to matter. Tauri creates the windows declared in `tauri.conf.json` — and on
+Windows, with each one, a WebView2 environment and controller — inside its
+*own* `setup`, immediately **before** it calls the closure passed to
+`Builder::setup`, and that whole thing runs from the event loop's `Ready`
+event inside `App::run`. So it is synchronous, it is blocking, it happens
+before a single line of DevOS's own startup code, and it is charged to
+`startup_ms` in full. Measuring it required splitting `Builder::run` into
+`build()` + `run()`, which is exactly what `Builder::run` does anyway, so that
+the setup closure can see when `build()` finished.
+
+Two things are deliberately **outside** every one of these numbers. Process
+creation, image and DLL loading, and CRT startup all happen before the first
+line of `run()`, so they are missing from `startup_ms` itself rather than
+unattributed within it. And first paint happens after it — see
+[The webview bundle](#the-webview-bundle).
 
 ### `BootTimings` — the per-phase breakdown
 
@@ -94,11 +228,15 @@ The same breakdown is logged at `info` on every boot as `kernel boot phases`
 is `Instant::now()` and `elapsed()` per phase — a handful of nanoseconds, no
 allocation, no feature flag, always on.
 
-The phases deliberately do **not** sum to `boot`. The remainder is everything
-else `Kernel::boot` does; today that is mostly the automatic database snapshot
-(pre-migration and daily `VACUUM INTO`) that runs before and after migrations.
-If the gap between the phase sum and `boot_ms` grows, that gap is the thing to
-go look at.
+The `BootTimings` *fields* still deliberately do not sum to `boot`. The
+remainder — everything else `Kernel::boot` does, which is the backup and
+retention work — is now named on the same log line rather than left as a gap:
+`restore_us` (applying a staged restore), `pre_migration_backup_us`,
+`daily_backup_us` and `audit_prune_us`. Those four are logged rather than
+stored in `BootTimings` because they are diagnostic: each is normally under a
+few milliseconds, and each has one launch on which it is not. `daily_backup_us`
+is the one that has already been caught doing it — 13.02 s, see
+[The daily backup](#the-daily-backup-13-seconds-once-a-day).
 
 Observed `Kernel::boot` (debug build, cold temp DB, development machine):
 
@@ -112,6 +250,12 @@ Two things follow from that table. First, kernel boot is a minority of the
 ~1175 ms `startup_ms` — most of the rest is Tauri setup, per-module table init,
 and the webview. Second, wall-clock startup measurement on a loaded machine has
 a noise band of roughly 20x, which is what shapes the test below.
+
+The 2026-08-08 release measurements sharpen the first point rather than
+changing it: `kernel_boot_us` was 62–269 ms across 31 launches against both an
+empty and a 107 MB database, against a `startup_ms` of 2.7–6.3 s. Kernel boot
+is 2–6% of startup. The exception is the one launch per calendar day that
+writes the daily snapshot.
 
 ## What is asserted in CI
 
@@ -264,13 +408,27 @@ faster is unknown.
 
 ## Planned, not yet done
 
-- ~~Release-build startup measurement.~~ **Done** — 534 ms, see Budgets above.
-  What remains from that item: the same measurement on a *cold* machine, and on
-  hardware slower than the one it was taken on.
-- Phase timing for the part of startup *outside* the kernel — Tauri builder,
-  per-module `init()` table creation, first paint. `startup_ms` minus
-  `BootTimings::total()` is currently an undifferentiated blob, and on the
-  numbers above it is the majority of startup.
+- ~~Release-build startup measurement.~~ **Done**, twice — 534 ms on
+  2026-08-07, 2.7–6.3 s on 2026-08-08, see Budgets above. What remains is the
+  measurement that would reconcile them: **a launch on a genuinely idle
+  desktop, and a launch on a second machine.** Neither has been taken. Until
+  one is, why WebView2 creation costs 2–6 s here is open.
+- ~~Phase timing for the part of startup *outside* the kernel.~~ **Done** —
+  `startup_ms` now carries `tracing_init_us`, `plugins_registered_us`,
+  `context_us`, `app_build_us`, `webview_us`, `data_dir_us`, `kernel_boot_us`,
+  `modules_us` and `tables_us`, and `Kernel::boot` names its backup work. First
+  paint is still not timed — that item is still open, further down this list.
+- **Why `webview_us` is seconds.** It is now measured and it is 90–96% of
+  startup, but it is a single number covering event-loop start, window
+  creation, and the WebView2 environment and controller. Splitting *those*
+  needs hooks into wry rather than into this app, so it is a real piece of work
+  and not a follow-up edit. Worth doing before any further startup effort:
+  everything else in `startup_ms` put together came to 0.2–0.8 s per launch.
+- **Move the daily database snapshot off the boot path.** 13.02 s on the
+  author's 107 MB database, once per calendar day — see
+  [The daily backup](#the-daily-backup-13-seconds-once-a-day). Deliberately not
+  done as part of the measurement work: it is a correctness question about
+  restore, not a tweak.
 - **First-paint measurement for the webview.** The entry chunk shrank 22% (see
   [The webview bundle](#the-webview-bundle)) but the payoff was never observed
   in the running app, only in the build output. Until first paint is timed,

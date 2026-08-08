@@ -26,6 +26,17 @@ impl Kernel {
         let boot_started = Instant::now();
         let mut timings = BootTimings::default();
 
+        // `restore_us`, `pre_migration_backup_us`, `daily_backup_us` and
+        // `audit_prune_us` below are the part of `boot` that [`BootTimings`]
+        // deliberately does not name — the remainder its "the phases are a
+        // subset, not a partition" note points at. They are logged rather
+        // than stored because they are diagnostic: each is normally near zero
+        // and each has one launch on which it is not. The daily `VACUUM INTO`
+        // is the clearest case — seconds of I/O on a large database, on
+        // exactly one launch per calendar day — so a user reporting "it was
+        // slow that one time" and a developer measuring the next launch never
+        // see the same number unless boot says which phase ran.
+
         // Before the pool opens is the *only* moment the database file can be
         // swapped: after this line there are live connections, sidecars, and
         // `Arc<Kernel>` handles that would all be pointing at the old file.
@@ -33,7 +44,9 @@ impl Kernel {
         // what makes in-app restore possible at all. Best effort by design;
         // it reports through `RestoreOutcome` and never fails the boot.
         // See [`crate::backup::apply_pending_restore`].
+        let phase = Instant::now();
         let restore = crate::backup::apply_pending_restore(db_path).await;
+        let restore_us = phase.elapsed().as_micros() as u64;
 
         let phase = Instant::now();
         let pool = db::connect(db_path).await?;
@@ -42,14 +55,18 @@ impl Kernel {
         // Snapshot before migrations touch anything, so a bad one is
         // recoverable. Best effort — a failed backup must never stop the app
         // from starting. See [`crate::backup`].
+        let phase = Instant::now();
         crate::backup::run_pre_migration_backup(&pool, db_path, &db::migrator()).await;
+        let pre_migration_backup_us = phase.elapsed().as_micros() as u64;
 
         let phase = Instant::now();
         db::run_migrations(&pool).await?;
         timings.migrations = phase.elapsed();
 
         // At most one rotating copy per calendar day; also best effort.
+        let phase = Instant::now();
         crate::backup::run_daily_backup(&pool, db_path).await;
+        let daily_backup_us = phase.elapsed().as_micros() as u64;
 
         let events = EventBus::default();
         let jobs = JobRunner::new(pool.clone(), events.clone());
@@ -84,6 +101,7 @@ impl Kernel {
 
         // Retention, best effort and in that order deliberately: a boot that
         // died pruning the audit log would be a boot the audit log broke.
+        let phase = Instant::now();
         match crate::audit::prune(&kernel.pool, chrono::Utc::now().timestamp_millis()).await {
             Ok(0) => {}
             Ok(removed) => tracing::info!(
@@ -93,6 +111,7 @@ impl Kernel {
             ),
             Err(e) => tracing::warn!(error = %e, "could not prune the audit log"),
         }
+        let audit_prune_us = phase.elapsed().as_micros() as u64;
 
         kernel.timings.boot = boot_started.elapsed();
         tracing::info!(
@@ -100,6 +119,10 @@ impl Kernel {
             pool_open_us = kernel.timings.pool_open.as_micros() as u64,
             migrations_us = kernel.timings.migrations.as_micros() as u64,
             default_workspace_us = kernel.timings.default_workspace.as_micros() as u64,
+            restore_us,
+            pre_migration_backup_us,
+            daily_backup_us,
+            audit_prune_us,
             "kernel boot phases"
         );
         Ok(kernel)

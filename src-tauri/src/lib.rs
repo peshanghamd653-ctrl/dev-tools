@@ -22,7 +22,8 @@ mod term_commands;
 mod tools;
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 
 use devos_ai::AiRegistry;
 use devos_db::DbManager;
@@ -113,15 +114,90 @@ fn data_dir(
     Ok(dir)
 }
 
+/// Where `startup_ms` actually goes.
+///
+/// `startup_ms` spans the top of [`run`] to "devos kernel ready". Until this
+/// existed it was a single scalar with `boot_ms` inside it and nothing else
+/// named, so it could say *that* startup regressed but never *where* — and on
+/// a real database the unnamed part turned out to be most of it. The phases
+/// below partition the whole span. Each is an `Instant::now()` and an
+/// `elapsed()`, matching what `Kernel::boot` already does: a few nanoseconds,
+/// no allocation, no feature flag, always on.
+///
+/// The phase that is not obvious is `webview_us`, and it is the large one.
+/// Tauri creates the windows declared in `tauri.conf.json` — and with each
+/// one, on Windows, a WebView2 environment and controller — inside its *own*
+/// `setup`, immediately **before** it calls the closure given to
+/// [`tauri::Builder::setup`]:
+///
+/// ```text
+/// fn setup(app) {                                  // tauri::app::setup
+///     for window_config in app.config().app.windows { ... build()?; }   // WebView2
+///     app.manager.assets.setup(app);
+///     (user_setup)(app)?;                          // <- this crate's closure
+/// }
+/// ```
+///
+/// and that runs from the event loop's `Ready` event, i.e. inside `App::run`,
+/// not inside `App::build`. So the gap between `build` returning and this
+/// crate's closure being entered is event-loop start plus window and webview
+/// creation — synchronous, blocking, and charged to `startup_ms` in full.
+/// Splitting `Builder::run` into `build` + `run` is what makes that gap
+/// visible; it is otherwise identical to what `Builder::run` does.
+///
+/// What is still *not* covered: everything before the first line of [`run`] —
+/// process creation, loading the binary and its DLLs, CRT startup. `Instant`
+/// cannot see behind its own first tick, so that time is missing from
+/// `startup_ms` itself, not merely unattributed within it.
+#[derive(Clone, Copy)]
+struct StartupPhases {
+    tracing_init_us: u64,
+    plugins_registered_us: u64,
+    context_us: u64,
+    app_build_us: u64,
+    /// When `App::build` returned. The setup closure subtracts this from
+    /// "now" to get `webview_us`.
+    built_at: Instant,
+}
+
+impl StartupPhases {
+    /// Zeroed timings, as if the build had just finished.
+    ///
+    /// Structurally unreachable: the record is written before `App::run` is
+    /// called and the setup closure only runs from inside it. It exists so
+    /// that a missing record degrades to zeroed numbers rather than a panic —
+    /// a panic in the setup hook is a process that exits 101 with no window
+    /// and no message, which is the failure `startup_error` exists to
+    /// prevent, and no timing number is worth it.
+    fn unrecorded() -> Self {
+        Self {
+            tracing_init_us: 0,
+            plugins_registered_us: 0,
+            context_us: 0,
+            app_build_us: 0,
+            built_at: Instant::now(),
+        }
+    }
+}
+
 pub fn run() {
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
+    let tracing_init_us = start.elapsed().as_micros() as u64;
 
-    tauri::Builder::default()
+    // Written once, after `build()` returns, and read from inside the setup
+    // closure — which has to be handed to the builder before those numbers
+    // exist. A `OnceLock` rather than a `Mutex<Option<_>>` because it is
+    // written exactly once and read after, and the type should say so.
+    let recorded: Arc<OnceLock<StartupPhases>> = Arc::new(OnceLock::new());
+    let setup_phases = recorded.clone();
+
+    let phase = Instant::now();
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         // Native folder picker, used by "Add project". Only `dialog:allow-open`
         // is granted in capabilities — no save dialogs, no message boxes.
@@ -137,6 +213,17 @@ pub fn run() {
         // not substitute for the other.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
+            // Everything tauri does between `build()` returning and this line:
+            // starting the event loop, and creating the configured window
+            // together with its WebView2 environment and controller. See
+            // [`StartupPhases`].
+            let phases = setup_phases
+                .get()
+                .copied()
+                .unwrap_or_else(StartupPhases::unrecorded);
+            let webview_us = phases.built_at.elapsed().as_micros() as u64;
+
+            let phase = Instant::now();
             let raw_override = std::env::var(DATA_DIR_ENV).ok();
             let source = match effective_override(raw_override.as_deref()) {
                 Some(_) => DATA_DIR_ENV,
@@ -193,15 +280,21 @@ pub fn run() {
                 );
             }
 
+            let data_dir_us = phase.elapsed().as_micros() as u64;
+
             // The realistic failure point, and the one that produced the
             // silent exit this handling exists for: `Kernel::boot` opens the
             // database and runs migrations.
+            let phase = Instant::now();
             let mut kernel = match tauri::async_runtime::block_on(Kernel::boot(&db_path)) {
                 Ok(k) => k,
                 Err(e) => {
                     startup_error::fatal(app.handle(), "opening the database", &e, Some(&data_dir))
                 }
             };
+            let kernel_boot_us = phase.elapsed().as_micros() as u64;
+
+            let phase = Instant::now();
             kernel.register_module(&core_module::CoreModule);
             kernel.register_module(&devos_terminal::TerminalModule);
             kernel.register_module(&devos_git::GitModule);
@@ -215,21 +308,66 @@ pub fn run() {
             kernel.register_module(&devos_deploy::DeployModule);
             kernel.register_module(&devos_issue::IssueModule);
             kernel.register_module(&devos_snippets::SnippetsModule);
+            let modules_us = phase.elapsed().as_micros() as u64;
             let kernel = Arc::new(kernel);
 
+            // Each module's `CREATE TABLE IF NOT EXISTS` pass. Timed
+            // separately rather than as one lump because they are the phases
+            // that touch the largest tables — `devos_index` owns
+            // `index_chunks` and `index_embeddings`, which are the bulk of a
+            // real database — and "table init got slower as the index grew"
+            // is precisely the shape of regression a single total would hide.
+            let phase = Instant::now();
             let secrets = tauri::async_runtime::block_on(SecretStore::init(kernel.pool.clone()))?;
+            let secrets_us = phase.elapsed().as_micros() as u64;
+
+            let phase = Instant::now();
             tauri::async_runtime::block_on(devos_ai::repo::init(&kernel.pool))
                 .map_err(|e| format!("ai tables: {e}"))?;
+            let ai_tables_us = phase.elapsed().as_micros() as u64;
+
+            let phase = Instant::now();
             tauri::async_runtime::block_on(devos_index::init(&kernel.pool))
                 .map_err(|e| format!("index tables: {e}"))?;
+            let index_tables_us = phase.elapsed().as_micros() as u64;
+
+            let phase = Instant::now();
             tauri::async_runtime::block_on(devos_api::init(&kernel.pool))
                 .map_err(|e| format!("api tables: {e}"))?;
+            let api_tables_us = phase.elapsed().as_micros() as u64;
+
+            let phase = Instant::now();
             tauri::async_runtime::block_on(devos_db::init(&kernel.pool))
                 .map_err(|e| format!("db tables: {e}"))?;
+            let db_tables_us = phase.elapsed().as_micros() as u64;
+
+            let phase = Instant::now();
             tauri::async_runtime::block_on(devos_monitor::init(&kernel.pool))
                 .map_err(|e| format!("monitor tables: {e}"))?;
+            let monitor_tables_us = phase.elapsed().as_micros() as u64;
+
+            let phase = Instant::now();
             tauri::async_runtime::block_on(devos_snippets::init(&kernel.pool))
                 .map_err(|e| format!("snippet tables: {e}"))?;
+            let snippet_tables_us = phase.elapsed().as_micros() as u64;
+
+            tracing::info!(
+                secrets_us,
+                ai_tables_us,
+                index_tables_us,
+                api_tables_us,
+                db_tables_us,
+                monitor_tables_us,
+                snippet_tables_us,
+                "module tables initialised"
+            );
+            let tables_us = secrets_us
+                + ai_tables_us
+                + index_tables_us
+                + api_tables_us
+                + db_tables_us
+                + monitor_tables_us
+                + snippet_tables_us;
 
             // Forward every kernel event to the webview on one channel.
             let mut rx = kernel.events.subscribe();
@@ -249,7 +387,25 @@ pub fn run() {
             });
 
             let startup_ms = start.elapsed().as_millis() as i64;
-            tracing::info!(startup_ms, "devos kernel ready");
+            // One line that adds up. The fields before `webview_us` happen on
+            // the way in to tauri's event loop; the ones after happen inside
+            // this closure. Their sum is `startup_ms` minus the handful of
+            // microseconds spent between phases. See [`StartupPhases`] for
+            // what each one spans and for what is deliberately outside all of
+            // them.
+            tracing::info!(
+                startup_ms,
+                tracing_init_us = phases.tracing_init_us,
+                plugins_registered_us = phases.plugins_registered_us,
+                context_us = phases.context_us,
+                app_build_us = phases.app_build_us,
+                webview_us,
+                data_dir_us,
+                kernel_boot_us,
+                modules_us,
+                tables_us,
+                "devos kernel ready"
+            );
             let terminal = Arc::new(TerminalManager::new());
 
             // The failure watcher: OSC 133 markers from shell integration
@@ -407,9 +563,39 @@ pub fn run() {
             snippet_commands::snippets_search,
             snippet_commands::snippet_save,
             snippet_commands::snippet_delete,
-        ])
-        .run(tauri::generate_context!())
+        ]);
+    let plugins_registered_us = phase.elapsed().as_micros() as u64;
+
+    // `generate_context!` is mostly compile-time, but it still assembles the
+    // config, the embedded asset map and the icons at run time. Timed on its
+    // own so "the bundle got bigger" and "the builder got slower" cannot be
+    // mistaken for each other.
+    let phase = Instant::now();
+    let context = tauri::generate_context!();
+    let context_us = phase.elapsed().as_micros() as u64;
+
+    // `Builder::run` is exactly `build(context)?.run(|_, _| {})`. Splitting it
+    // is what lets the setup closure see when `build` finished, and therefore
+    // how long tauri spent creating the window and its webview before calling
+    // it. Nothing else changes: the same error is raised at the same point,
+    // with the same message.
+    let phase = Instant::now();
+    let app = builder
+        .build(context)
         .expect("error while running tauri application");
+    let app_build_us = phase.elapsed().as_micros() as u64;
+
+    // Last thing before the event loop, so `built_at` is the true start of
+    // the window-and-webview phase the setup closure reports.
+    let _ = recorded.set(StartupPhases {
+        tracing_init_us,
+        plugins_registered_us,
+        context_us,
+        app_build_us,
+        built_at: Instant::now(),
+    });
+
+    app.run(|_, _| {});
 }
 
 #[cfg(test)]

@@ -27,6 +27,46 @@ fn key_secret_for(provider: &str) -> Option<&'static str> {
     }
 }
 
+/// Whether a provider's endpoint is user-configurable, and under which setting.
+///
+/// **Only Ollama's is**, and that asymmetry is the whole point of this function
+/// existing rather than one shared variable.
+///
+/// `ai.ollama.url` is a legitimate setting: it points DevOS at an Ollama server
+/// that may be on another machine. But it was being read once and passed to
+/// *whichever* provider the conversation used. Claude was unaffected by luck —
+/// it ignores the field and posts to a hardcoded constant. Gemini reads it,
+/// builds `{base}/v1beta/models/...` and attaches `x-goog-api-key`.
+///
+/// So configuring a remote Ollama endpoint sent the user's Gemini key, the
+/// system prompt and the whole conversation to that host. No attacker was
+/// required — that is simply what happened to anyone who used both providers
+/// and pointed Ollama somewhere. An attacker who could reach `settings_set`
+/// got the same outcome durably, against a setting no screen displays.
+///
+/// Returning the setting name per provider means a provider that gains a
+/// configurable endpoint later has to say so here, rather than silently
+/// inheriting one belonging to something else.
+fn base_url_setting_for(provider: &str) -> Option<&'static str> {
+    match provider {
+        "ollama" => Some("ai.ollama.url"),
+        // Claude and Gemini talk to their vendor and nowhere else. A key is
+        // only safe to send to an endpoint the user cannot redirect.
+        _ => None,
+    }
+}
+
+/// The endpoint override for a provider, if that provider has a configurable
+/// one and it is set.
+async fn provider_base_url(state: &AppState, provider: &str) -> Result<Option<String>, String> {
+    let Some(setting) = base_url_setting_for(provider) else {
+        return Ok(None);
+    };
+    repo::get_setting(&state.kernel.pool, setting)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// The API key for a provider, if that provider needs one and it is stored.
 async fn provider_key(state: &AppState, provider: &str) -> Result<Option<String>, String> {
     let Some(name) = key_secret_for(provider) else {
@@ -160,9 +200,7 @@ pub async fn ai_commit_message(
     }
 
     let api_key = provider_key(&state, &provider).await?;
-    let base_url = repo::get_setting(&state.kernel.pool, "ai.ollama.url")
-        .await
-        .map_err(|e| e.to_string())?;
+    let base_url = provider_base_url(&state, &provider).await?;
 
     let system = "You write git commit messages. Reply with ONLY the commit message: \
         an imperative subject line under 72 characters, optionally followed by a blank \
@@ -302,9 +340,7 @@ pub async fn ai_send(
         .collect();
 
     let api_key = provider_key(&state, &conversation.provider).await?;
-    let base_url = repo::get_setting(pool, "ai.ollama.url")
-        .await
-        .map_err(|e| e.to_string())?;
+    let base_url = provider_base_url(&state, &conversation.provider).await?;
 
     let provider = state
         .ai
@@ -399,5 +435,44 @@ pub async fn ai_send(
             });
             Err(message)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A key may only be sent to an endpoint the user cannot redirect.
+    ///
+    /// This pins SEC-101. `ai.ollama.url` was read once and handed to whichever
+    /// provider was active, so pointing DevOS at a remote Ollama server also
+    /// sent the Gemini API key, the system prompt and the whole conversation to
+    /// that host. Claude escaped only because it ignores the field.
+    ///
+    /// The pairing below is the invariant: a provider that authenticates with a
+    /// stored key must have no user-configurable endpoint. If a future provider
+    /// needs both, that is a deliberate decision and this test is where it has
+    /// to be argued.
+    #[test]
+    fn no_provider_both_carries_a_key_and_accepts_a_redirectable_endpoint() {
+        for provider in ["claude", "gemini", "ollama", "unknown"] {
+            let key = key_secret_for(provider);
+            let base = base_url_setting_for(provider);
+            assert!(
+                key.is_none() || base.is_none(),
+                "provider {provider:?} sends secret {key:?} to an endpoint \
+                 configurable through setting {base:?} — a user or an attacker \
+                 who sets that value receives the key"
+            );
+        }
+    }
+
+    #[test]
+    fn only_ollama_has_a_configurable_endpoint() {
+        assert_eq!(base_url_setting_for("ollama"), Some("ai.ollama.url"));
+        assert_eq!(base_url_setting_for("claude"), None);
+        assert_eq!(base_url_setting_for("gemini"), None);
+        // Unknown providers get no endpoint rather than inheriting one.
+        assert_eq!(base_url_setting_for("something-new"), None);
     }
 }

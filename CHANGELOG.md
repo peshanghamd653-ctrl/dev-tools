@@ -37,6 +37,7 @@ using the app. Each release says how many other commits it contains.
 
 ### Fixed
 
+- **deps** — re-resolve nanoid to the patched 3.3.17 [`172b048`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/172b0484f3529516b4bc60d69c117318990e2c7f)
 - **security** — screenshot retention, path containment, prototype-chain themes [`8693faa`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/8693faa0037470663c968f61432d3de79babb782)
 - **plugin** — the sandbox did not hold on three axes it claimed to [`a2b9dbc`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/a2b9dbcb5e26b0a986d4fd693a04f576a6426da8)
 - **db** — give database errors a discriminant that survives IPC [`232ca8f`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/232ca8f9ce07dbd64079141c9fd4cd9088d686c5)
@@ -48,5 +49,5 @@ using the app. Each release says how many other commits it contains.
 
 - **web** — defer the boot-blocking overlays, 650 kB -> 506 kB entry chunk [`66d9390`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/66d9390022bd64f0816b31eba7e4935b6794a43a)
 
-_15 further commits in this release changed no user-facing behaviour (documentation, CI, tests, refactors) and are not listed. `git log` has them._
+_20 further commits in this release changed no user-facing behaviour (documentation, CI, tests, refactors) and are not listed. `git log` has them._
 

@@ -139,9 +139,16 @@ already wrote down. Each links to the reasoning.
   macOS — the GTK/X11 stack Tauri pulls into `Cargo.lock`, `xcb` behind `xcap`
   — are out of scope because they are not in the shipped binary. Unmaintained-
   crate advisories warn rather than fail, on purpose.
-- **Third-party licence review is not done.** `cargo deny check licenses` is
-  deliberately off. That is a distribution/compliance gap tracked in
-  [docs/release-process.md](docs/release-process.md), not a security one.
+- **Third-party licence review is done, and is a compliance gate rather than a
+  security one.** `cargo deny check licenses` runs as a required step in the
+  `audit` job against a curated allow list in `deny.toml`, and
+  [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) reproduces the notices that
+  most of those licences require to accompany a distributed binary. Nothing in
+  the graph is copyleft in a way that reaches DevOS: no GPL or AGPL at any
+  depth, and the five MPL-2.0 crates are weak file-level copyleft over files
+  that arrive unmodified. A new licence appearing is caught; notices going
+  stale is not, and is a contributor responsibility documented in
+  [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Out of scope
 

@@ -1,0 +1,24 @@
+# Blank issues are off on purpose. Every bug report goes through a form that
+# asks the reporter to confirm they have not pasted an API key, a token, or a
+# connection string into a public issue — a blank issue skips that question, and
+# this app holds exactly the material that makes it worth asking.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/peshanghamd653-ctrl/dev-tools/security/advisories/new
+    about: >-
+      Security → Report a vulnerability. Opens a private advisory visible only to
+      you and the maintainer. Do not open a public issue for a security problem.
+
+  - name: Security policy — scope, and what is already known and accepted
+    url: https://github.com/peshanghamd653-ctrl/dev-tools/blob/main/SECURITY.md
+    about: >-
+      Read before reporting. Several things that look like holes are documented
+      decisions, and the file lists them.
+
+  - name: Known limitations and deliberate deferrals
+    url: https://github.com/peshanghamd653-ctrl/dev-tools/blob/main/docs/feature-roadmap.md
+    about: >-
+      What shipped per milestone and what was left out of each module. Most
+      "this is missing" reports are answered here.

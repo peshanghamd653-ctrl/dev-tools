@@ -1,0 +1,56 @@
+name: Feature request
+description: Propose a change to what DevOS does.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DevOS is a single-maintainer project with a deliberately narrow scope, and
+        several of the obvious asks are refusals rather than gaps. Two files answer
+        most requests before they are written:
+        [docs/feature-roadmap.md](https://github.com/peshanghamd653-ctrl/dev-tools/blob/main/docs/feature-roadmap.md)
+        for what shipped per milestone and what was deferred within each module,
+        and
+        [docs/adr/](https://github.com/peshanghamd653-ctrl/dev-tools/tree/main/docs/adr)
+        for why the non-obvious calls went the way they did — deployments are
+        read-only (ADR-0009), the plugin runtime exists but is deliberately not
+        registered with the app (ADR-0010), and the database module is SQLite-only
+        (ADR-0007).
+
+        Describe the problem, not the interface. A problem can be argued with, and
+        may have a cheaper answer than the one you pictured; a mockup only says
+        what you would have built.
+
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Prior art
+      options:
+        - label: I checked the roadmap and the ADRs, and this is not already listed as shipped, deferred, or refused.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >-
+        What you were doing, where DevOS stopped you, and what it cost. The
+        specific instance, not the general case.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you do instead today
+      description: >-
+        The tool you switch to, or the manual step you repeat. "Nothing, I gave
+        up on it" is a real answer and a useful one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: A proposal, if you have one
+      description: Optional, and not the part this is decided on.

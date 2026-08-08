@@ -1,0 +1,124 @@
+name: Bug report
+description: DevOS behaves differently from what it documents.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two things that are not bugs, and are the two reports this tracker would
+        otherwise collect most of:
+
+        - **"Windows protected your PC" on first run.** The installers are not
+          code-signed yet, so SmartScreen warns. Known, deliberate for now, and
+          tracked in
+          [docs/release-process.md](https://github.com/peshanghamd653-ctrl/dev-tools/blob/main/docs/release-process.md).
+        - **A feature that is documented as missing.** The "what it does not do"
+          column in the
+          [README](https://github.com/peshanghamd653-ctrl/dev-tools/blob/main/README.md)
+          and the per-module deferrals in
+          [docs/feature-roadmap.md](https://github.com/peshanghamd653-ctrl/dev-tools/blob/main/docs/feature-roadmap.md)
+          are kept current on purpose. If it is listed there, it is a scope
+          decision, not a defect.
+
+        DevOS runs on Windows 10/11 x64 and nowhere else, so there is no macOS or
+        Linux build to report against.
+
+        Security problems do not go here — see
+        [SECURITY.md](https://github.com/peshanghamd653-ctrl/dev-tools/blob/main/SECURITY.md).
+
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Credentials
+      description: |
+        DevOS is a secret manager and a database browser, so the likeliest way a
+        credential ever escapes it is a log or a screenshot pasted into a public
+        issue: an API key in a Settings capture, a token in terminal scrollback,
+        a connection string in a SQL editor tab, a bearer header in an API client
+        response. This issue is public the moment you file it, and editing it
+        afterwards does not remove the original text from its edit history.
+      options:
+        - label: I have checked this report — including screenshots and pasted output — for API keys, tokens, connection strings, and anything else I would not publish deliberately.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: DevOS version
+      description: Settings → About → Version. If you built from source, give the commit instead.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Run `winver`. The build number is the part that matters.
+      placeholder: "Windows 11 24H2, build 26100.1742"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module
+      description: Where it happens. Pick the closest one.
+      options:
+        - Terminal
+        - Git
+        - AI assistant (chat, tools, commit messages)
+        - Files and code index (search, indexing)
+        - Docker
+        - API client
+        - Database (SQLite)
+        - System metrics
+        - Monitors
+        - Deployments (Vercel)
+        - Screenshot → GitHub issue
+        - Snippets
+        - Settings, secrets, or audit log
+        - App shell, install, or not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: >-
+        Numbered, starting from a fresh launch. If it depends on what you had
+        open — a particular repository, a database file, a running container —
+        say so, since that is usually the part that does not transfer.
+      placeholder: |
+        1. Open a project with ...
+        2. Press ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Error text verbatim if there is any. Redact it first.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: >-
+        Optional. Whether it reproduces every time or once, whether it started
+        after an update, and what else was running (Docker Desktop, Ollama, a
+        second copy of DevOS). The audit log in Settings records AI tool
+        approvals, secret writes by name, and SQL writes — if one of those lines
+        up with the failure, the timestamp is useful.

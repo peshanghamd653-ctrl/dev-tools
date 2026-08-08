@@ -16,11 +16,11 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 
-import { useGitStore } from "@/features/git/store";
 import { useProjects } from "@/features/projects/hooks";
 import { useActiveWorkspace } from "@/features/workspaces/hooks";
 import { isDesktopShell, ipc } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
+import { useProjectStore } from "@/shared/stores/project";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
 import {
@@ -80,7 +80,7 @@ export function AiPage() {
   const setWriteToolsEnabled = useAiStore((s) => s.setWriteToolsEnabled);
   const activeWorkspace = useActiveWorkspace();
   const { data: projects } = useProjects(activeWorkspace?.id);
-  const selectedProjectId = useGitStore((s) => s.selectedProjectId);
+  const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
   const project =
     projects?.find((p) => p.id === selectedProjectId) ?? projects?.[0] ?? null;
 

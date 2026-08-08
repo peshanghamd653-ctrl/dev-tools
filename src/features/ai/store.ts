@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import {
+  AI_STORAGE_KEY,
+  DEFAULT_AI_SELECTION,
+  useAiModelStore,
+} from "@/shared/stores/ai-model";
+
 /** Providers the backend can resolve — see `AiRegistry::provider`. */
 export type AiProviderId = "claude" | "gemini" | "ollama";
 
@@ -41,8 +47,8 @@ export const useAiStore = create<AiState>()(
   persist(
     (set) => ({
       activeConversationId: null,
-      provider: "claude",
-      model: "claude-sonnet-5",
+      provider: DEFAULT_AI_SELECTION.provider,
+      model: DEFAULT_AI_SELECTION.model,
       attachProject: true,
       toolsEnabled: false,
       writeToolsEnabled: false,
@@ -61,7 +67,7 @@ export const useAiStore = create<AiState>()(
       setPendingPrompt: (prompt) => set({ pendingPrompt: prompt }),
     }),
     {
-      name: "devos-ai",
+      name: AI_STORAGE_KEY,
       /**
        * `writeToolsEnabled` is deliberately absent (SEC-009). "Off by
        * default" has to mean off at every launch, not off on first run: a
@@ -98,6 +104,21 @@ export const useAiStore = create<AiState>()(
     },
   ),
 );
+
+/**
+ * Publish the selection to the neutral store so a feature that fires its own
+ * AI call — git generating a commit message — can read which model to use
+ * without importing this one. That import used to close an `ai` ⇄ `git`
+ * cycle; this store is still the owner and the only thing that persists the
+ * choice. Subscribing (rather than publishing from the setters) also covers
+ * rehydration, which is what a cold start actually restores from.
+ */
+function publishSelection({ provider, model }: AiState) {
+  useAiModelStore.getState().publish(provider, model);
+}
+
+publishSelection(useAiStore.getState());
+useAiStore.subscribe(publishSelection);
 
 export const CLAUDE_MODELS = [
   "claude-sonnet-5",

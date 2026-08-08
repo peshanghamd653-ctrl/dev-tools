@@ -14,12 +14,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { useAiStore } from "@/features/ai/store";
-
 import { useProjects } from "@/features/projects/hooks";
 import { useActiveWorkspace } from "@/features/workspaces/hooks";
 import { isDesktopShell, ipc, type GitFileEntry } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
+import { useAiModelStore } from "@/shared/stores/ai-model";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
@@ -68,8 +67,8 @@ export function GitPage() {
   const [message, setMessage] = useState("");
   const [newBranch, setNewBranch] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
-  const aiProvider = useAiStore((s) => s.provider);
-  const aiModel = useAiStore((s) => s.model);
+  const aiProvider = useAiModelStore((s) => s.provider);
+  const aiModel = useAiModelStore((s) => s.model);
 
   function generateMessage() {
     if (!repoPath || generating) return;

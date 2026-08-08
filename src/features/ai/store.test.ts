@@ -7,6 +7,11 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 
+import {
+  AI_STORAGE_KEY,
+  readPersistedAiSelection,
+  useAiModelStore,
+} from "@/shared/stores/ai-model";
 import { useAiStore } from "./store";
 
 const STORAGE_KEY = "devos-ai";
@@ -80,5 +85,62 @@ describe("ai tool grants", () => {
     expect(useAiStore.getState().toolsEnabled).toBe(true);
     // ...so this is a refusal, not a store that never loaded.
     expect(useAiStore.getState().writeToolsEnabled).toBe(false);
+  });
+});
+
+/**
+ * The git page reads the published copy of the selection instead of this
+ * store — reading it from here is what closed the `ai` ⇄ `git` cycle in
+ * `docs/architecture.md`. This store stays the owner, so if publication stops
+ * the git page silently generates commit messages on the wrong model.
+ */
+describe("ai model publication", () => {
+  beforeEach(() => {
+    useAiStore.setState(initialState, true);
+    localStorage.clear();
+  });
+
+  it("publishes the selection to the shared store", () => {
+    useAiStore.getState().setProvider("gemini", "gemini-3.6-flash");
+    expect(useAiModelStore.getState()).toMatchObject({
+      provider: "gemini",
+      model: "gemini-3.6-flash",
+    });
+
+    useAiStore.getState().setModel("gemini-2.5-flash");
+    expect(useAiModelStore.getState().model).toBe("gemini-2.5-flash");
+  });
+
+  it("publishes what rehydration restored", async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 0,
+        state: { provider: "ollama", model: "qwen3:8b" },
+      }),
+    );
+
+    await useAiStore.persist.rehydrate();
+
+    expect(useAiModelStore.getState()).toMatchObject({
+      provider: "ollama",
+      model: "qwen3:8b",
+    });
+  });
+
+  /**
+   * A cold start into the git page never evaluates this module — route
+   * components are code split — so the shared store reads this store's blob
+   * itself. That only works while both agree on the key and the field names.
+   */
+  it("writes a blob the shared store can read back", () => {
+    expect(STORAGE_KEY).toBe(AI_STORAGE_KEY);
+
+    useAiStore.getState().setProvider("gemini", "gemini-3.5-flash-lite");
+
+    expect(readPersistedAiSelection()).toEqual({
+      provider: "gemini",
+      model: "gemini-3.5-flash-lite",
+    });
   });
 });

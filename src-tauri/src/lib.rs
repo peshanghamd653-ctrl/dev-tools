@@ -15,6 +15,7 @@ mod issue_commands;
 mod monitor_commands;
 mod pathsafe;
 mod snippet_commands;
+mod startup_error;
 mod state;
 mod system_commands;
 mod term_commands;
@@ -141,7 +142,19 @@ pub fn run() {
                 Some(_) => DATA_DIR_ENV,
                 None => "app_data_dir",
             };
-            let data_dir = data_dir(raw_override.as_deref(), || app.path().app_data_dir())?;
+            // Every fallible step below reports through `startup_error::fatal`
+            // rather than `?`. Returning an error here is not a quiet failure:
+            // Tauri turns it into a panic, and a windows-subsystem binary has
+            // no console, so the user gets an exit code and nothing else.
+            let data_dir = match data_dir(raw_override.as_deref(), || app.path().app_data_dir()) {
+                Ok(dir) => dir,
+                Err(e) => startup_error::fatal(
+                    app.handle(),
+                    "locating the application data directory",
+                    &e,
+                    None,
+                ),
+            };
             let db_path = data_dir.join("devos.db");
 
             // Logged *before* boot, and unconditionally: "which database am I
@@ -168,11 +181,27 @@ pub fn run() {
             // annotator able to load the capture it just took; without it the
             // webview refuses the file and the feature fails at image load.
             let screenshots = data_dir.join("screenshots");
-            app.asset_protocol_scope()
+            if let Err(e) = app
+                .asset_protocol_scope()
                 .allow_directory(&screenshots, false)
-                .map_err(|e| format!("asset scope for {}: {e}", screenshots.display()))?;
+            {
+                startup_error::fatal(
+                    app.handle(),
+                    &format!("granting access to {}", screenshots.display()),
+                    &e,
+                    Some(&data_dir),
+                );
+            }
 
-            let mut kernel = tauri::async_runtime::block_on(Kernel::boot(&db_path))?;
+            // The realistic failure point, and the one that produced the
+            // silent exit this handling exists for: `Kernel::boot` opens the
+            // database and runs migrations.
+            let mut kernel = match tauri::async_runtime::block_on(Kernel::boot(&db_path)) {
+                Ok(k) => k,
+                Err(e) => {
+                    startup_error::fatal(app.handle(), "opening the database", &e, Some(&data_dir))
+                }
+            };
             kernel.register_module(&core_module::CoreModule);
             kernel.register_module(&devos_terminal::TerminalModule);
             kernel.register_module(&devos_git::GitModule);

@@ -154,6 +154,60 @@ jobs:
           echo "$diff"
           exit 1
 
+      # The one drift the step above cannot see, and not because it was written
+      # carelessly — because regenerate-and-diff can only ever compare files
+      # that something wrote. Delete a Rust DTO and nothing writes over its .ts
+      # file: it stays byte-identical to what was committed, `git diff` reports
+      # nothing, `--intent-to-add` is a no-op on a file that is already tracked,
+      # and the step above is green. Meanwhile the frontend can go on importing
+      # a type the backend no longer implements, and `tsc` agrees with it,
+      # because the file is still there and still valid TypeScript. The failure
+      # surfaces at run time as an IPC command that does not exist, on a build
+      # where every gate passed. docs/testing.md carried this as a known
+      # structural gap; this step is what closes it.
+      #
+      # The comparison is an inventory, not a diff: the script re-runs the same
+      # `export_bindings_*` tests with TS_RS_EXPORT_DIR pointed at a scratch
+      # directory, then compares the set of files ts-rs writes there against the
+      # set committed under src/shared/ipc/bindings/. A committed file that a
+      # fresh generation does not produce is an orphan.
+      #
+      # ts-rs is asked rather than imitated, deliberately. A regex over
+      # `#[derive(TS)]` is the obvious cheaper option and it drifts: it cannot
+      # tell a plain derive from one carrying `#[ts(export)]` (only the latter
+      # emits a file), it does not see `#[ts(rename = "..")]`, which changes the
+      # emitted file name and not the Rust ident, it does not evaluate `cfg`
+      # gates, and it does not know that ts-rs also exports every *dependency*
+      # of an exported type. Every one of those is a false accusation against a
+      # file that is fine, which is how a check gets deleted.
+      #
+      # Cheap because TS_RS_EXPORT_DIR is read at run time by ts-rs's exporter
+      # and not baked into the derive macro's expansion, so cargo's cache still
+      # hits and nothing recompiles. Measured locally: ~4 s against the target/
+      # dir the Tests step already warmed, against ~95 s cold. That warm path is
+      # the only reason this can sit in the same job as a full `cargo test`.
+      #
+      # Invoked as `node`, not `pnpm check:bindings`: this job installs neither
+      # pnpm nor node_modules, and adding both to run one script would cost more
+      # than the check does. The script imports nothing outside `node:*` for
+      # exactly that reason, and the runner image ships Node well past the 20.11
+      # that `import.meta.dirname` needs.
+      #
+      # After "Bindings up to date" rather than before: that step ends by
+      # dirtying the index with `--intent-to-add`, this one reads only the
+      # filesystem and never consults git, so in this order neither disturbs the
+      # other. Deliberately *not* `if: always()` — if Tests failed to compile,
+      # cargo fails here too and the script honestly reports that it could not
+      # run, which is noise on a job already red for a better reason.
+      #
+      # That "could not run" case exits 2 rather than 1, and 1 is reserved for
+      # orphans actually found. Same reasoning as the `git diff` exit-code
+      # handling above: a check that could not run must not read as a check that
+      # passed, and must not read as an accusation either.
+      - name: No orphaned bindings
+        shell: bash
+        run: node scripts/check-orphan-bindings.mjs
+
   # ---------------------------------------------------------------------------
   e2e:
     name: E2E (WebdriverIO + tauri-driver)

@@ -172,10 +172,41 @@ support macOS).
   license failing the gate and stale notices are different failures, and only
   the first is mechanically detectable — regenerating with `pnpm gen:notices`
   is a contributor responsibility documented in CONTRIBUTING.md.
-- **Orphan bindings are structurally uncatchable** by regenerate-and-diff:
-  deleting a Rust DTO leaves its `.ts` file behind and nothing regenerates
-  over it, so the check sees no difference. Only an inventory comparison
-  would find those.
+- **Orphan bindings are caught by an inventory comparison**, not by the diff.
+  The gap was structural rather than an oversight: regenerate-and-diff can only
+  compare files that something wrote, so deleting a Rust DTO left its `.ts`
+  file behind byte-identical, `git diff` saw nothing, `--intent-to-add` was a
+  no-op on a file already tracked, and the check stayed green — while the
+  frontend could go on importing, and type-checking against, a type the backend
+  no longer implements. `scripts/check-orphan-bindings.mjs` (`pnpm
+  check:bindings`) closes it, and runs in the `rust` job immediately after the
+  diff above.
+
+  The expected inventory comes from ts-rs, not from the Rust sources. The
+  script re-runs the same `export_bindings_*` tests with `TS_RS_EXPORT_DIR`
+  pointed at a scratch directory and compares what lands there against what is
+  committed; anything committed that a fresh generation does not produce is an
+  orphan. A regex over `#[derive(TS)]` was rejected as the cheaper option that
+  drifts from what it models — it cannot tell a plain derive from one carrying
+  `#[ts(export)]`, does not see `#[ts(rename = "..")]` changing the emitted
+  file name, does not evaluate `cfg` gates, and does not know ts-rs exports the
+  *dependencies* of an exported type too. Because `TS_RS_EXPORT_DIR` is read at
+  run time by ts-rs's exporter rather than baked into the derive macro, cargo's
+  cache still hits and nothing recompiles: ~4 s against a warm `target/`,
+  against ~95 s cold. Files in the directory without the ts-rs header are
+  skipped rather than accused, so a hand-written `index.ts` would not become a
+  false positive the day someone adds one.
+
+  Proven in both directions locally rather than asserted: green on the tree as
+  it stands (56 committed files, 56 generated), red and naming the file when a
+  spare binding is dropped into the directory, green again once it is removed —
+  and the same `git diff` the step above runs still exits 0 with that file
+  present, which is the gap, demonstrated. It exits 2, distinct from the 1 it
+  uses for real orphans, when it could not run at all (no cargo on PATH, a
+  regeneration that produced nothing, a scratch tree sharing no file name with
+  the committed one), so "I could not check" never reads as "I checked".
+  **It has not yet run on a GitHub runner** — the same caveat that applies to
+  any check whose first real run is still ahead of it.
 - **Startup timing is a tripwire, not a regression test.** Boot is measured
   and asserted, but only against a loose ceiling: a single cold boot on this
   machine spans ~20x (69 ms quiet → 1375 ms under load), so no wall-clock

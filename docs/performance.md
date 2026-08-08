@@ -4,7 +4,7 @@
 
 | Metric | Target | Status |
 |---|---|---|
-| Cold start → kernel ready | < 1000 ms, **release build** | **met — 534 ms**, measured 2026-08-07 on an installed release build |
+| Cold start → kernel ready | < 1000 ms, **release build** | **not met on a real database — 2141/2436 ms** (2026-08-08, 107 MB DB). 534 ms on a small one (2026-08-07). See below; the cause is unattributed |
 | `Kernel::boot` (kernel's own share of startup) | no separate budget yet | measured per phase, asserted loosely in CI |
 | Base RAM | < 200 MB | not yet profiled |
 | Interaction | 60 fps | not yet profiled |
@@ -23,12 +23,40 @@ installer's output running out of `%LOCALAPPDATA%\DevOS` — a real install, not
 served from the embedded `frontendDist` rather than Vite. Phase split:
 `pool_open_us=16795`, `migrations_us=1959`, `default_workspace_us=211`.
 
-So the budget is **met, with room**: 534 ms against 1000. Two caveats worth
-keeping. This is one machine, warm — a cold first launch on a slower disk will
-be higher, and nobody has measured that. And `startup_ms` still stops at
-"kernel ready", not at first paint; the webview initialising and React mounting
-happen after that number is logged, so what a user *perceives* is longer than
-534 ms by an amount still nobody has measured.
+So against *that* database the budget was met with room: 534 ms against 1000.
+Two caveats were recorded at the time. This is one machine, warm — a cold first
+launch on a slower disk will be higher, and nobody had measured that. And
+`startup_ms` stops at "kernel ready", not at first paint; the webview
+initialising and React mounting happen after that number is logged, so what a
+user *perceives* is longer.
+
+### The budget is not met against a real database
+
+**Measured 2026-08-08 on the v0.1.0 release install: `startup_ms=2141` and
+`2436` across two launches.** Same machine, same installed binary, read off the
+dashboard's own "Kernel startup" tile. That is 4x the figure above and well
+over the 1000 ms budget.
+
+The difference between the two measurements is the database. The 534 ms run
+used a small one; these used the author's real 107 MB database, whose bulk is
+the code index (`index_chunks`, `index_embeddings`).
+
+**The cause is not established, and this entry deliberately does not guess.**
+What is known: kernel boot itself stays fast — a debug run against the same
+107 MB database logged `boot_ms=61`, with `pool_open_us=47570` and
+`migrations_us=6379`, so the phases this file already tracks account for well
+under a tenth of a second. The remaining ~2 seconds is somewhere in process
+start before "kernel ready", which nothing currently instruments.
+
+Three candidates, none confirmed: database size affecting something outside the
+measured phases; the updater plugin, which was added *after* the 534 ms
+measurement and pulls in a reqwest/rustls stack that has to initialise; and
+ordinary machine load, since both readings were taken on a busy desktop.
+
+Distinguishing them needs a measurement nobody has taken: the same binary
+against a fresh database on an idle machine. Until then the honest statement is
+that the documented 534 ms describes a small database and does not generalise,
+and the sub-second claim should not be repeated anywhere user-facing.
 
 An older revision of this file reported 854–1461 ms and called the budget "on
 track" in debug. Those numbers predate several modules being added to the boot

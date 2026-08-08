@@ -1,16 +1,45 @@
 # DevOS
 
-A keyboard-driven desktop **developer operating center**: terminal, git, an AI
-assistant with real tools, and ten more modules behind one command palette,
-built on Tauri v2 (Rust + React 19). It is one app for the daily development
-loop rather than a best-in-class replacement for any single tool it touches —
-the sections below say exactly where each module stops.
+**The development tools everyone raves about are Mac-first. This one isn't.**
+
+A keyboard-driven developer operating center for Windows: terminal, git, an AI
+assistant with real tools, and ten more modules behind one command palette —
+one app for the daily development loop instead of seven windows and an
+alt-tab habit. Built on Tauri v2 (Rust + React 19), so it starts like a native
+app rather than a browser wearing a costume.
+
+![The DevOS dashboard](docs/screenshots/dashboard.png)
+
+[**Download for Windows**](https://github.com/peshanghamd653-ctrl/dev-tools/releases/latest)
+· MIT licensed · no account, no telemetry, no server
+
+---
+
+### The AI assistant has your project, not just your prompt
+
+It reads files, searches code and runs commands — under a two-tier grant where
+reads are allowed once and anything that writes or executes asks every single
+time. Bring your own key: Claude, Gemini (which has a free tier), or a local
+[Ollama](https://ollama.com) model for fully offline use.
+
+![The AI assistant working inside a project](docs/screenshots/ai.png)
+
+### The terminal notices when something breaks
+
+Sessions live in the Rust process and survive route changes. A non-zero exit
+raises a notification and offers the failure — command, output, exit code — to
+the AI in one keystroke, instead of you copying a stack trace into a browser.
+
+![A terminal session](docs/screenshots/terminal.png)
+
+---
 
 > **Status: v0.1.0, Windows-only, and built by one person for one person.**
 > The project's own definition of 1.0 is "the author's actual daily driver
 > with no missing core-loop feature" — it is not there yet. Nothing here is
 > supported software, and several modules are deliberately a thin slice of
-> the tool they resemble.
+> the tool they resemble. The tables below say exactly where each one stops,
+> because finding that out after installing is worse than reading it here.
 
 ## Windows only, today
 
@@ -139,15 +168,20 @@ explicitly talking to.
 
 ## Performance
 
-Measured on the author's machine (2026-08-07, installed release build), not a
-benchmark rig: **534 ms** cold start to kernel-ready, against a 1000 ms budget.
-Method, caveats and what the number does *not* cover are in
-[docs/performance.md](docs/performance.md) — notably, it stops before the
-webview's first paint.
+Measured on the author's machine, not a benchmark rig, and the honest answer
+depends on your data. Against a small database, **534 ms** cold start to
+kernel-ready. Against the author's real 107 MB one — most of it the code index
+— **2141–2436 ms**, which misses the project's own 1000 ms budget.
+
+The cause is not established and [docs/performance.md](docs/performance.md)
+says so rather than guessing: kernel boot itself stays at 61 ms, so the missing
+two seconds sit somewhere nothing currently instruments. Note also that this
+number stops at "kernel ready", before the webview's first paint, so what you
+perceive is longer than any figure here.
 
 ## Tests
 
-**370 Rust tests** (`cargo test --workspace`) and **362 frontend tests**
+**376 Rust tests** (`cargo test --workspace`) and **384 frontend tests**
 (`pnpm test`), plus a 7-test WebdriverIO smoke suite (`pnpm e2e`). The Rust
 count includes the `export_bindings_*` tests ts-rs emits per exported DTO, so
 the behavioral count is lower than the total.

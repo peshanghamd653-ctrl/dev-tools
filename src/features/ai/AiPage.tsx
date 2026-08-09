@@ -35,7 +35,7 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { Input } from "@/shared/ui/input";
 import { ApprovalCard } from "./ApprovalCard";
-import { credentialHint, ollamaMenuMessage } from "./providers";
+import { credentialHint, ollamaMenuMessage, providerSupportsTools } from "./providers";
 import {
   aiKeys,
   useConversations,
@@ -399,52 +399,54 @@ export function AiPage() {
                     <Brain className="size-3" />
                     Memory{memories?.length ? ` (${memories.length})` : ""}
                   </button>
-                  {attachProject && active?.provider === "claude" && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setToolsEnabled(!toolsEnabled)}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
-                          toolsEnabled
-                            ? "border-primary/40 bg-primary/10 text-foreground"
-                            : "border-border text-muted-foreground",
-                        )}
-                        title={
-                          toolsEnabled
-                            ? "Claude may read files in this project (read-only) — click to revoke"
-                            : "Grant Claude read-only access to project files"
-                        }
-                      >
-                        <Wrench className="size-3" />
-                        {toolsEnabled ? "Tools: read files" : "Tools off"}
-                      </button>
-                      {toolsEnabled && (
+                  {attachProject &&
+                    active &&
+                    providerSupportsTools(active.provider) && (
+                      <>
                         <button
                           type="button"
-                          onClick={() =>
-                            setWriteToolsEnabled(!writeToolsEnabled)
-                          }
+                          onClick={() => setToolsEnabled(!toolsEnabled)}
                           className={cn(
                             "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
-                            writeToolsEnabled
-                              ? "border-yellow-500/50 bg-yellow-500/10 text-foreground"
+                            toolsEnabled
+                              ? "border-primary/40 bg-primary/10 text-foreground"
                               : "border-border text-muted-foreground",
                           )}
                           title={
-                            writeToolsEnabled
-                              ? "Claude may propose edits & commands — every call still needs your approval, and the grant is dropped when DevOS restarts. Click to revoke."
-                              : "Allow Claude to propose file edits & commands (each call requires your approval; the grant lasts until DevOS restarts)"
+                            toolsEnabled
+                              ? `${PROVIDER_LABELS[active.provider] ?? active.provider} may read files in this project (read-only) — click to revoke`
+                              : `Grant ${PROVIDER_LABELS[active.provider] ?? active.provider} read-only access to project files`
                           }
                         >
-                          <span className="text-[10px]">⚡</span>
-                          {writeToolsEnabled
-                            ? "Edits & commands: ask each time"
-                            : "Edits & commands off"}
+                          <Wrench className="size-3" />
+                          {toolsEnabled ? "Tools: read files" : "Tools off"}
                         </button>
-                      )}
-                    </>
-                  )}
+                        {toolsEnabled && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setWriteToolsEnabled(!writeToolsEnabled)
+                            }
+                            className={cn(
+                              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
+                              writeToolsEnabled
+                                ? "border-yellow-500/50 bg-yellow-500/10 text-foreground"
+                                : "border-border text-muted-foreground",
+                            )}
+                            title={
+                              writeToolsEnabled
+                                ? `${PROVIDER_LABELS[active.provider] ?? active.provider} may propose edits & commands — every call still needs your approval, and the grant is dropped when DevOS restarts. Click to revoke.`
+                                : `Allow ${PROVIDER_LABELS[active.provider] ?? active.provider} to propose file edits & commands (each call requires your approval; the grant lasts until DevOS restarts)`
+                            }
+                          >
+                            <span className="text-[10px]">⚡</span>
+                            {writeToolsEnabled
+                              ? "Edits & commands: ask each time"
+                              : "Edits & commands off"}
+                          </button>
+                        )}
+                      </>
+                    )}
                 </div>
               )}
               <div className="mx-auto flex max-w-3xl items-end gap-2">

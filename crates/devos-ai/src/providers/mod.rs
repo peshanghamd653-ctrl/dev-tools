@@ -69,8 +69,14 @@ pub trait AiProvider: Send + Sync {
 /// The providers wired into DevOS: Claude, Gemini and Ollama. OpenAI slots in
 /// behind the same trait when there is a reason to add it.
 ///
-/// Only Claude drives the agentic tool loop — see `claude::run_agent` and the
-/// note at the top of `gemini.rs`. The other two stream plain chat.
+/// Claude and Ollama drive the agentic tool loop — see `claude::run_agent`
+/// and `ollama::run_agent`, two independent implementations rather than one
+/// generic loop, because the two APIs disagree on how a tool call is
+/// represented (SSE content blocks with incrementally-streamed argument JSON
+/// vs. a single NDJSON frame carrying the call complete) and on how the
+/// result is threaded back into the conversation (`tool_result` content
+/// blocks vs. a `role: "tool"` message). Gemini does not yet — see the note
+/// at the top of `gemini.rs` — and streams plain chat.
 pub struct AiRegistry {
     pub claude: claude::ClaudeProvider,
     pub gemini: gemini::GeminiProvider,

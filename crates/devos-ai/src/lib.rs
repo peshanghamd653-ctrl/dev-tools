@@ -7,6 +7,7 @@ pub mod repo;
 pub mod types;
 
 pub use providers::claude::run_agent;
+pub use providers::ollama::run_agent as run_agent_ollama;
 pub use providers::{
     AiError, AiProvider, AiRegistry, AiResult, StreamRequest, ToolDef, ToolExecutor,
 };

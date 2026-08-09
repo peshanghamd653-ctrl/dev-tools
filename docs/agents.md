@@ -36,12 +36,18 @@ pub trait AiProvider: Send + Sync {
 - API keys come from `devos-secrets`, never from settings or env files, and
   the provider→secret mapping lives in one function so a new provider cannot
   inherit another's credential by copy-paste.
-- **Tool calling is Claude-only.** The agent loop is written against
-  Anthropic's `tool_use` blocks; Gemini has function calling but needs a
-  second loop, which is a larger change than adding a provider. The desktop
-  layer gates tools on `provider == "claude"`, so a Gemini conversation
-  streams plain chat rather than accepting a tools grant it would silently
-  ignore.
+- **Tool calling drives Claude and Ollama; Gemini still streams plain chat.**
+  Each provider that has it is a separate agent loop — `claude::run_agent`
+  and `ollama::run_agent` — not one generic implementation, because the two
+  APIs disagree on how a call is represented (Claude streams a tool's
+  arguments incrementally as SSE `input_json_delta` fragments; Ollama buffers
+  the call server-side and emits `message.tool_calls` complete in one NDJSON
+  frame) and on how the result is threaded back in (Claude's `tool_result`
+  content block vs. Ollama's `role: "tool"` message). Gemini has function
+  calling but nothing here has adapted its shape to either loop yet; the
+  desktop layer's gate — `matches!(provider, "claude" | "ollama")` in
+  `ai_commands.rs` — is what stops a Gemini conversation from accepting a
+  tools grant it would silently drop.
 
 ## Conversation persistence (implemented)
 
@@ -60,20 +66,34 @@ file count, and up to 20 changed filenames — before calling the provider.
 This is intentionally cheap (no file contents) and always-on when attached;
 it's separate from tool calling, which is opt-in per conversation.
 
-## Tool calling — the agent loop (implemented, Claude only)
+## Tool calling — the agent loop (implemented for Claude and Ollama)
 
 ```
-stream_once(messages, tools) → text delta(s) + tool_use block(s)
+stream_once(messages, tools) → text delta(s) + tool call(s)
         │
-        ▼ (if any tool_use blocks)
+        ▼ (if any tool calls)
   for each call: emit ToolCall → executor.execute() → emit ToolResult
         │
         ▼
-  append assistant turn (text + tool_use) and a user turn (tool_result)
+  append the assistant's turn and one result turn per call, in
+  whichever shape the provider's continuation format expects
         │
         └──► loop (max 10 rounds; the final round withholds tools,
               forcing a concluding answer instead of another call)
 ```
+
+Same shape, two independent implementations. `claude::run_agent` echoes back
+`{"type": "tool_use", ...}` content blocks and one `tool_result` block per
+call; `ollama::run_agent` echoes an assistant message carrying `tool_calls` in
+the OpenAI-style `{type: "function", function: {name, arguments}}` envelope
+and one `{"role": "tool", "content": ...}` message per result — the
+convention Ollama's own documentation models tool calling on, verified here
+only against a hermetic test server rather than a live Ollama install (see
+the doc comment on `ollama::run_agent` for what that verification does and
+does not cover). Ollama also assigns tool calls no id at all, unlike
+Anthropic's `tool_use` blocks — the ids on its `AiDelta::ToolCall` /
+`ToolResult` frames are generated client-side purely to correlate the two for
+the frontend's approval UI, and never round-trip back to Ollama.
 
 - `ToolExecutor` is a trait (`devos-ai::providers::ToolExecutor`); the
   desktop layer implements it as `ProjectTools` (`src-tauri/src/tools.rs`),
@@ -90,7 +110,12 @@ stream_once(messages, tools) → text delta(s) + tool_use block(s)
 - **Nothing runs without an explicit grant.** The frontend only includes
   `toolsEnabled` / `writeToolsEnabled` in the `ai_send` call when the user
   has turned on the corresponding chips; otherwise the backend never even
-  builds those tool defs, and Claude has nothing to call.
+  builds those tool defs, and the model has nothing to call. The toggle
+  buttons themselves are gated by `providerSupportsTools()`
+  (`src/features/ai/providers.ts`), which the backend's own gate in
+  `ai_commands.rs` has to agree with by hand — there is no shared source of
+  truth across the Rust/TypeScript boundary, so a test on each side pins the
+  same two provider names.
 - **Mutating calls additionally pause on per-call approval**: the executor's
   `ApprovalGate` emits an `AiDelta::ApprovalRequest` frame, the chat shows
   an approval card, and the `ai_tool_respond` command resolves the parked

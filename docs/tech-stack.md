@@ -26,8 +26,8 @@ always reflect what's actually in the lockfiles, not aspiration.
 | Piece | Choice | Why |
 |---|---|---|
 | Cloud provider | Claude (Anthropic Messages API) | Default provider — best coding models, user-confirmed priority. |
-| Cloud provider | Gemini (Generative Language API, SSE) | Free tier — the only cloud provider usable without a billing account. Flash models only. Streams plain chat; tool calling is Claude-only. |
-| Local provider | Ollama (`/api/chat`, NDJSON) | Offline-first, no key required, also used for embeddings. |
+| Cloud provider | Gemini (Generative Language API, SSE) | Free tier — the only cloud provider usable without a billing account. Flash models only. Streams plain chat; tool calling is not yet adapted to Gemini's function-calling shape. |
+| Local provider | Ollama (`/api/chat`, NDJSON) | Offline-first, no key required, also used for embeddings. Drives the agentic tool loop, same as Claude. |
 | HTTP client | `reqwest` (streaming) | SSE (Claude, Gemini) and NDJSON (Ollama) all consumed as byte streams. |
 | Tool calling | Anthropic `tool_use` blocks | Native to the Messages API; no extra framework needed. |
 

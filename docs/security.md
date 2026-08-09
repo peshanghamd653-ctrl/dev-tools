@@ -90,8 +90,10 @@ the user's OS account.
 
 The riskiest new surface as of M2: giving an LLM read access to files.
 
-- **Off by default, two grant levels.** The tools list sent to Claude is
-  empty unless the user toggles the "Tools" chip on (read-only level).
+- **Off by default, two grant levels.** The tools list sent to the model
+  (Claude or Ollama — the two providers whose conversations can drive the
+  agent loop) is empty unless the user toggles the "Tools" chip on (read-only
+  level).
   A second chip adds `edit_file`/`write_file`/`run_command` — and revoking
   the read level automatically revokes the write level too.
 - **The write grant is session-scoped.** It is deliberately not persisted,

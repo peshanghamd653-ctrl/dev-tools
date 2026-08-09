@@ -366,16 +366,18 @@ pub async fn ai_send(
     // The tools grants: read-only tools exist only when the user enabled
     // tools for this send AND a project is attached; write/execute tools
     // additionally need the second grant, and each call still goes through
-    // per-call approval (ADR-0005). Claude-only for now.
+    // per-call approval (ADR-0005).
+    //
+    // Claude and Ollama drive the agentic loop (`devos_ai::run_agent` /
+    // `run_agent_ollama`); Gemini does not yet — see the note at the top of
+    // `crates/devos-ai/src/providers/gemini.rs` for why, and
+    // `providers::mod`'s doc comment for how the two implementations differ.
     let use_tools = tools_enabled.unwrap_or(false)
         && project_path.is_some()
-        && conversation.provider == "claude";
+        && matches!(conversation.provider.as_str(), "claude" | "ollama");
     let use_write_tools = use_tools && write_tools_enabled.unwrap_or(false);
 
     let result = if use_tools {
-        let key = api_key
-            .as_deref()
-            .ok_or("no Anthropic API key configured")?;
         let root = std::path::PathBuf::from(project_path.clone().unwrap_or_default());
         let mut defs = crate::tools::tool_defs();
         // The gate exists at *both* tiers. The read tier needs one because
@@ -392,17 +394,40 @@ pub async fn ai_send(
         } else {
             crate::tools::ProjectTools::with_approval(root, state.kernel.pool.clone(), gate)
         };
-        devos_ai::run_agent(
-            &state.ai.claude,
-            key,
-            &conversation.model,
-            system.as_deref(),
-            &turns,
-            &defs,
-            &executor,
-            &tx,
-        )
-        .await
+        match conversation.provider.as_str() {
+            "claude" => {
+                let key = api_key
+                    .as_deref()
+                    .ok_or("no Anthropic API key configured")?;
+                devos_ai::run_agent(
+                    &state.ai.claude,
+                    key,
+                    &conversation.model,
+                    system.as_deref(),
+                    &turns,
+                    &defs,
+                    &executor,
+                    &tx,
+                )
+                .await
+            }
+            "ollama" => {
+                devos_ai::run_agent_ollama(
+                    &state.ai.ollama,
+                    base_url.as_deref(),
+                    &conversation.model,
+                    system.as_deref(),
+                    &turns,
+                    &defs,
+                    &executor,
+                    &tx,
+                )
+                .await
+            }
+            // `use_tools` above is the only place this branch is reachable
+            // from, and it already restricts the provider to these two.
+            _ => unreachable!("use_tools only allows claude or ollama"),
+        }
     } else {
         provider
             .stream_chat(

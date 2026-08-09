@@ -6,7 +6,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { credentialHint, ollamaMenuMessage } from "./providers";
+import {
+  credentialHint,
+  ollamaMenuMessage,
+  providerSupportsTools,
+} from "./providers";
 
 describe("ollamaMenuMessage", () => {
   it("says it is still asking while the query is in flight", () => {
@@ -62,5 +66,23 @@ describe("credentialHint", () => {
   it("stays quiet when the key is already stored", () => {
     expect(credentialHint("claude", true)).toBeNull();
     expect(credentialHint("gemini", true)).toBeNull();
+  });
+});
+
+describe("providerSupportsTools", () => {
+  /**
+   * Mirrors the gate in `src-tauri/src/ai_commands.rs` —
+   * `matches!(conversation.provider.as_str(), "claude" | "ollama")`. The two
+   * are checked independently rather than one importing the other (there is
+   * no such link across the Rust/TypeScript boundary), so this test is the
+   * thing that would catch the day someone extends one side and forgets the
+   * other — the toggle buttons would then appear for a provider whose
+   * backend still silently streams plain chat, or vice versa.
+   */
+  it("agrees with the backend's tool-loop gate: claude and ollama, nothing else", () => {
+    expect(providerSupportsTools("claude")).toBe(true);
+    expect(providerSupportsTools("ollama")).toBe(true);
+    expect(providerSupportsTools("gemini")).toBe(false);
+    expect(providerSupportsTools("something-new")).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use sqlx::SqlitePool;
@@ -19,6 +19,10 @@ pub struct Kernel {
     pub jobs: JobRunner,
     module_ids: Vec<&'static str>,
     timings: BootTimings,
+    /// Retained only for [`Kernel::run_daily_backup`] — backups live beside
+    /// the database file and there is no way to ask a `SqlitePool` for the
+    /// path it was opened with.
+    db_path: PathBuf,
 }
 
 impl Kernel {
@@ -26,16 +30,19 @@ impl Kernel {
         let boot_started = Instant::now();
         let mut timings = BootTimings::default();
 
-        // `restore_us`, `pre_migration_backup_us`, `daily_backup_us` and
-        // `audit_prune_us` below are the part of `boot` that [`BootTimings`]
-        // deliberately does not name — the remainder its "the phases are a
-        // subset, not a partition" note points at. They are logged rather
-        // than stored because they are diagnostic: each is normally near zero
-        // and each has one launch on which it is not. The daily `VACUUM INTO`
-        // is the clearest case — seconds of I/O on a large database, on
-        // exactly one launch per calendar day — so a user reporting "it was
-        // slow that one time" and a developer measuring the next launch never
-        // see the same number unless boot says which phase ran.
+        // `restore_us`, `pre_migration_backup_us` and `audit_prune_us` below
+        // are the part of `boot` that [`BootTimings`] deliberately does not
+        // name — the remainder its "the phases are a subset, not a partition"
+        // note points at. They are logged rather than stored because they are
+        // diagnostic: each is normally near zero and each has one launch on
+        // which it is not, so a user reporting "it was slow that one time" and
+        // a developer measuring the next launch never see the same number
+        // unless boot says which phase ran.
+        //
+        // The daily `VACUUM INTO` used to be the clearest example of that and
+        // is no longer here at all: it was seconds of I/O on one launch per
+        // calendar day, and it now runs after boot returns. See the spawn near
+        // the end of this function.
 
         // Before the pool opens is the *only* moment the database file can be
         // swapped: after this line there are live connections, sidecars, and
@@ -63,11 +70,6 @@ impl Kernel {
         db::run_migrations(&pool).await?;
         timings.migrations = phase.elapsed();
 
-        // At most one rotating copy per calendar day; also best effort.
-        let phase = Instant::now();
-        crate::backup::run_daily_backup(&pool, db_path).await;
-        let daily_backup_us = phase.elapsed().as_micros() as u64;
-
         let events = EventBus::default();
         let jobs = JobRunner::new(pool.clone(), events.clone());
         let mut kernel = Self {
@@ -77,6 +79,7 @@ impl Kernel {
             jobs,
             module_ids: Vec::new(),
             timings,
+            db_path: db_path.to_path_buf(),
         };
 
         let phase = Instant::now();
@@ -121,11 +124,48 @@ impl Kernel {
             default_workspace_us = kernel.timings.default_workspace.as_micros() as u64,
             restore_us,
             pre_migration_backup_us,
-            daily_backup_us,
             audit_prune_us,
             "kernel boot phases"
         );
         Ok(kernel)
+    }
+
+    /// Write today's rotating backup, if it has not already run today.
+    ///
+    /// **Deliberately not called from [`Kernel::boot`].** It used to be, and on
+    /// a 107 MB database that added 13.02 s to exactly one launch per calendar
+    /// day — `startup_ms=18074` against 4-8 ms on every other launch that day.
+    /// The cost scales with the database, so it grows quietly as the code
+    /// index does, and it is invisible in day-to-day testing because the
+    /// second launch of any day never pays it.
+    ///
+    /// Nothing during boot depends on this running, which is what makes moving
+    /// it safe: it is a rotating safety net, not a precondition. Contrast the
+    /// *pre-migration* snapshot, which exists specifically so a bad migration
+    /// is recoverable and therefore has to finish before migrations run — that
+    /// one stays inside `boot`.
+    ///
+    /// **Callers must hold the kernel alive until this resolves, or not spawn
+    /// it detached across a shutdown.** The desktop shell calls this after
+    /// `boot` returns, spawned on an `Arc<Kernel>` rather than fired-and-left,
+    /// and should let it finish (or accept its cancellation) before the pool
+    /// closes. Running it as truly detached background work was tried first
+    /// and rejected: [`crate::backup::run_daily_backup`] still holds `pool`
+    /// after the app believes it has shut down, and a shut-down SQLite
+    /// connection recreates the very `-wal`/`-shm` sidecars a clean shutdown
+    /// just deleted — which is precisely the corruption path
+    /// `sidecars_do_not_survive_the_swap` exists to catch, and which caught
+    /// exactly that when this was first attempted as a bare `tokio::spawn`
+    /// inside `boot`.
+    ///
+    /// Safe to interrupt regardless: the snapshot is published by renaming off
+    /// a `.part` ([`crate::backup::snapshot_atomic`]), so a process that dies
+    /// mid-write — including this being cancelled — leaves no file at the
+    /// final name. The next launch sees the day as still outstanding and
+    /// retries, rather than inheriting a truncated file it believes is a
+    /// complete backup.
+    pub async fn run_daily_backup(&self) {
+        crate::backup::run_daily_backup(&self.pool, &self.db_path).await;
     }
 
     /// Register a module's contributions. Call before sharing the kernel.

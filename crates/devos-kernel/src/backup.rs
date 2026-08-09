@@ -161,7 +161,7 @@ async fn try_pre_migration_backup(
         Local::now().format("%Y%m%d-%H%M%S")
     ));
     create_dir(&dir)?;
-    snapshot(pool, db_path, &dest).await?;
+    snapshot_atomic(pool, db_path, &dest).await?;
     Ok(Some(dest))
 }
 
@@ -184,7 +184,7 @@ async fn try_daily_backup(pool: &SqlitePool, db_path: &Path) -> KernelResult<Opt
     }
 
     create_dir(&dir)?;
-    snapshot(pool, db_path, &dest).await?;
+    snapshot_atomic(pool, db_path, &dest).await?;
     prune_daily(&dir);
     Ok(Some(dest))
 }
@@ -227,6 +227,72 @@ async fn snapshot(pool: &SqlitePool, db_path: &Path, dest: &Path) -> KernelResul
     } else {
         tracing::warn!("SQLite predates VACUUM INTO; falling back to checkpoint + file copy");
         checkpoint_and_copy(pool, db_path, dest).await
+    }
+}
+
+/// Write a snapshot so that `dest` never exists in a half-finished state.
+///
+/// [`snapshot`] writes straight into whatever path it is handed, and
+/// `VACUUM INTO` fills the destination as it goes. A process that dies partway
+/// therefore leaves a truncated file sitting at the *final* name.
+///
+/// For the daily rotation that is worse than losing the backup, because the
+/// existence of `devos-daily-YYYY-MM-DD.db` **is** the record that today is
+/// done — there is no marker beside it to disagree. A partial file is not
+/// merely useless; it convinces every later launch that day that there is
+/// nothing to do. The user ends up holding a snapshot that cannot be restored,
+/// with nothing anywhere saying so, and finds out at the worst possible moment.
+///
+/// Writing to `<dest>.part` and renaming means the real name appears only once
+/// the content behind it is complete. This is the discipline
+/// [`apply_pending_restore`] already follows, and the reason [`PARTIAL_SUFFIX`]
+/// exists; the backups simply were not using it.
+async fn snapshot_atomic(pool: &SqlitePool, db_path: &Path, dest: &Path) -> KernelResult<()> {
+    let partial = partial_path(dest);
+
+    // `VACUUM INTO` refuses a destination that already exists, so a `.part`
+    // abandoned by an earlier interrupted run would poison every subsequent
+    // attempt — permanently, since nothing else ever removes it. Nothing reads
+    // a `.part`, so discarding one is always safe.
+    remove_snapshot_files(&partial);
+
+    snapshot(pool, db_path, &partial).await?;
+
+    // The sidecar is published first, and the order is load-bearing: the main
+    // file's arrival is what marks the snapshot complete, so it has to be the
+    // last thing to appear. A `-wal` beside a not-yet-present `.db` is
+    // ignorable; a `.db` whose `-wal` never arrived is a corrupt snapshot that
+    // looks finished.
+    let partial_wal = wal_sidecar(&partial);
+    if partial_wal.is_file() {
+        let dest_wal = wal_sidecar(dest);
+        std::fs::rename(&partial_wal, &dest_wal)
+            .map_err(|e| io_err("publish write-ahead log to", &dest_wal, &e))?;
+    }
+
+    std::fs::rename(&partial, dest).map_err(|e| io_err("publish snapshot to", dest, &e))?;
+    Ok(())
+}
+
+/// `foo.db` -> `foo.db.part`.
+fn partial_path(dest: &Path) -> PathBuf {
+    let mut name = dest.as_os_str().to_os_string();
+    name.push(PARTIAL_SUFFIX);
+    PathBuf::from(name)
+}
+
+/// Remove a snapshot and any sidecar it may have, ignoring what is absent.
+fn remove_snapshot_files(path: &Path) {
+    for candidate in [path.to_path_buf(), wal_sidecar(path)] {
+        if candidate.is_file() {
+            if let Err(e) = std::fs::remove_file(&candidate) {
+                tracing::warn!(
+                    error = %e,
+                    file = %candidate.display(),
+                    "could not remove a stale partial snapshot"
+                );
+            }
+        }
     }
 }
 
@@ -1806,8 +1872,18 @@ mod tests {
 
         stage_restore(&db_path, &backup).await.expect("stage");
         // A regular file where the backup directory needs to go: preserving
-        // can never succeed here, on any platform. (Boot already created the
-        // directory, hence the removal first.)
+        // can never succeed here, on any platform.
+        //
+        // This used to rely on `boot` having already created `backups/` as a
+        // side effect of the daily backup, and just removed that directory
+        // before overwriting it. Now that the daily backup runs after `boot`
+        // returns rather than inside it (see `Kernel::run_daily_backup`),
+        // nothing during boot touches `backups/` unless a migration is
+        // pending, so the directory the test needs to shadow may not exist
+        // yet. Created explicitly here instead, so the test does not silently
+        // depend on some other code path's side effect the next time one of
+        // them moves.
+        std::fs::create_dir_all(backup_dir(&db_path)).unwrap();
         std::fs::remove_dir_all(backup_dir(&db_path)).unwrap();
         std::fs::write(backup_dir(&db_path), b"not a directory").unwrap();
 

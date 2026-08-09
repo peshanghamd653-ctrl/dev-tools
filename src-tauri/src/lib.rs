@@ -454,6 +454,24 @@ pub fn run() {
             // the module so the crate stays runtime-agnostic.
             tauri::async_runtime::spawn(devos_monitor::run_scheduler(kernel.clone()));
 
+            // The daily backup, moved out of `Kernel::boot` — see
+            // `Kernel::run_daily_backup` for why it was moved and why it is
+            // safe to run detached from here specifically. It holds the same
+            // `Arc<Kernel>` every other background task on this line does, so
+            // the pool it needs cannot close out from under it during ordinary
+            // operation, and on process exit it is cancelled together with
+            // every other spawned task rather than outliving a closed pool —
+            // which is the failure this cannot repeat: a bare `tokio::spawn`
+            // holding a bare `SqlitePool` inside `boot` itself, tried first,
+            // kept the connection alive past a clean shutdown and recreated
+            // the `-wal`/`-shm` sidecars the shutdown had just deleted.
+            {
+                let kernel = kernel.clone();
+                tauri::async_runtime::spawn(async move {
+                    kernel.run_daily_backup().await;
+                });
+            }
+
             app.manage(AppState {
                 kernel,
                 terminal,

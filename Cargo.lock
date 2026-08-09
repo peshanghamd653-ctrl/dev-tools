@@ -1119,6 +1119,7 @@ dependencies = [
  "devos-index",
  "devos-issue",
  "devos-kernel",
+ "devos-mcp",
  "devos-monitor",
  "devos-secrets",
  "devos-snippets",
@@ -1208,6 +1209,23 @@ name = "devos-kernel"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
+name = "devos-mcp"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "devos-kernel",
  "serde",
  "serde_json",
  "sqlx",

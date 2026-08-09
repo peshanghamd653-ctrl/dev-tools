@@ -14,6 +14,7 @@ import { Route as SnippetsRouteImport } from './routes/snippets'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as MonitorsRouteImport } from './routes/monitors'
+import { Route as McpRouteImport } from './routes/mcp'
 import { Route as GitRouteImport } from './routes/git'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as DockerRouteImport } from './routes/docker'
@@ -46,6 +47,11 @@ const ProjectsRoute = ProjectsRouteImport.update({
 const MonitorsRoute = MonitorsRouteImport.update({
   id: '/monitors',
   path: '/monitors',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GitRoute = GitRouteImport.update({
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/docker': typeof DockerRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
+  '/mcp': typeof McpRoute
   '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByTo {
   '/docker': typeof DockerRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
+  '/mcp': typeof McpRoute
   '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
@@ -129,6 +137,7 @@ export interface FileRoutesById {
   '/docker': typeof DockerRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
+  '/mcp': typeof McpRoute
   '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
   '/settings': typeof SettingsRoute
@@ -146,6 +155,7 @@ export interface FileRouteTypes {
     | '/docker'
     | '/files'
     | '/git'
+    | '/mcp'
     | '/monitors'
     | '/projects'
     | '/settings'
@@ -161,6 +171,7 @@ export interface FileRouteTypes {
     | '/docker'
     | '/files'
     | '/git'
+    | '/mcp'
     | '/monitors'
     | '/projects'
     | '/settings'
@@ -176,6 +187,7 @@ export interface FileRouteTypes {
     | '/docker'
     | '/files'
     | '/git'
+    | '/mcp'
     | '/monitors'
     | '/projects'
     | '/settings'
@@ -192,6 +204,7 @@ export interface RootRouteChildren {
   DockerRoute: typeof DockerRoute
   FilesRoute: typeof FilesRoute
   GitRoute: typeof GitRoute
+  McpRoute: typeof McpRoute
   MonitorsRoute: typeof MonitorsRoute
   ProjectsRoute: typeof ProjectsRoute
   SettingsRoute: typeof SettingsRoute
@@ -234,6 +247,13 @@ declare module '@tanstack/react-router' {
       path: '/monitors'
       fullPath: '/monitors'
       preLoaderRoute: typeof MonitorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/git': {
@@ -304,6 +324,7 @@ const rootRouteChildren: RootRouteChildren = {
   DockerRoute: DockerRoute,
   FilesRoute: FilesRoute,
   GitRoute: GitRoute,
+  McpRoute: McpRoute,
   MonitorsRoute: MonitorsRoute,
   ProjectsRoute: ProjectsRoute,
   SettingsRoute: SettingsRoute,

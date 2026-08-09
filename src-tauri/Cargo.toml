@@ -30,6 +30,7 @@ devos-monitor = { path = "../crates/modules/devos-monitor" }
 devos-deploy = { path = "../crates/modules/devos-deploy" }
 devos-issue = { path = "../crates/modules/devos-issue" }
 devos-snippets = { path = "../crates/modules/devos-snippets" }
+devos-mcp = { path = "../crates/modules/devos-mcp" }
 sqlx.workspace = true
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"

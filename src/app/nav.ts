@@ -7,6 +7,7 @@ import {
   FolderTree,
   GitBranch,
   LayoutDashboard,
+  Plug,
   Rocket,
   Send,
   Settings,
@@ -24,7 +25,12 @@ export interface NavItem {
 
 export const primaryNav: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, shortcut: "Ctrl+1" },
-  { to: "/projects", label: "Projects", icon: FolderKanban, shortcut: "Ctrl+2" },
+  {
+    to: "/projects",
+    label: "Projects",
+    icon: FolderKanban,
+    shortcut: "Ctrl+2",
+  },
   { to: "/terminal", label: "Terminal", icon: Terminal, shortcut: "Ctrl+3" },
   { to: "/git", label: "Git", icon: GitBranch, shortcut: "Ctrl+4" },
   { to: "/ai", label: "AI Assistant", icon: Sparkles, shortcut: "Ctrl+5" },
@@ -34,8 +40,14 @@ export const primaryNav: NavItem[] = [
   { to: "/database", label: "Database", icon: Database, shortcut: "Ctrl+9" },
   { to: "/monitors", label: "Monitors", icon: Activity, shortcut: "Ctrl+0" },
   // The digits ran out at Monitors; Deployments takes a shift-modified key.
-  { to: "/deploy", label: "Deployments", icon: Rocket, shortcut: "Ctrl+Shift+D" },
+  {
+    to: "/deploy",
+    label: "Deployments",
+    icon: Rocket,
+    shortcut: "Ctrl+Shift+D",
+  },
   { to: "/snippets", label: "Snippets", icon: Code, shortcut: "Ctrl+Shift+N" },
+  { to: "/mcp", label: "MCP Servers", icon: Plug, shortcut: "Ctrl+Shift+M" },
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+," },
 ];
 

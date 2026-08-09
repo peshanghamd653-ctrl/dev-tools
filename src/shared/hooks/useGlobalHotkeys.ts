@@ -10,7 +10,8 @@ import { useUiStore } from "@/shared/stores/ui";
  *   Ctrl+T  go to symbol         Ctrl+1  dashboard
  *   Ctrl+2  projects
  *   Ctrl+Shift+D  deployments    Ctrl+Shift+N  snippets
- *   Ctrl+Shift+S  report a bug   Ctrl+,  settings
+ *   Ctrl+Shift+M  MCP servers    Ctrl+Shift+S  report a bug
+ *   Ctrl+,  settings
  */
 export function useGlobalHotkeys() {
   const navigate = useNavigate();
@@ -45,6 +46,10 @@ export function useGlobalHotkeys() {
           // anything — pressing this must not put a dialog in the picture.
           e.preventDefault();
           setCaptureIssueOpen(true);
+        }
+        if (e.code === "KeyM") {
+          e.preventDefault();
+          void navigate({ to: "/mcp" });
         }
         return;
       }

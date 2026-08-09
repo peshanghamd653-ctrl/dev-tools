@@ -36,6 +36,7 @@ const moduleCommandHandlers: Record<
   | "openMonitors"
   | "openDeploy"
   | "openSnippets"
+  | "openMcp"
   | "captureIssue"
 > = {
   "core.workspace.create": "createWorkspace",
@@ -50,6 +51,7 @@ const moduleCommandHandlers: Record<
   "monitor.open": "openMonitors",
   "deploy.open": "openDeploy",
   "snippets.open": "openSnippets",
+  "mcp.open": "openMcp",
   "issue.capture": "captureIssue",
 };
 
@@ -87,6 +89,7 @@ export function CommandPalette() {
     else if (handler === "openMonitors") void navigate({ to: "/monitors" });
     else if (handler === "openDeploy") void navigate({ to: "/deploy" });
     else if (handler === "openSnippets") void navigate({ to: "/snippets" });
+    else if (handler === "openMcp") void navigate({ to: "/mcp" });
     else if (handler === "captureIssue") setCaptureIssueOpen(true);
     else if (handler === "indexProject") {
       if (!paletteProject) {

@@ -45,6 +45,8 @@ import type { IndexHit } from "./bindings/IndexHit";
 import type { IndexStats } from "./bindings/IndexStats";
 import type { JobInfo } from "./bindings/JobInfo";
 import type { KernelEvent } from "./bindings/KernelEvent";
+import type { McpServer } from "./bindings/McpServer";
+import type { McpTool } from "./bindings/McpTool";
 import type { MemoryCategory } from "./bindings/MemoryCategory";
 import type { MemoryEntry } from "./bindings/MemoryEntry";
 import type { Monitor } from "./bindings/Monitor";
@@ -106,6 +108,8 @@ export type {
   IssueTarget,
   JobInfo,
   KernelEvent,
+  McpServer,
+  McpTool,
   MemoryCategory,
   MemoryEntry,
   Monitor,
@@ -330,6 +334,18 @@ export const ipc = {
 
   systemSnapshot: () => call<SystemSnapshot>("system_snapshot"),
   systemHistory: () => call<SystemHistoryPoint[]>("system_history"),
+
+  mcpServers: () => call<McpServer[]>("mcp_servers"),
+  mcpServerCreate: (name: string, command: string, args: string[]) =>
+    call<McpServer>("mcp_server_create", { name, command, args }),
+  mcpServerDelete: (id: string) => call<void>("mcp_server_delete", { id }),
+  /**
+   * Spawns the server, hands back what it advertises, then terminates the
+   * process — a health check and capability preview, not a way to invoke a
+   * tool. There is no `mcpCallTool`; see `devos_mcp`'s module doc comment.
+   */
+  mcpDiscoverTools: (command: string, args: string[]) =>
+    call<[string, McpTool[]]>("mcp_discover_tools", { command, args }),
 
   monitorsList: () => call<MonitorStatus[]>("monitors_list"),
   monitorCreate: (name: string, url: string, intervalSecs: number) =>

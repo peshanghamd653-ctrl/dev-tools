@@ -12,6 +12,7 @@ mod fs_commands;
 mod git_commands;
 mod index_commands;
 mod issue_commands;
+mod mcp_commands;
 mod monitor_commands;
 mod pathsafe;
 mod snippet_commands;
@@ -309,6 +310,7 @@ pub fn run() {
             kernel.register_module(&devos_deploy::DeployModule);
             kernel.register_module(&devos_issue::IssueModule);
             kernel.register_module(&devos_snippets::SnippetsModule);
+            kernel.register_module(&devos_mcp::McpModule);
             let modules_us = phase.elapsed().as_micros() as u64;
             let kernel = Arc::new(kernel);
 
@@ -357,6 +359,11 @@ pub fn run() {
                 .map_err(|e| format!("system tables: {e}"))?;
             let system_tables_us = phase.elapsed().as_micros() as u64;
 
+            let phase = Instant::now();
+            tauri::async_runtime::block_on(devos_mcp::init(&kernel.pool))
+                .map_err(|e| format!("mcp tables: {e}"))?;
+            let mcp_tables_us = phase.elapsed().as_micros() as u64;
+
             tracing::info!(
                 secrets_us,
                 ai_tables_us,
@@ -366,6 +373,7 @@ pub fn run() {
                 monitor_tables_us,
                 snippet_tables_us,
                 system_tables_us,
+                mcp_tables_us,
                 "module tables initialised"
             );
             let tables_us = secrets_us
@@ -375,7 +383,8 @@ pub fn run() {
                 + db_tables_us
                 + monitor_tables_us
                 + snippet_tables_us
-                + system_tables_us;
+                + system_tables_us
+                + mcp_tables_us;
 
             // Forward every kernel event to the webview on one channel.
             let mut rx = kernel.events.subscribe();
@@ -591,6 +600,10 @@ pub fn run() {
             db_commands::db_table_rows,
             system_commands::system_snapshot,
             system_commands::system_history,
+            mcp_commands::mcp_servers,
+            mcp_commands::mcp_server_create,
+            mcp_commands::mcp_server_delete,
+            mcp_commands::mcp_discover_tools,
             monitor_commands::monitors_list,
             monitor_commands::monitor_create,
             monitor_commands::monitor_delete,

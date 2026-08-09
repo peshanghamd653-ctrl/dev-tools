@@ -1,0 +1,23 @@
+[package]
+name = "devos-mcp"
+description = "DevOS MCP client module: server configuration, stdio JSON-RPC handshake, and tool discovery"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+devos-kernel = { path = "../../devos-kernel" }
+tokio = { workspace = true, features = ["process", "io-util"] }
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

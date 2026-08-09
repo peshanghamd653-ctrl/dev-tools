@@ -13,6 +13,7 @@ import {
   Settings,
   Sparkles,
   Terminal,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -48,6 +49,7 @@ export const primaryNav: NavItem[] = [
   },
   { to: "/snippets", label: "Snippets", icon: Code, shortcut: "Ctrl+Shift+N" },
   { to: "/mcp", label: "MCP Servers", icon: Plug, shortcut: "Ctrl+Shift+M" },
+  { to: "/toolbox", label: "Toolbox", icon: Wrench, shortcut: "Ctrl+Shift+U" },
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+," },
 ];
 

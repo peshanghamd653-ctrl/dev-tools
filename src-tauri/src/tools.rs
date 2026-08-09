@@ -26,6 +26,10 @@ const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 /// is sized for, and this repository's own `cargo test --workspace` already
 /// takes noticeably longer than a single `run_command` call ever does.
 const TEST_RUN_TIMEOUT: Duration = Duration::from_secs(300);
+/// Same budget as `run_tests`, for the same reason: a workspace-wide
+/// `cargo clippy` from a cold `target/` recompiles everything, which can
+/// take as long as the test suite itself.
+const LINT_RUN_TIMEOUT: Duration = Duration::from_secs(300);
 const SKIP_DIRS: &[&str] = &[
     ".git",
     "node_modules",
@@ -110,12 +114,19 @@ pub const MUTATING_TOOLS: &[&str] = &[
     "write_file",
     "run_command",
     "run_tests",
+    "run_lint",
 ];
 
 /// Tools that need the second (write/execute) grant to exist at all. Distinct
 /// from [`MUTATING_TOOLS`]: the grant decides which tools the model is *told
 /// about*, approval decides whether a call *runs* (ADR-0005).
-const WRITE_GRANT_TOOLS: &[&str] = &["edit_file", "write_file", "run_command", "run_tests"];
+const WRITE_GRANT_TOOLS: &[&str] = &[
+    "edit_file",
+    "write_file",
+    "run_command",
+    "run_tests",
+    "run_lint",
+];
 
 /// Mutating tools, offered only when the user grants the second (write)
 /// capability level. Every call still goes through the approval gate
@@ -162,6 +173,14 @@ pub fn write_tool_defs() -> Vec<ToolDef> {
         ToolDef {
             name: "run_tests".into(),
             description: "Detect and run this project's test suite (Cargo.toml -> cargo test, package.json's \"test\" script via npm/pnpm/yarn, pyproject.toml/pytest.ini/setup.cfg -> pytest, go.mod -> go test), then return a passed/failed summary followed by the raw output. 5 minute timeout. Fails with an explanation if no test setup is recognized, or if more than one is found and the choice is ambiguous — use run_command with an explicit command in either case. Requires user approval per call, same as run_command.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+            }),
+        },
+        ToolDef {
+            name: "run_lint".into(),
+            description: "Detect and run this project's linter (Cargo.toml -> cargo clippy --all-targets -- -D warnings, package.json's \"lint\" script via npm/pnpm/yarn, go.mod -> go vet), then return a clean/problem-count summary followed by the raw output. 5 minute timeout. No Python detector (no single dominant convention to pick between ruff/flake8/pylint). Fails with an explanation if no lint setup is recognized, or if more than one is found and the choice is ambiguous — use run_command with an explicit command in either case. Requires user approval per call, same as run_command.".into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {},
@@ -547,7 +566,10 @@ impl ProjectTools {
         if command.trim().is_empty() {
             return Err("command is empty".into());
         }
-        self.exec_captured(command, self.command_timeout).await
+        Ok(self
+            .exec_captured(command, self.command_timeout)
+            .await?
+            .formatted())
     }
 
     /// `run_tests` reuses `run_command`'s approval, audit and execution
@@ -563,15 +585,29 @@ impl ProjectTools {
         let command = input["command"]
             .as_str()
             .ok_or("internal error: run_tests was dispatched with no resolved command")?;
-        let raw = self.exec_captured(command, TEST_RUN_TIMEOUT).await?;
-        let summary = crate::test_runner::summarize_test_output(&raw);
-        Ok(format!("{}\n\n{raw}", summary.render()))
+        let exec = self.exec_captured(command, TEST_RUN_TIMEOUT).await?;
+        let summary = crate::test_runner::summarize_test_output(&exec.report);
+        Ok(format!("{}\n\n{}", summary.render(), exec.formatted()))
+    }
+
+    /// `run_lint`'s command is resolved by `execute()` before this runs, the
+    /// same as `run_tests` — see that method's doc comment, which the same
+    /// reasoning applies to unchanged.
+    async fn run_lint(&self, input: &Value) -> Result<String, String> {
+        let command = input["command"]
+            .as_str()
+            .ok_or("internal error: run_lint was dispatched with no resolved command")?;
+        let exec = self.exec_captured(command, LINT_RUN_TIMEOUT).await?;
+        let clean = exec.code == Some(0);
+        let summary = crate::test_runner::summarize_lint_output(&exec.report, clean);
+        Ok(format!("{}\n\n{}", summary.render(), exec.formatted()))
     }
 
     /// Spawn, capture, truncate. Shared by `run_command` (model-chosen
-    /// command, the conversation's configured timeout) and `run_tests`
-    /// (backend-chosen command, a longer fixed timeout).
-    async fn exec_captured(&self, command: &str, timeout: Duration) -> Result<String, String> {
+    /// command, the conversation's configured timeout), `run_tests` and
+    /// `run_lint` (both backend-chosen commands with their own longer fixed
+    /// timeouts).
+    async fn exec_captured(&self, command: &str, timeout: Duration) -> Result<ExecOutput, String> {
         let mut cmd = if cfg!(windows) {
             let mut c = tokio::process::Command::new("cmd");
             c.args(["/C", command]);
@@ -610,15 +646,37 @@ impl ProjectTools {
             report.truncate(floor_char(&report, MAX_COMMAND_OUTPUT));
             report.push_str("\n… output truncated …");
         }
-        let code = output
-            .status
-            .code()
+        Ok(ExecOutput {
+            report,
+            code: output.status.code(),
+        })
+    }
+}
+
+/// The result of one captured process run: the combined, truncated
+/// stdout/stderr, and the exit code if the process reported one (`None` on
+/// e.g. a signal kill, which Windows never produces but the type stays
+/// honest about on any platform this compiles for).
+///
+/// Kept separate from the formatted report string `run_command` returns
+/// because `run_lint` needs the exit code as a value to branch on — "did
+/// this run come back clean" — not as text to search for inside a report
+/// that was built to be read, not parsed.
+struct ExecOutput {
+    report: String,
+    code: Option<i32>,
+}
+
+impl ExecOutput {
+    fn formatted(&self) -> String {
+        let code = self
+            .code
             .map(|c| c.to_string())
             .unwrap_or_else(|| "unknown".into());
-        if report.is_empty() {
-            Ok(format!("(no output) exit code {code}"))
+        if self.report.is_empty() {
+            format!("(no output) exit code {code}")
         } else {
-            Ok(format!("{report}\n(exit code {code})"))
+            format!("{}\n(exit code {code})", self.report)
         }
     }
 }
@@ -651,11 +709,12 @@ impl ProjectTools {
 fn audit_target(name: &str, input: &Value) -> Option<String> {
     let field = match name {
         "edit_file" | "write_file" => "path",
-        // `run_tests`'s `input` has already been replaced with the resolved
-        // `{"command": ...}` by the time this runs (see `execute()`), so the
-        // approval card and this audit row show the actual command that will
-        // run, not the empty `{}` the model asked with.
-        "run_command" | "run_tests" => "command",
+        // `run_tests`'/`run_lint`'s `input` has already been replaced with
+        // the resolved `{"command": ...}` by the time this runs (see
+        // `execute()`), so the approval card and this audit row show the
+        // actual command that will run, not the empty `{}` the model asked
+        // with.
+        "run_command" | "run_tests" | "run_lint" => "command",
         _ => return None,
     };
     input[field].as_str().map(str::to_string)
@@ -714,20 +773,24 @@ impl ToolExecutor for ProjectTools {
             return Err("write access has not been granted for this conversation".into());
         }
 
-        // `run_tests` takes no command from the model — it detects one from
-        // the project root and runs that. The detection has to happen here,
-        // *before* the shared `approve()` call below, and its result has to
-        // replace `input`: otherwise the approval card would show
-        // `run_tests {}` and the user would be asked to approve a command
-        // they cannot see, which is exactly the blind-approval problem
-        // `run_command`'s design exists to avoid. This does not reopen
-        // SEC-002 — `approve()` still runs unconditionally for every name in
-        // `MUTATING_TOOLS`, in the one place it always has; only the `input`
-        // it is given differs for this one tool, and only before the gate
-        // sees it.
+        // `run_tests` and `run_lint` take no command from the model — each
+        // detects one from the project root and runs that. The detection has
+        // to happen here, *before* the shared `approve()` call below, and its
+        // result has to replace `input`: otherwise the approval card would
+        // show `run_tests {}` / `run_lint {}` and the user would be asked to
+        // approve a command they cannot see, which is exactly the
+        // blind-approval problem `run_command`'s design exists to avoid.
+        // This does not reopen SEC-002 — `approve()` still runs
+        // unconditionally for every name in `MUTATING_TOOLS`, in the one
+        // place it always has; only the `input` it is given differs for
+        // these two tools, and only before the gate sees it.
         let resolved;
-        let input = if name == "run_tests" {
-            let detected = crate::test_runner::detect_test_command(&self.root)?;
+        let input = if name == "run_tests" || name == "run_lint" {
+            let detected = if name == "run_tests" {
+                crate::test_runner::detect_test_command(&self.root)?
+            } else {
+                crate::test_runner::detect_lint_command(&self.root)?
+            };
             resolved = json!({ "command": detected.command });
             &resolved
         } else {
@@ -748,6 +811,7 @@ impl ToolExecutor for ProjectTools {
             "write_file" => self.write_file(input),
             "run_command" => self.run_command(input).await,
             "run_tests" => self.run_tests(input).await,
+            "run_lint" => self.run_lint(input).await,
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -1249,6 +1313,77 @@ mod tests {
         );
     }
 
+    /// The same end-to-end proof as `run_tests`' — real `cargo clippy -D
+    /// warnings`, not mocked — for the case that matters most for a
+    /// fix-lint-repeat loop: a genuinely clean crate reports itself clean.
+    #[tokio::test]
+    async fn run_lint_end_to_end_on_a_clean_crate() {
+        let (dir, tools, gate) = write_fixture(true).await;
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+        )
+        .unwrap();
+
+        let result = tools
+            .execute("run_lint", &json!({}))
+            .await
+            .expect("run_lint");
+
+        assert!(result.starts_with("clean"), "summary line: {result}");
+        assert_eq!(
+            gate.last_input(),
+            json!({"command": "cargo clippy --all-targets -- -D warnings"})
+        );
+    }
+
+    /// The other half: a real clippy violation (`needless_return`, the exact
+    /// pattern verified against this project's own clippy output while this
+    /// tool was written) is caught, counted, and the raw diagnostic survives
+    /// in the output beneath the summary.
+    #[tokio::test]
+    async fn run_lint_end_to_end_on_a_crate_with_a_real_violation() {
+        let (dir, tools, _gate) = write_fixture(true).await;
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { return a + b; }\n",
+        )
+        .unwrap();
+
+        let result = tools
+            .execute("run_lint", &json!({}))
+            .await
+            .expect("run_lint");
+
+        assert!(
+            result.starts_with("1 problem found"),
+            "summary line: {result}"
+        );
+        assert!(result.contains("needless_return"), "raw output: {result}");
+    }
+
+    /// Same short-circuit guarantee as `run_tests`: nothing to lint means
+    /// nothing to approve.
+    #[tokio::test]
+    async fn run_lint_with_no_recognizable_project_never_reaches_the_gate() {
+        let (_dir, tools, gate) = write_fixture(true).await;
+
+        let result = tools.execute("run_lint", &json!({})).await;
+
+        assert!(result.unwrap_err().contains("no recognized lint setup"));
+        assert!(gate.names().is_empty());
+    }
+
     // ---- save_memory is mutating, and gated like one (SEC-002) ----
 
     async fn memory_entries(tools: &ProjectTools) -> Vec<devos_ai::MemoryEntry> {
@@ -1346,6 +1481,7 @@ mod tests {
                 json!({"command": format!("echo x > {}", marker.display())}),
             ),
             ("run_tests", json!({})),
+            ("run_lint", json!({})),
         ];
         assert_eq!(
             inputs.len(),
@@ -1369,7 +1505,8 @@ mod tests {
                 "edit_file",
                 "write_file",
                 "run_command",
-                "run_tests"
+                "run_tests",
+                "run_lint"
             ]
         );
         assert!(memory_entries(&tools).await.is_empty());

@@ -159,6 +159,19 @@ describe("ApprovalCard argument rendering", () => {
     expect(screen.getByText(/not chosen by the model/)).toBeInTheDocument();
     expect(screen.queryByText("Input")).not.toBeInTheDocument();
   });
+
+  it("renders run_lint's resolved command the same way as run_tests", () => {
+    render(
+      <ApprovalCard
+        approval={approval("run_lint", { command: "cargo clippy --all-targets -- -D warnings" })}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Command")).toBeInTheDocument();
+    expect(pre()).toHaveTextContent("cargo clippy --all-targets -- -D warnings");
+    expect(screen.queryByText("Input")).not.toBeInTheDocument();
+  });
 });
 
 describe("ApprovalCard title", () => {

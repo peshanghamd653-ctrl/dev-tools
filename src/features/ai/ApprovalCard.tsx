@@ -63,6 +63,7 @@ function approvalFields(approval: PendingApproval): ApprovalField[] {
         },
       ];
     case "run_tests":
+    case "run_lint":
       return [
         {
           label: "Command",
@@ -89,6 +90,7 @@ const TITLE_TEMPLATES: Record<string, string> = {
   write_file: "wants to create a file",
   save_memory: "wants to save this to project memory",
   run_tests: "wants to run the test suite",
+  run_lint: "wants to run the linter",
 };
 
 function FieldView({ field }: { field: ApprovalField }) {

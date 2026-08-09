@@ -1,20 +1,24 @@
-//! Test-command detection and summary parsing behind the AI tool surface's
-//! `run_tests` tool.
+//! Command detection and summary parsing behind the AI tool surface's
+//! `run_tests` and `run_lint` tools.
 //!
-//! Two things live here, both pure and both testable without spawning a
-//! process: [`detect_test_command`] decides *what* to run, and
-//! [`summarize_test_output`] turns raw stdout/stderr into a pass/fail count
-//! the model (and the tool-event log in the UI) can read at a glance instead
-//! of re-deriving it from a wall of text on every call.
+//! The same two-part shape serves both: a `detect_*` function decides *what*
+//! to run from project-root markers, pure and testable without spawning
+//! anything, and a `summarize_*` function turns raw stdout/stderr into a
+//! count the model (and the tool-event log in the UI) can read at a glance
+//! instead of re-deriving it from a wall of text on every call.
 //!
 //! Deliberately scoped to what this codebase itself needed to dogfood: Rust
-//! (cargo) and JavaScript (npm/pnpm/yarn), plus Python and Go detection
+//! (cargo) and JavaScript (npm/pnpm/yarn), plus Python and Go test detection
 //! because they were cheap to add correctly. `dotnet test`, `mvn test` and
 //! `gradle test` are not here — there was no real project available in this
 //! session to verify a guessed invocation against, and a wrong guess
 //! presented with the same confidence as a verified one is worse than no
-//! detector at all. Adding one needs the same thing cargo's and vitest's
-//! parsing got: real output, actually read.
+//! detector at all. Python has no lint detector for the same reason, one
+//! level further: pytest is close to a universal default for Python testing,
+//! but linting is not — ruff, flake8 and pylint are all common and none is
+//! the obvious single choice the way pytest, cargo and eslint are for their
+//! ecosystems. Adding one needs the same thing every detector here got: real
+//! output, actually read, not a remembered shape.
 
 use std::path::Path;
 
@@ -58,7 +62,7 @@ pub fn detect_test_command(dir: &Path) -> Result<DetectedCommand, String> {
         });
     }
 
-    if let Some(cmd) = detect_js(dir) {
+    if let Some(cmd) = detect_js_script(dir, "test") {
         found.push(cmd);
     }
 
@@ -102,14 +106,17 @@ pub fn detect_test_command(dir: &Path) -> Result<DetectedCommand, String> {
     }
 }
 
-/// A `package.json` counts as a detected test setup only if it actually
-/// declares a `test` script — a JS project with none (a pure library with no
-/// suite, or one that only lints) should not offer a command that would just
-/// run npm's "Error: missing script: test" and look like a tool failure.
-fn detect_js(dir: &Path) -> Option<DetectedCommand> {
+/// A `package.json` counts as a detected setup only if it actually declares
+/// `script` — a JS project with none (a pure library with no suite, or one
+/// that never wired up a linter) should not offer a command that would just
+/// run npm's "Error: missing script" and look like a tool failure.
+///
+/// Shared by test and lint detection, parameterized on which script name to
+/// look for — the only thing that differs between them.
+fn detect_js_script(dir: &Path, script: &str) -> Option<DetectedCommand> {
     let text = std::fs::read_to_string(dir.join("package.json")).ok()?;
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    value["scripts"]["test"].as_str()?;
+    value["scripts"][script].as_str()?;
 
     let manager = if dir.join("pnpm-lock.yaml").is_file() {
         "pnpm"
@@ -118,12 +125,150 @@ fn detect_js(dir: &Path) -> Option<DetectedCommand> {
     } else {
         "npm"
     };
-    // All three treat `test` as a reserved script name runnable bare, no
-    // `run` needed — true of npm, yarn and pnpm alike.
+    // All three treat a declared script as runnable bare, no `run` needed,
+    // for any script name — true of npm, yarn and pnpm alike.
     Some(DetectedCommand {
         ecosystem: manager,
-        command: format!("{manager} test"),
+        command: format!("{manager} {script}"),
     })
+}
+
+/// Find the one lint command for `dir`, on the same terms as
+/// [`detect_test_command`] — including the same refusal, for the same
+/// reason, when more than one setup is found.
+///
+/// The Rust command is deliberately `-D warnings`, not plain `cargo clippy`.
+/// Plain clippy prints one "generated N warnings" line *per compiled
+/// target* — this repository's own tree produces a `lib` line and a
+/// separate `lib test` line whose count re-includes the first target's
+/// warnings and annotates some as "(K duplicate)" — and summing those lines
+/// naively double-counts. `-D warnings` turns every warning into a compile
+/// error instead, which collapses all of that into one unambiguous final
+/// line: `error: could not compile ... due to N previous errors`. This is
+/// also the exact command this project's own CI and CONTRIBUTING.md already
+/// run, so `run_lint` on DevOS itself checks the same thing the merge gate
+/// does.
+pub fn detect_lint_command(dir: &Path) -> Result<DetectedCommand, String> {
+    let mut found = Vec::new();
+
+    if dir.join("Cargo.toml").is_file() {
+        let is_workspace = std::fs::read_to_string(dir.join("Cargo.toml"))
+            .map(|s| s.contains("[workspace]"))
+            .unwrap_or(false);
+        found.push(DetectedCommand {
+            ecosystem: "cargo",
+            command: if is_workspace {
+                "cargo clippy --workspace --all-targets -- -D warnings".into()
+            } else {
+                "cargo clippy --all-targets -- -D warnings".into()
+            },
+        });
+    }
+
+    if let Some(cmd) = detect_js_script(dir, "lint") {
+        found.push(cmd);
+    }
+
+    if dir.join("go.mod").is_file() {
+        found.push(DetectedCommand {
+            ecosystem: "go",
+            command: "go vet ./...".into(),
+        });
+    }
+
+    match found.len() {
+        0 => Err(format!(
+            "no recognized lint setup at {} — looked for Cargo.toml, a package.json with a \
+             \"lint\" script, and go.mod. Use run_command with an explicit lint command instead.",
+            dir.display()
+        )),
+        1 => Ok(found.into_iter().next().expect("len checked above")),
+        _ => {
+            let listed: Vec<String> = found
+                .iter()
+                .map(|c| format!("{} (`{}`)", c.ecosystem, c.command))
+                .collect();
+            Err(format!(
+                "more than one lint setup found at {}: {}. Pick one with run_command instead of \
+                 guessing which this project means by \"lint\".",
+                dir.display(),
+                listed.join(", ")
+            ))
+        }
+    }
+}
+
+/// Clean, or not — with a best-effort problem count when the tool's own
+/// summary line is recognized.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LintSummary {
+    pub clean: bool,
+    pub problem_count: Option<u64>,
+}
+
+impl LintSummary {
+    pub fn render(&self) -> String {
+        if self.clean {
+            return "clean — no problems found".to_string();
+        }
+        match self.problem_count {
+            Some(1) => "1 problem found".to_string(),
+            Some(n) => format!("{n} problems found"),
+            None => "problems found (count not recognized — see output below)".to_string(),
+        }
+    }
+}
+
+/// Parse a lint summary from raw output plus whether the process exited
+/// clean.
+///
+/// The exit code decides `clean` outright — both eslint and `cargo clippy --
+/// -D warnings` exit nonzero on any problem, so this never depends on
+/// spotting the right word in the text to know pass from fail, only to find
+/// a *count* once fail is already established from the exit code.
+///
+/// Two shapes recognized with real confidence, both captured directly from
+/// this repository while writing this: eslint's `✖ N problem(s) (M errors,
+/// K warnings)` (searched as `" problem"`, a substring of both the singular
+/// and plural form so one marker covers both) and clippy's `-D warnings`
+/// failure, `error: could not compile \`x\` (target) due to N previous
+/// error(s)` (searched the same way via `" previous error"`, and read from
+/// the *last* matching line since a workspace build can print one such line
+/// per crate that failed and the final line's count is the one to report).
+pub fn summarize_lint_output(raw: &str, exit_clean: bool) -> LintSummary {
+    if exit_clean {
+        return LintSummary {
+            clean: true,
+            problem_count: Some(0),
+        };
+    }
+
+    if let Some(n) = raw
+        .lines()
+        .rev()
+        .find_map(|l| uint_immediately_before(l, " problem"))
+    {
+        return LintSummary {
+            clean: false,
+            problem_count: Some(n),
+        };
+    }
+
+    if let Some(n) = raw
+        .lines()
+        .rev()
+        .find_map(|l| uint_immediately_before(l, " previous error"))
+    {
+        return LintSummary {
+            clean: false,
+            problem_count: Some(n),
+        };
+    }
+
+    LintSummary {
+        clean: false,
+        problem_count: None,
+    }
 }
 
 /// A pass/fail count pulled out of raw test-runner output, or the honest
@@ -392,6 +537,109 @@ test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
         assert_eq!(
             summary.render(),
             "could not recognize a pass/fail summary in the output below"
+        );
+    }
+
+    // --- detect_lint_command -----------------------------------------------
+
+    #[test]
+    fn detects_cargo_clippy_with_deny_warnings() {
+        let dir = dir_with(&[("Cargo.toml", "[workspace]\n")]);
+        let detected = detect_lint_command(dir.path()).expect("detected");
+        assert_eq!(detected.ecosystem, "cargo");
+        assert_eq!(
+            detected.command,
+            "cargo clippy --workspace --all-targets -- -D warnings"
+        );
+    }
+
+    #[test]
+    fn detects_a_js_lint_script() {
+        let dir = dir_with(&[(
+            "package.json",
+            r#"{"scripts": {"test": "vitest run", "lint": "eslint ."}}"#,
+        )]);
+        let detected = detect_lint_command(dir.path()).expect("detected");
+        assert_eq!(detected.command, "npm lint");
+    }
+
+    /// A `test` script alone must not be mistaken for a `lint` one — the two
+    /// are detected independently even though they read the same file.
+    #[test]
+    fn a_test_script_alone_is_not_a_lint_setup() {
+        let dir = dir_with(&[("package.json", r#"{"scripts": {"test": "vitest run"}}"#)]);
+        assert!(detect_lint_command(dir.path()).is_err());
+    }
+
+    #[test]
+    fn detects_go_vet() {
+        let dir = dir_with(&[("go.mod", "module x\n")]);
+        assert_eq!(
+            detect_lint_command(dir.path()).unwrap().command,
+            "go vet ./..."
+        );
+    }
+
+    /// The same real, load-bearing ambiguity as test detection: this
+    /// repository's own root would offer both.
+    #[test]
+    fn a_root_with_both_cargo_and_js_lint_refuses_to_guess() {
+        let dir = dir_with(&[
+            ("Cargo.toml", "[workspace]\n"),
+            ("package.json", r#"{"scripts": {"lint": "eslint ."}}"#),
+        ]);
+        let err = detect_lint_command(dir.path()).unwrap_err();
+        assert!(err.contains("cargo"), "{err}");
+        assert!(err.contains("npm"), "{err}");
+    }
+
+    // --- summarize_lint_output ----------------------------------------------
+
+    /// A clean exit is clean regardless of what the (empty, for eslint) text
+    /// says — the exit code decides pass/fail, never the text.
+    #[test]
+    fn a_clean_exit_is_clean_even_with_empty_output() {
+        let summary = summarize_lint_output("", true);
+        assert!(summary.clean);
+        assert_eq!(summary.problem_count, Some(0));
+        assert_eq!(summary.render(), "clean — no problems found");
+    }
+
+    /// This is the exact text this session captured from a real `eslint`
+    /// run against a deliberately broken scratch file, not a fabricated
+    /// example.
+    #[test]
+    fn recognizes_a_real_eslint_summary_line() {
+        let raw = "\
+C:\\project\\src\\__lint_scratch__.ts
+  2:9  error  'unused' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+\u{2716} 1 problem (1 error, 0 warnings)
+";
+        let summary = summarize_lint_output(raw, false);
+        assert_eq!(summary.problem_count, Some(1));
+        assert_eq!(summary.render(), "1 problem found");
+    }
+
+    /// And this is the exact text this session captured from a real
+    /// `cargo clippy -- -D warnings` run against a deliberately broken
+    /// scratch function.
+    #[test]
+    fn recognizes_a_real_clippy_deny_warnings_failure() {
+        let raw = "error: could not compile `devos-desktop` (lib test) due to 2 previous errors";
+        let summary = summarize_lint_output(raw, false);
+        assert_eq!(summary.problem_count, Some(2));
+        assert_eq!(summary.render(), "2 problems found");
+    }
+
+    #[test]
+    fn a_nonzero_exit_with_unrecognized_text_reports_dirty_with_no_count() {
+        let summary = summarize_lint_output("something went sideways\n", false);
+        assert!(!summary.clean);
+        assert_eq!(summary.problem_count, None);
+        assert_eq!(
+            summary.render(),
+            "problems found (count not recognized — see output below)"
         );
     }
 }

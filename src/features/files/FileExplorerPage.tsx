@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   Check,
@@ -23,6 +23,7 @@ import { isDesktopShell } from "@/shared/ipc/client";
 import { formatBytes } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import { useDialogStore } from "@/shared/stores/dialogs";
+import { useUiStore } from "@/shared/stores/ui";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
 import {
@@ -47,15 +48,29 @@ export function FileExplorerPage() {
   const setAddProjectOpen = useDialogStore((s) => s.setAddProjectOpen);
 
   const [selected, setSelected] = useState<string | null>(null);
+  const [scrollToLine, setScrollToLine] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
 
   const search = useFileSearch(project?.path, query);
 
+  // A symbol picked from "Go to symbol" (Ctrl+T) queues a file+line here
+  // rather than navigating with it directly — this page owns `selected`, and
+  // there is no route param it could arrive through.
+  const pendingFileOpen = useUiStore((s) => s.pendingFileOpen);
+  const setPendingFileOpen = useUiStore((s) => s.setPendingFileOpen);
+  useEffect(() => {
+    if (!pendingFileOpen || pendingFileOpen.projectPath !== project?.path)
+      return;
+    setSelected(pendingFileOpen.relative);
+    setScrollToLine(pendingFileOpen.line);
+    setQuery("");
+    setDraft("");
+    setPendingFileOpen(null);
+  }, [pendingFileOpen, project?.path, setPendingFileOpen]);
+
   if (!isDesktopShell()) {
-    return (
-      <Notice title="The file explorer needs the desktop shell" />
-    );
+    return <Notice title="The file explorer needs the desktop shell" />;
   }
   if (!project) {
     return (
@@ -65,7 +80,11 @@ export function FileExplorerPage() {
           line numbers, and search across file names and content. Register a
           folder and it opens here.
         </p>
-        <Button size="sm" className="mt-2" onClick={() => setAddProjectOpen(true)}>
+        <Button
+          size="sm"
+          className="mt-2"
+          onClick={() => setAddProjectOpen(true)}
+        >
           <FolderPlus className="size-4" />
           Add project
         </Button>
@@ -75,6 +94,7 @@ export function FileExplorerPage() {
 
   function openFile(relative: string) {
     setSelected(relative);
+    setScrollToLine(null);
     setQuery("");
     setDraft("");
   }
@@ -157,7 +177,11 @@ export function FileExplorerPage() {
               onOpen={openFile}
             />
           ) : selected ? (
-            <PreviewPane projectPath={project.path} relative={selected} />
+            <PreviewPane
+              projectPath={project.path}
+              relative={selected}
+              scrollToLine={scrollToLine}
+            />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
               <FolderTree className="size-6" />
@@ -252,11 +276,22 @@ function DirNode({
 function PreviewPane({
   projectPath,
   relative,
+  scrollToLine,
 }: {
   projectPath: string;
   relative: string;
+  /** Set by "Go to symbol" — the declaration line to land on and highlight. */
+  scrollToLine?: number | null;
 }) {
   const { data: preview, error } = useFilePreview(projectPath, relative);
+  const targetRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    if (!scrollToLine || !preview) return;
+    targetRowRef.current?.scrollIntoView?.({ block: "center" });
+    // `relative` too: a same-numbered line in the *next* file opened must not
+    // inherit a scroll meant for this one.
+  }, [scrollToLine, preview, relative]);
 
   return (
     <div className="flex h-full flex-col">
@@ -288,8 +323,9 @@ function PreviewPane({
           className="size-6"
           aria-label="Reveal in Explorer"
           onClick={() =>
-            revealItemInDir(`${projectPath}\\${relative.replaceAll("/", "\\")}`)
-              .catch((e) => toast.error(String(e)))
+            revealItemInDir(
+              `${projectPath}\\${relative.replaceAll("/", "\\")}`,
+            ).catch((e) => toast.error(String(e)))
           }
         >
           <FolderOpen className="size-3.5" />
@@ -312,14 +348,27 @@ function PreviewPane({
                 {preview.content
                   .split("\n")
                   .slice(0, MAX_RENDERED_LINES)
-                  .map((line, i) => (
-                    <tr key={i} className="hover:bg-accent/40">
-                      <td className="w-10 select-none pr-3 text-right align-top text-muted-foreground/40">
-                        {i + 1}
-                      </td>
-                      <td className="whitespace-pre-wrap break-all">{line}</td>
-                    </tr>
-                  ))}
+                  .map((line, i) => {
+                    const lineNumber = i + 1;
+                    const isTarget = scrollToLine === lineNumber;
+                    return (
+                      <tr
+                        key={i}
+                        ref={isTarget ? targetRowRef : undefined}
+                        className={cn(
+                          "hover:bg-accent/40",
+                          isTarget && "bg-yellow-500/20",
+                        )}
+                      >
+                        <td className="w-10 select-none pr-3 text-right align-top text-muted-foreground/40">
+                          {lineNumber}
+                        </td>
+                        <td className="whitespace-pre-wrap break-all">
+                          {line}
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
             {(preview.truncated ||
@@ -342,9 +391,7 @@ function SearchResults({
   onOpen,
 }: {
   names: string[] | undefined;
-  content:
-    | { file: string; startLine: number; snippet: string }[]
-    | undefined;
+  content: { file: string; startLine: number; snippet: string }[] | undefined;
   query: string;
   onOpen: (relative: string) => void;
 }) {
@@ -380,8 +427,8 @@ function SearchResults({
         </p>
         {content?.length === 0 && (
           <p className="text-xs text-muted-foreground">
-            No indexed content matches — if this project isn’t indexed yet,
-            run “Index for AI search” from the Projects page.
+            No indexed content matches — if this project isn’t indexed yet, run
+            “Index for AI search” from the Projects page.
           </p>
         )}
         <ul className="space-y-1">

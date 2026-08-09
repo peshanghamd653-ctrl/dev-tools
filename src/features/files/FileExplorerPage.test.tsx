@@ -21,6 +21,7 @@ import {
   type Project,
 } from "@/shared/ipc/client";
 import { useDialogStore } from "@/shared/stores/dialogs";
+import { useUiStore } from "@/shared/stores/ui";
 import { resetClientMock, setDesktopShell } from "@/shared/test/ipc";
 import { renderWithClient } from "@/shared/test/render";
 import { FileExplorerPage } from "./FileExplorerPage";
@@ -223,6 +224,72 @@ describe("FileExplorerPage preview", () => {
     fireEvent.click(await screen.findByRole("button", { name: "locked.txt" }));
 
     expect(await screen.findByText("permission denied")).toBeInTheDocument();
+  });
+});
+
+describe("FileExplorerPage go to symbol handoff", () => {
+  /**
+   * "Go to symbol" (Ctrl+T) queues a file+line in `useUiStore.pendingFileOpen`
+   * rather than navigating with it directly — this page owns `selected` as
+   * local state, and there is no route param a symbol pick could arrive
+   * through. These tests are the other half of that handoff: the picker side
+   * is covered by `ui.test.ts`.
+   */
+  it("opens the handed-off file and highlights its line", async () => {
+    stubTree({ "": [file("store.rs")] });
+    vi.mocked(ipc.fsReadFile).mockResolvedValue(
+      preview({ content: "one\ntwo\nthree\nfour\nfive" }),
+    );
+    useUiStore.setState({
+      pendingFileOpen: { projectPath: PROJECT.path, relative: "store.rs", line: 3 },
+    });
+    renderWithClient(<FileExplorerPage />);
+
+    const table = await screen.findByRole("table");
+    const target = within(table).getByText("three").closest("tr");
+    expect(target).toHaveClass("bg-yellow-500/20");
+
+    // Consumed, not left around to reopen the same file on a later mount.
+    expect(useUiStore.getState().pendingFileOpen).toBeNull();
+  });
+
+  it("ignores a handoff meant for a different project", async () => {
+    stubTree({ "": [file("store.rs")] });
+    useUiStore.setState({
+      pendingFileOpen: {
+        projectPath: "C:/some/other/project",
+        relative: "store.rs",
+        line: 3,
+      },
+    });
+    renderWithClient(<FileExplorerPage />);
+
+    await screen.findByRole("button", { name: "store.rs" });
+    expect(screen.getByText("Select a file to preview it.")).toBeInTheDocument();
+    expect(ipc.fsReadFile).not.toHaveBeenCalled();
+    // Left alone for whichever project it actually belongs to.
+    expect(useUiStore.getState().pendingFileOpen).not.toBeNull();
+
+    useUiStore.setState({ pendingFileOpen: null });
+  });
+
+  it("a plain click clears any leftover highlight", async () => {
+    stubTree({ "": [file("a.rs"), file("b.rs")] });
+    vi.mocked(ipc.fsReadFile).mockResolvedValue(
+      preview({ content: "one\ntwo\nthree" }),
+    );
+    useUiStore.setState({
+      pendingFileOpen: { projectPath: PROJECT.path, relative: "a.rs", line: 2 },
+    });
+    renderWithClient(<FileExplorerPage />);
+
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "b.rs" }));
+
+    const table = await screen.findByRole("table");
+    for (const row of within(table).getAllByRole("row")) {
+      expect(row).not.toHaveClass("bg-yellow-500/20");
+    }
   });
 });
 

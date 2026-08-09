@@ -22,6 +22,11 @@ const CommandPalette = lazy(() =>
     default: m.CommandPalette,
   })),
 );
+const SymbolSearchDialog = lazy(() =>
+  import("@/app/components/SymbolSearchDialog").then((m) => ({
+    default: m.SymbolSearchDialog,
+  })),
+);
 const CreateWorkspaceDialog = lazy(() =>
   import("@/app/components/dialogs/CreateWorkspaceDialog").then((m) => ({
     default: m.CreateWorkspaceDialog,
@@ -79,12 +84,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   // milliseconds still opens the overlay rather than being swallowed.
   const idled = useIdleAfterPaint();
   const paletteWanted = useUiStore((s) => !idled && s.paletteOpen);
+  const symbolSearchWanted = useUiStore((s) => !idled && s.symbolSearchOpen);
   const dialogWanted = useDialogStore(
     (s) =>
       !idled &&
       (s.createWorkspaceOpen || s.addProjectOpen || s.captureIssueOpen),
   );
-  const overlaysMounted = idled || paletteWanted || dialogWanted;
+  const overlaysMounted =
+    idled || paletteWanted || symbolSearchWanted || dialogWanted;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -101,6 +108,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {overlaysMounted && (
         <Suspense fallback={null}>
           <CommandPalette />
+          <SymbolSearchDialog />
           <CreateWorkspaceDialog />
           <AddProjectDialog />
           <CaptureIssueDialog />

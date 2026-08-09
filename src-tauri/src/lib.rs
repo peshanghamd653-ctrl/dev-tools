@@ -562,6 +562,7 @@ pub fn run() {
             index_commands::index_project,
             index_commands::index_stats,
             index_commands::index_search,
+            index_commands::index_find_symbols,
             fs_commands::fs_list_dir,
             fs_commands::fs_read_file,
             fs_commands::fs_find,

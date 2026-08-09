@@ -38,4 +38,30 @@ describe("ui store", () => {
     useUiStore.getState().setActiveWorkspace("ws-1");
     expect(useUiStore.getState().activeWorkspaceId).toBe("ws-1");
   });
+
+  it("toggles the symbol search dialog", () => {
+    expect(useUiStore.getState().symbolSearchOpen).toBe(false);
+    useUiStore.getState().toggleSymbolSearch();
+    expect(useUiStore.getState().symbolSearchOpen).toBe(true);
+    useUiStore.getState().setSymbolSearchOpen(false);
+    expect(useUiStore.getState().symbolSearchOpen).toBe(false);
+  });
+
+  it("hands a symbol result off to the File Explorer and clears it once read", () => {
+    expect(useUiStore.getState().pendingFileOpen).toBeNull();
+    useUiStore
+      .getState()
+      .setPendingFileOpen({
+        projectPath: "C:/proj",
+        relative: "src/lib.rs",
+        line: 42,
+      });
+    expect(useUiStore.getState().pendingFileOpen).toEqual({
+      projectPath: "C:/proj",
+      relative: "src/lib.rs",
+      line: 42,
+    });
+    useUiStore.getState().setPendingFileOpen(null);
+    expect(useUiStore.getState().pendingFileOpen).toBeNull();
+  });
 });

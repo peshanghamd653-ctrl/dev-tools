@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Camera, FolderPlus, MonitorCog, Plus } from "lucide-react";
+import { Camera, FileCode2, FolderPlus, MonitorCog, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { primaryNav } from "@/app/nav";
@@ -56,7 +56,10 @@ const moduleCommandHandlers: Record<
 export function CommandPalette() {
   const open = useUiStore((s) => s.paletteOpen);
   const setOpen = useUiStore((s) => s.setPaletteOpen);
-  const setCreateWorkspaceOpen = useDialogStore((s) => s.setCreateWorkspaceOpen);
+  const setSymbolSearchOpen = useUiStore((s) => s.setSymbolSearchOpen);
+  const setCreateWorkspaceOpen = useDialogStore(
+    (s) => s.setCreateWorkspaceOpen,
+  );
   const setAddProjectOpen = useDialogStore((s) => s.setAddProjectOpen);
   const setCaptureIssueOpen = useDialogStore((s) => s.setCaptureIssueOpen);
   const navigate = useNavigate();
@@ -94,13 +97,12 @@ export function CommandPalette() {
           .then(() => toast.info(`Indexing "${paletteProject.name}"…`))
           .catch((error) => toast.error(String(error)));
       }
-    }
-    else if (handler === "newTerminal") {
+    } else if (handler === "newTerminal") {
       void navigate({ to: "/terminal" });
       void import("@/features/terminal/session").then((m) =>
-        m.createTerminalSession().catch((error) =>
-          toast.error(`Could not start terminal: ${error}`),
-        ),
+        m
+          .createTerminalSession()
+          .catch((error) => toast.error(`Could not start terminal: ${error}`)),
       );
     } else toast.info(`Command "${id}" is not wired up yet`);
   }
@@ -120,9 +122,7 @@ export function CommandPalette() {
           {primaryNav.map((item) => (
             <CommandItem
               key={item.to}
-              onSelect={() =>
-                runAndClose(() => void navigate({ to: item.to }))
-              }
+              onSelect={() => runAndClose(() => void navigate({ to: item.to }))}
             >
               <item.icon className="size-4" />
               {item.label}
@@ -157,6 +157,14 @@ export function CommandPalette() {
             <Camera className="size-4" />
             Report a bug with a screenshot
             <CommandShortcut>Ctrl+Shift+S</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            keywords={["symbol", "function", "class", "definition", "goto"]}
+            onSelect={() => runAndClose(() => setSymbolSearchOpen(true))}
+          >
+            <FileCode2 className="size-4" />
+            Go to symbol
+            <CommandShortcut>Ctrl+T</CommandShortcut>
           </CommandItem>
         </CommandGroup>
 

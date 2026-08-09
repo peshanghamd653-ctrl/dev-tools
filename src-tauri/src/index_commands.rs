@@ -58,3 +58,17 @@ pub async fn index_search(
         })
         .collect())
 }
+
+/// "Go to symbol": every declaration matching `query`, ranked exact before
+/// case-folded before prefix. For the command palette's symbol picker, not
+/// the general search panel — see `devos_index::find_symbols`.
+#[tauri::command]
+pub async fn index_find_symbols(
+    state: State<'_, AppState>,
+    path: String,
+    query: String,
+) -> Result<Vec<devos_index::SymbolHit>, String> {
+    devos_index::find_symbols(&state.kernel.pool, &path, &query, 30)
+        .await
+        .map_err(|e| e.to_string())
+}

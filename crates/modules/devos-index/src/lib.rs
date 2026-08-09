@@ -81,8 +81,9 @@ pub use embeddings::{
     EmbedError, EmbedResult, Embedder, OllamaEmbedder, DEFAULT_EMBED_MODEL, DEFAULT_OLLAMA_URL,
 };
 pub use indexer::{
-    embedded_chunk_count, file_symbols, init, project_files, project_key, reindex_project,
-    reindex_project_with, search, search_with, stats, symbol_count, IndexError, SearchHit,
+    embedded_chunk_count, file_symbols, find_symbols, init, project_files, project_key,
+    reindex_project, reindex_project_with, search, search_with, stats, symbol_count, IndexError,
+    SearchHit,
 };
 pub use symbols::{
     extract as extract_symbols, is_supported as supports_symbols, Symbol, SymbolKind,
@@ -103,6 +104,19 @@ pub struct IndexHit {
     #[ts(type = "number")]
     pub start_line: i64,
     pub snippet: String,
+}
+
+/// One "go to symbol" match: a declaration site, not a chunk excerpt. See
+/// [`indexer::find_symbols`].
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct SymbolHit {
+    pub name: String,
+    pub kind: String,
+    pub file: String,
+    #[ts(type = "number")]
+    pub start_line: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

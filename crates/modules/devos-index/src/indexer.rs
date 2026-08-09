@@ -17,7 +17,7 @@ use crate::symbols::{self, Symbol};
 use crate::vector::{
     cosine_similarity, decode_vector, encode_vector, reciprocal_rank_fusion, RRF_K,
 };
-use crate::IndexStats;
+use crate::{IndexStats, SymbolHit};
 
 const CHUNK_LINES: usize = 50;
 const MAX_FILE_BYTES: u64 = 512 * 1024;
@@ -813,6 +813,81 @@ async fn symbol_search(
         }
     }
     hits
+}
+
+/// Workspace-wide "go to symbol": every declaration whose name matches the
+/// query, ranked exact > case-folded > prefix (same tiering as
+/// [`symbol_search`] above), then by name length so `token` beats
+/// `token_bucket_refill_interval`.
+///
+/// Deliberately separate from `symbol_search`: that one blends symbol hits
+/// into chunk-level results to correct general search ranking, and soft-fails
+/// because it is one signal among three. This returns declaration sites
+/// themselves — file, line, kind — for a symbol picker that wants to jump
+/// straight to `fn verify_token`, and a caller who explicitly asked "where is
+/// this symbol" is better served by a real error than a silently empty list.
+pub async fn find_symbols(
+    pool: &SqlitePool,
+    project_path: &str,
+    query: &str,
+    limit: i64,
+) -> IndexResult<Vec<SymbolHit>> {
+    let project = project_key(project_path);
+    let terms = identifier_terms(query);
+    if terms.is_empty() || limit <= 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut candidates: Vec<(u8, usize, SymbolHit)> = Vec::new();
+    for term in &terms {
+        let rows = sqlx::query(
+            "SELECT file, name, kind, start_line FROM index_symbols
+             WHERE project = ?1 AND name LIKE ?2 ESCAPE '\\'
+             LIMIT ?3",
+        )
+        .bind(&project)
+        .bind(format!("{}%", escape_like(term)))
+        .bind(limit.saturating_mul(SYMBOL_CANDIDATES_PER_TERM))
+        .fetch_all(pool)
+        .await?;
+        for row in rows {
+            let name: String = row.get("name");
+            let tier = match_tier(&name, term);
+            let len = name.chars().count();
+            candidates.push((
+                tier,
+                len,
+                SymbolHit {
+                    file: row.get("file"),
+                    kind: row.get("kind"),
+                    start_line: row.get("start_line"),
+                    name,
+                },
+            ));
+        }
+    }
+
+    // Same ordering rule as `symbol_search`: tier, then name length, then a
+    // deterministic tiebreak so repeated queries return the same order.
+    candidates.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then(a.1.cmp(&b.1))
+            .then(a.2.file.cmp(&b.2.file))
+            .then(a.2.start_line.cmp(&b.2.start_line))
+    });
+
+    let mut hits: Vec<SymbolHit> = Vec::new();
+    let mut seen: HashSet<(String, String, i64)> = HashSet::new();
+    for (_, _, hit) in candidates {
+        if hits.len() as i64 >= limit {
+            break;
+        }
+        if !seen.insert((hit.file.clone(), hit.name.clone(), hit.start_line)) {
+            continue;
+        }
+        hits.push(hit);
+    }
+    Ok(hits)
 }
 
 /// Identifier-shaped tokens in a query, in order, deduplicated.
@@ -1877,6 +1952,79 @@ mod tests {
             .unwrap()
             .is_empty());
         assert_eq!(symbol_count(&pool, &project_str).await.unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn find_symbols_ranks_exact_before_case_folded_before_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::write(
+            project.join("src/store.rs"),
+            "pub struct TokenStore {\n    inner: u8,\n}\n\n\
+             impl TokenStore {\n    pub fn verify_token(&self) -> bool {\n        true\n    }\n\
+             pub fn verify_token_and_scope(&self) -> bool {\n        true\n    }\n}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            project.join("src/legacy.rs"),
+            "pub fn Verify_Token() -> bool {\n    true\n}\n",
+        )
+        .unwrap();
+
+        let pool = test_pool(dir.path()).await;
+        let project_str = project.to_string_lossy().into_owned();
+        reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+
+        let hits = find_symbols(&pool, &project_str, "verify_token", 10)
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 3, "{hits:?}");
+        assert_eq!(hits[0].name, "verify_token", "exact match ranks first");
+        assert_eq!(hits[0].file, "src/store.rs");
+        assert_eq!(hits[0].kind, "method");
+        assert_eq!(
+            hits[1].name, "Verify_Token",
+            "case-folded match ranks second"
+        );
+        assert_eq!(hits[1].kind, "function");
+        assert_eq!(
+            hits[2].name, "verify_token_and_scope",
+            "prefix match ranks last"
+        );
+    }
+
+    #[tokio::test]
+    async fn find_symbols_respects_the_limit_and_ignores_a_query_with_no_identifier() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        std::fs::create_dir_all(project.join("src")).unwrap();
+        std::fs::write(
+            project.join("src/widgets.rs"),
+            "pub fn widget_a() {}\npub fn widget_b() {}\npub fn widget_c() {}\n",
+        )
+        .unwrap();
+
+        let pool = test_pool(dir.path()).await;
+        let project_str = project.to_string_lossy().into_owned();
+        reindex_project_with(&pool, &project_str, None)
+            .await
+            .unwrap();
+
+        assert!(
+            find_symbols(&pool, &project_str, "  ", 10)
+                .await
+                .unwrap()
+                .is_empty(),
+            "a query with no identifier-shaped token finds nothing rather than everything"
+        );
+
+        let hits = find_symbols(&pool, &project_str, "widget", 2)
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 2, "the limit is respected: {hits:?}");
     }
 
     /// A project of languages this crate has no grammar for must index and

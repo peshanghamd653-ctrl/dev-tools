@@ -59,6 +59,7 @@ import type { SystemHistoryPoint } from "./bindings/SystemHistoryPoint";
 import type { SystemSnapshot } from "./bindings/SystemSnapshot";
 import type { Snippet } from "./bindings/Snippet";
 import type { SnippetDraft } from "./bindings/SnippetDraft";
+import type { SymbolHit } from "./bindings/SymbolHit";
 import type { TermEvent } from "./bindings/TermEvent";
 import type { SavedRequest } from "./bindings/SavedRequest";
 import type { TermSessionInfo } from "./bindings/TermSessionInfo";
@@ -117,6 +118,7 @@ export type {
   ProcessInfo,
   Snippet,
   SnippetDraft,
+  SymbolHit,
   SystemHistoryPoint,
   SystemSnapshot,
   TermEvent,
@@ -269,6 +271,8 @@ export const ipc = {
   indexStats: (path: string) => call<IndexStats>("index_stats", { path }),
   indexSearch: (path: string, query: string) =>
     call<IndexHit[]>("index_search", { path, query }),
+  indexFindSymbols: (path: string, query: string) =>
+    call<SymbolHit[]>("index_find_symbols", { path, query }),
 
   fsListDir: (projectPath: string, relative: string) =>
     call<FsEntry[]>("fs_list_dir", { projectPath, relative }),

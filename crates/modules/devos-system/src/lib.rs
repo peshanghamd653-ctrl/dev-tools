@@ -1,21 +1,38 @@
 //! System metrics module: a point-in-time view of CPU, memory, swap, disks,
-//! and the busiest processes.
+//! and the busiest processes, plus a persisted history of CPU/memory samples
+//! for the performance profiler's chart.
 //!
 //! Unlike every other module this one registers no command. System metrics
 //! are a widget other pages embed, not a destination of their own, so there
 //! is nothing for the palette to open.
 //!
-//! Nothing here is fallible: reading the machine's own counters either works
-//! or reports zeroes, so there is no `SystemError` to define.
+//! Reading the machine's own counters either works or reports zeroes — that
+//! part stays infallible. `SystemError` exists only for the history table
+//! `repo`/`scheduler` added: a database write or a background task can fail
+//! in a way a live snapshot never does.
 
 mod probe;
+mod repo;
+mod scheduler;
 
 pub use probe::SystemProbe;
+pub use repo::{init, list_history, record_sample, SystemHistoryPoint};
+pub use scheduler::run_scheduler;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use devos_kernel::module::{Module, ModuleCtx};
+
+#[derive(Debug, thiserror::Error)]
+pub enum SystemError {
+    #[error("database error: {0}")]
+    Db(#[from] sqlx::Error),
+    #[error("background task error: {0}")]
+    Join(String),
+}
+
+pub type SystemResult<T> = Result<T, SystemError>;
 
 // One mounted volume. Sizes are bytes.
 //

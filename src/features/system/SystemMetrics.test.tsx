@@ -33,7 +33,12 @@ function snapshot(over: Partial<SystemSnapshot> = {}): SystemSnapshot {
       { name: "Windows", mount: "C:\\", total: 500 * GB, available: 125 * GB },
     ],
     topProcesses: [
-      { pid: 1234, name: "node.exe", cpuUsage: 12.5, memory: 512 * 1024 * 1024 },
+      {
+        pid: 1234,
+        name: "node.exe",
+        cpuUsage: 12.5,
+        memory: 512 * 1024 * 1024,
+      },
     ],
     ...over,
   };
@@ -58,7 +63,9 @@ describe("SystemMetrics availability", () => {
     renderWithClient(<SystemMetrics />);
 
     expect(
-      await screen.findByText(/System metrics unavailable — sysinfo refresh failed/),
+      await screen.findByText(
+        /System metrics unavailable — sysinfo refresh failed/,
+      ),
     ).toBeInTheDocument();
   });
 });
@@ -153,6 +160,33 @@ describe("SystemMetrics storage and processes", () => {
     );
     renderWithClient(<SystemMetrics />);
 
-    expect(await screen.findByText("No processes reported.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("No processes reported."),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("SystemMetrics history", () => {
+  it("embeds the profiler's history chart alongside storage and processes", async () => {
+    vi.mocked(ipc.systemSnapshot).mockResolvedValue(snapshot());
+    vi.mocked(ipc.systemHistory).mockResolvedValue([
+      { ts: 0, cpuUsage: 10, memUsed: 50, memTotal: 100 },
+      { ts: 60_000, cpuUsage: 30, memUsed: 80, memTotal: 100 },
+    ]);
+    renderWithClient(<SystemMetrics />);
+
+    expect(await screen.findByText("avg 20% · peak 30%")).toBeInTheDocument();
+  });
+
+  it("shows the not-enough-history message when the scheduler hasn't sampled yet", async () => {
+    vi.mocked(ipc.systemSnapshot).mockResolvedValue(snapshot());
+    vi.mocked(ipc.systemHistory).mockResolvedValue([]);
+    renderWithClient(<SystemMetrics />);
+
+    expect(
+      await screen.findByText(
+        "Not enough history yet — check back in a minute.",
+      ),
+    ).toBeInTheDocument();
   });
 });

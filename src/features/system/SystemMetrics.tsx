@@ -1,4 +1,11 @@
-import { ArrowDownUp, Cpu, Gauge, HardDrive, MemoryStick, Timer } from "lucide-react";
+import {
+  ArrowDownUp,
+  Cpu,
+  Gauge,
+  HardDrive,
+  MemoryStick,
+  Timer,
+} from "lucide-react";
 
 import type { DiskInfo, ProcessInfo } from "@/shared/ipc/client";
 import { formatBytes } from "@/shared/lib/format";
@@ -6,7 +13,8 @@ import { cn } from "@/shared/lib/utils";
 import { Card, CardContent } from "@/shared/ui/card";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { formatPercent, formatUptime, loadColor, usageRatio } from "./format";
-import { useSystemSnapshot } from "./hooks";
+import { useSystemHistory, useSystemSnapshot } from "./hooks";
+import { SystemHistoryChart } from "./SystemHistoryChart";
 
 /** Enough to spot a runaway process, few enough to stay a strip. */
 const TOP_PROCESS_COUNT = 5;
@@ -18,6 +26,7 @@ const TOP_PROCESS_COUNT = 5;
  */
 export function SystemMetrics() {
   const { data: snapshot, isLoading, error } = useSystemSnapshot();
+  const { data: history } = useSystemHistory();
 
   if (isLoading) {
     return (
@@ -91,10 +100,13 @@ export function SystemMetrics() {
         />
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-3">
         <Card className="gap-0 py-3">
           <CardContent className="px-4">
-            <PanelLabel icon={<HardDrive className="size-3" />} text="Storage" />
+            <PanelLabel
+              icon={<HardDrive className="size-3" />}
+              text="Storage"
+            />
             {snapshot.disks.length === 0 ? (
               <p className="pt-2 text-xs text-muted-foreground">
                 No disks reported.
@@ -134,6 +146,8 @@ export function SystemMetrics() {
             )}
           </CardContent>
         </Card>
+
+        <SystemHistoryChart points={history} />
       </div>
     </section>
   );

@@ -352,6 +352,11 @@ pub fn run() {
                 .map_err(|e| format!("snippet tables: {e}"))?;
             let snippet_tables_us = phase.elapsed().as_micros() as u64;
 
+            let phase = Instant::now();
+            tauri::async_runtime::block_on(devos_system::init(&kernel.pool))
+                .map_err(|e| format!("system tables: {e}"))?;
+            let system_tables_us = phase.elapsed().as_micros() as u64;
+
             tracing::info!(
                 secrets_us,
                 ai_tables_us,
@@ -360,6 +365,7 @@ pub fn run() {
                 db_tables_us,
                 monitor_tables_us,
                 snippet_tables_us,
+                system_tables_us,
                 "module tables initialised"
             );
             let tables_us = secrets_us
@@ -368,7 +374,8 @@ pub fn run() {
                 + api_tables_us
                 + db_tables_us
                 + monitor_tables_us
-                + snippet_tables_us;
+                + snippet_tables_us
+                + system_tables_us;
 
             // Forward every kernel event to the webview on one channel.
             let mut rx = kernel.events.subscribe();
@@ -455,6 +462,18 @@ pub fn run() {
             // the module so the crate stays runtime-agnostic.
             tauri::async_runtime::spawn(devos_monitor::run_scheduler(kernel.clone()));
 
+            // The performance profiler's sampler: records CPU/memory every
+            // 30s for the history chart. Built here (not inside `AppState`
+            // below) so the same `Arc<SystemProbe>` backs both the scheduler
+            // and the live `system_snapshot` command — a second probe would
+            // start its own CPU-delta baseline and report 0% until its own
+            // minimum interval had passed.
+            let system_probe = Arc::new(SystemProbe::new());
+            tauri::async_runtime::spawn(devos_system::run_scheduler(
+                kernel.clone(),
+                system_probe.clone(),
+            ));
+
             // The daily backup, moved out of `Kernel::boot` — see
             // `Kernel::run_daily_backup` for why it was moved and why it is
             // safe to run detached from here specifically. It holds the same
@@ -480,7 +499,7 @@ pub fn run() {
                 secrets,
                 ai: Arc::new(AiRegistry::new()),
                 approvals: Arc::new(approvals::ApprovalRegistry::default()),
-                system: Arc::new(SystemProbe::new()),
+                system: system_probe,
                 startup_ms,
                 db_path: db_path.display().to_string(),
                 data_dir,
@@ -570,6 +589,7 @@ pub fn run() {
             db_commands::db_query,
             db_commands::db_table_rows,
             system_commands::system_snapshot,
+            system_commands::system_history,
             monitor_commands::monitors_list,
             monitor_commands::monitor_create,
             monitor_commands::monitor_delete,

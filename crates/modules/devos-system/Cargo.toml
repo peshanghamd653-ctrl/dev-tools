@@ -11,9 +11,18 @@ publish = false
 devos-kernel = { path = "../../devos-kernel" }
 serde.workspace = true
 ts-rs.workspace = true
+tokio.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+uuid.workspace = true
 # Only the two collectors a snapshot actually reads; the default feature set
 # also pulls in components, networks, and users, none of which are exposed.
 sysinfo = { version = "0.39", default-features = false, features = [
     "system",
     "disk",
 ] }
+
+[dev-dependencies]
+tempfile = "3"

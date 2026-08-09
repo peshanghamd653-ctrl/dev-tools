@@ -1282,10 +1282,17 @@ dependencies = [
 name = "devos-system"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "devos-kernel",
  "serde",
+ "sqlx",
  "sysinfo",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
  "ts-rs",
+ "uuid",
 ]
 
 [[package]]

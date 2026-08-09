@@ -54,6 +54,7 @@ import type { Project } from "./bindings/Project";
 import type { QueryResult } from "./bindings/QueryResult";
 import type { DiskInfo } from "./bindings/DiskInfo";
 import type { ProcessInfo } from "./bindings/ProcessInfo";
+import type { SystemHistoryPoint } from "./bindings/SystemHistoryPoint";
 import type { SystemSnapshot } from "./bindings/SystemSnapshot";
 import type { Snippet } from "./bindings/Snippet";
 import type { SnippetDraft } from "./bindings/SnippetDraft";
@@ -114,6 +115,7 @@ export type {
   ProcessInfo,
   Snippet,
   SnippetDraft,
+  SystemHistoryPoint,
   SystemSnapshot,
   TermEvent,
   TermSessionInfo,
@@ -202,7 +204,8 @@ export const ipc = {
     opts: { shell?: string; cwd?: string; cols: number; rows: number },
     onOutput: Channel<TermEvent>,
   ) => call<TermSessionInfo>("term_create", { ...opts, onOutput }),
-  termWrite: (id: string, data: string) => call<void>("term_write", { id, data }),
+  termWrite: (id: string, data: string) =>
+    call<void>("term_write", { id, data }),
   termResize: (id: string, cols: number, rows: number) =>
     call<void>("term_resize", { id, cols, rows }),
   termKill: (id: string) => call<void>("term_kill", { id }),
@@ -300,7 +303,8 @@ export const ipc = {
   dbConnections: () => call<DbConnection[]>("db_connections"),
   dbConnect: (name: string, path: string) =>
     call<DbConnection>("db_connect", { name, path }),
-  dbConnectionDelete: (id: string) => call<void>("db_connection_delete", { id }),
+  dbConnectionDelete: (id: string) =>
+    call<void>("db_connection_delete", { id }),
   dbSchema: (id: string) => call<DbSchema>("db_schema", { id }),
   dbQuery: (id: string, sql: string, allowWrite: boolean) =>
     call<QueryResult>("db_query", { id, sql, allowWrite }),
@@ -316,6 +320,7 @@ export const ipc = {
     call<string>("ai_commit_message", { path, provider, model }),
 
   systemSnapshot: () => call<SystemSnapshot>("system_snapshot"),
+  systemHistory: () => call<SystemHistoryPoint[]>("system_history"),
 
   monitorsList: () => call<MonitorStatus[]>("monitors_list"),
   monitorCreate: (name: string, url: string, intervalSecs: number) =>
@@ -323,7 +328,8 @@ export const ipc = {
   monitorDelete: (id: string) => call<void>("monitor_delete", { id }),
   monitorToggle: (id: string, enabled: boolean) =>
     call<Monitor>("monitor_toggle", { id, enabled }),
-  monitorCheckNow: (id: string) => call<MonitorCheck>("monitor_check_now", { id }),
+  monitorCheckNow: (id: string) =>
+    call<MonitorCheck>("monitor_check_now", { id }),
 
   deployConfigured: () => call<boolean>("deploy_configured"),
   deployProjects: () => call<DeployProject[]>("deploy_projects"),
@@ -343,7 +349,8 @@ export const ipc = {
   // list, so the page has one query for both.
   snippetsSearch: (query: string) =>
     call<Snippet[]>("snippets_search", { query }),
-  snippetSave: (draft: SnippetDraft) => call<Snippet>("snippet_save", { draft }),
+  snippetSave: (draft: SnippetDraft) =>
+    call<Snippet>("snippet_save", { draft }),
   snippetDelete: (id: string) => call<void>("snippet_delete", { id }),
 };
 

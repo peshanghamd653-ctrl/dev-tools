@@ -99,14 +99,26 @@ the frontend's approval UI, and never round-trip back to Ollama.
   desktop layer implements it as `ProjectTools` (`src-tauri/src/tools.rs`),
   scoped to one canonicalized project root.
 - Tool set today: `read_file`, `list_dir`, `find_files`, `search_code`,
-  `save_memory` (read level) plus `edit_file`, `write_file`, `run_command`
-  (write level). See [security.md](security.md) for containment and
-  approval guarantees. `search_code` queries the FTS5 project index
+  `save_memory` (read level) plus `edit_file`, `write_file`, `run_command`,
+  `run_tests` (write level). See [security.md](security.md) for containment
+  and approval guarantees. `search_code` queries the FTS5 project index
   (bm25-ranked, file:line + snippet); if the project isn't indexed it tells
   the model to ask the user to index it rather than failing. `save_memory`
   sits at the read level deliberately: it writes only to DevOS's own
   memory store, which is fully visible and deletable in the Memory dialog
-  — it cannot touch project files.
+  — it cannot touch project files. `run_tests` takes no argument from the
+  model at all — `src-tauri/src/test_runner.rs` detects the project's test
+  command (Cargo.toml → cargo, package.json's `test` script → npm/pnpm/yarn
+  depending on the lockfile present, pyproject.toml/pytest.ini/setup.cfg →
+  pytest, go.mod → go test) and resolves it *before* the approval gate runs,
+  so the card shows the actual command rather than an empty `{}` the model
+  cannot usefully fill in. More than one setup at the same root — this
+  repository's own is exactly that case, Cargo.toml and package.json both at
+  the root — is refused rather than guessed at, naming both and pointing at
+  `run_command` for the specific one wanted. The result is a parsed
+  passed/failed count (verified against real `cargo test` and `vitest`
+  output this codebase produces) ahead of the raw output, so a fix-test loop
+  does not have to re-derive pass/fail from a wall of text on every round.
 - **Nothing runs without an explicit grant.** The frontend only includes
   `toolsEnabled` / `writeToolsEnabled` in the `ai_send` call when the user
   has turned on the corresponding chips; otherwise the backend never even

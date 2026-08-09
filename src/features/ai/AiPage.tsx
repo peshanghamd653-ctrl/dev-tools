@@ -352,6 +352,11 @@ export function AiPage() {
                   <ApprovalCard
                     approval={send.pendingApproval}
                     onRespond={send.respondToApproval}
+                    providerLabel={
+                      active
+                        ? (PROVIDER_LABELS[active.provider] ?? active.provider)
+                        : undefined
+                    }
                   />
                 )}
                 {send.streamText !== null && (

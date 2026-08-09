@@ -139,6 +139,59 @@ describe("ApprovalCard argument rendering", () => {
     expect(screen.getByText("Input")).toBeInTheDocument();
     expect(pre()).toHaveTextContent("not json{");
   });
+
+  /**
+   * `run_tests` takes no argument from the model — the backend resolves the
+   * command before the card ever renders (see `execute()` in tools.rs) — so
+   * this is really a test that the *resolved* command reaches the user, not
+   * an empty `{}` they would otherwise be asked to approve blind.
+   */
+  it("renders run_tests' resolved command, not a generic Input blob", () => {
+    render(
+      <ApprovalCard
+        approval={approval("run_tests", { command: "cargo test --workspace" })}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Command")).toBeInTheDocument();
+    expect(pre()).toHaveTextContent("cargo test --workspace");
+    expect(screen.getByText(/not chosen by the model/)).toBeInTheDocument();
+    expect(screen.queryByText("Input")).not.toBeInTheDocument();
+  });
+});
+
+describe("ApprovalCard title", () => {
+  /**
+   * This card used to hardcode "Claude wants to ..." for every tool. That
+   * became wrong the moment Ollama could drive the same tool loop: a denied
+   * or approved call from an Ollama conversation was captioning itself with
+   * the wrong model's name. Pinned here so the title is provider-driven
+   * rather than a constant again.
+   */
+  it("names whichever provider is actually running, not a hardcoded one", () => {
+    render(
+      <ApprovalCard
+        approval={approval("run_command", { command: "pnpm test" })}
+        onRespond={vi.fn()}
+        providerLabel="Ollama"
+      />,
+    );
+
+    expect(screen.getByText(/^Ollama wants to run a command/)).toBeInTheDocument();
+    expect(screen.queryByText(/Claude/)).not.toBeInTheDocument();
+  });
+
+  it("has a provider-neutral default when no label is given", () => {
+    render(
+      <ApprovalCard
+        approval={approval("run_command", { command: "pnpm test" })}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/^The AI wants to run a command/)).toBeInTheDocument();
+  });
 });
 
 describe("ApprovalCard response", () => {

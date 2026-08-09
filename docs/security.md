@@ -94,8 +94,8 @@ The riskiest new surface as of M2: giving an LLM read access to files.
   (Claude or Ollama — the two providers whose conversations can drive the
   agent loop) is empty unless the user toggles the "Tools" chip on (read-only
   level).
-  A second chip adds `edit_file`/`write_file`/`run_command` — and revoking
-  the read level automatically revokes the write level too.
+  A second chip adds `edit_file`/`write_file`/`run_command`/`run_tests` — and
+  revoking the read level automatically revokes the write level too.
 - **The write grant is session-scoped.** It is deliberately not persisted,
   and a grant left on disk by an older build is forced off on rehydration.
   "Off by default" has to mean off at every launch, not off on first run —

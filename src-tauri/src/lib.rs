@@ -19,6 +19,7 @@ mod startup_error;
 mod state;
 mod system_commands;
 mod term_commands;
+mod test_runner;
 mod tools;
 
 use std::path::PathBuf;

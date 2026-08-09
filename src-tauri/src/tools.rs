@@ -21,6 +21,11 @@ const MAX_FIND_RESULTS: usize = 200;
 const MAX_WALK_DEPTH: usize = 12;
 const MAX_COMMAND_OUTPUT: usize = 32 * 1024;
 const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
+/// `run_tests` gets more room than `run_command`'s default: a real suite
+/// routinely runs longer than the quick shell commands the 60s budget above
+/// is sized for, and this repository's own `cargo test --workspace` already
+/// takes noticeably longer than a single `run_command` call ever does.
+const TEST_RUN_TIMEOUT: Duration = Duration::from_secs(300);
 const SKIP_DIRS: &[&str] = &[
     ".git",
     "node_modules",
@@ -99,12 +104,18 @@ pub fn tool_defs() -> Vec<ToolDef> {
 /// remember. Without approval, one prompt-injected call from a file the model
 /// read plants durable, authoritative-looking instructions in sessions that
 /// may have the write tools on (SEC-002).
-pub const MUTATING_TOOLS: &[&str] = &["save_memory", "edit_file", "write_file", "run_command"];
+pub const MUTATING_TOOLS: &[&str] = &[
+    "save_memory",
+    "edit_file",
+    "write_file",
+    "run_command",
+    "run_tests",
+];
 
 /// Tools that need the second (write/execute) grant to exist at all. Distinct
 /// from [`MUTATING_TOOLS`]: the grant decides which tools the model is *told
 /// about*, approval decides whether a call *runs* (ADR-0005).
-const WRITE_GRANT_TOOLS: &[&str] = &["edit_file", "write_file", "run_command"];
+const WRITE_GRANT_TOOLS: &[&str] = &["edit_file", "write_file", "run_command", "run_tests"];
 
 /// Mutating tools, offered only when the user grants the second (write)
 /// capability level. Every call still goes through the approval gate
@@ -146,6 +157,14 @@ pub fn write_tool_defs() -> Vec<ToolDef> {
                     "command": { "type": "string", "description": "The command line to run" }
                 },
                 "required": ["command"]
+            }),
+        },
+        ToolDef {
+            name: "run_tests".into(),
+            description: "Detect and run this project's test suite (Cargo.toml -> cargo test, package.json's \"test\" script via npm/pnpm/yarn, pyproject.toml/pytest.ini/setup.cfg -> pytest, go.mod -> go test), then return a passed/failed summary followed by the raw output. 5 minute timeout. Fails with an explanation if no test setup is recognized, or if more than one is found and the choice is ambiguous — use run_command with an explicit command in either case. Requires user approval per call, same as run_command.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
             }),
         },
     ]
@@ -528,7 +547,31 @@ impl ProjectTools {
         if command.trim().is_empty() {
             return Err("command is empty".into());
         }
+        self.exec_captured(command, self.command_timeout).await
+    }
 
+    /// `run_tests` reuses `run_command`'s approval, audit and execution
+    /// shape entirely — the only two things that differ are *who chooses the
+    /// command* (the backend, via [`test_runner::detect_test_command`],
+    /// rather than the model) and *how long it is allowed to run* (test
+    /// suites routinely outlast the quick shell commands `command_timeout`
+    /// is sized for). `execute()` resolves the command before the approval
+    /// gate runs, so by the time this method sees `input`, `input["command"]`
+    /// is already the resolved command the user approved — this method does
+    /// not detect anything itself.
+    async fn run_tests(&self, input: &Value) -> Result<String, String> {
+        let command = input["command"]
+            .as_str()
+            .ok_or("internal error: run_tests was dispatched with no resolved command")?;
+        let raw = self.exec_captured(command, TEST_RUN_TIMEOUT).await?;
+        let summary = crate::test_runner::summarize_test_output(&raw);
+        Ok(format!("{}\n\n{raw}", summary.render()))
+    }
+
+    /// Spawn, capture, truncate. Shared by `run_command` (model-chosen
+    /// command, the conversation's configured timeout) and `run_tests`
+    /// (backend-chosen command, a longer fixed timeout).
+    async fn exec_captured(&self, command: &str, timeout: Duration) -> Result<String, String> {
         let mut cmd = if cfg!(windows) {
             let mut c = tokio::process::Command::new("cmd");
             c.args(["/C", command]);
@@ -546,14 +589,9 @@ impl ProjectTools {
         #[cfg(windows)]
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
 
-        let output = tokio::time::timeout(self.command_timeout, cmd.output())
+        let output = tokio::time::timeout(timeout, cmd.output())
             .await
-            .map_err(|_| {
-                format!(
-                    "command timed out after {}s",
-                    self.command_timeout.as_secs()
-                )
-            })?
+            .map_err(|_| format!("command timed out after {}s", timeout.as_secs()))?
             .map_err(|e| e.to_string())?;
 
         let mut report = String::new();
@@ -613,7 +651,11 @@ impl ProjectTools {
 fn audit_target(name: &str, input: &Value) -> Option<String> {
     let field = match name {
         "edit_file" | "write_file" => "path",
-        "run_command" => "command",
+        // `run_tests`'s `input` has already been replaced with the resolved
+        // `{"command": ...}` by the time this runs (see `execute()`), so the
+        // approval card and this audit row show the actual command that will
+        // run, not the empty `{}` the model asked with.
+        "run_command" | "run_tests" => "command",
         _ => return None,
     };
     input[field].as_str().map(str::to_string)
@@ -671,6 +713,27 @@ impl ToolExecutor for ProjectTools {
         if WRITE_GRANT_TOOLS.contains(&name) && !self.write_granted {
             return Err("write access has not been granted for this conversation".into());
         }
+
+        // `run_tests` takes no command from the model — it detects one from
+        // the project root and runs that. The detection has to happen here,
+        // *before* the shared `approve()` call below, and its result has to
+        // replace `input`: otherwise the approval card would show
+        // `run_tests {}` and the user would be asked to approve a command
+        // they cannot see, which is exactly the blind-approval problem
+        // `run_command`'s design exists to avoid. This does not reopen
+        // SEC-002 — `approve()` still runs unconditionally for every name in
+        // `MUTATING_TOOLS`, in the one place it always has; only the `input`
+        // it is given differs for this one tool, and only before the gate
+        // sees it.
+        let resolved;
+        let input = if name == "run_tests" {
+            let detected = crate::test_runner::detect_test_command(&self.root)?;
+            resolved = json!({ "command": detected.command });
+            &resolved
+        } else {
+            input
+        };
+
         if MUTATING_TOOLS.contains(&name) {
             self.approve(name, input).await?;
         }
@@ -684,6 +747,7 @@ impl ToolExecutor for ProjectTools {
             "edit_file" => self.edit_file(input),
             "write_file" => self.write_file(input),
             "run_command" => self.run_command(input).await,
+            "run_tests" => self.run_tests(input).await,
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -818,6 +882,20 @@ mod tests {
                 .iter()
                 .map(|(name, _)| name.clone())
                 .collect()
+        }
+
+        /// The input the most recent call was asked to approve — for tools
+        /// like `run_tests` where what the model sent and what the user was
+        /// shown differ, this is what proves the user actually saw the
+        /// resolved command rather than an empty `{}`.
+        fn last_input(&self) -> Value {
+            self.calls
+                .lock()
+                .unwrap()
+                .last()
+                .expect("no call recorded")
+                .1
+                .clone()
         }
     }
 
@@ -1114,6 +1192,63 @@ mod tests {
         assert!(timed_out.unwrap_err().contains("timed out"));
     }
 
+    /// The wiring, not just the pieces in isolation: detection resolves a
+    /// command, the approval gate is shown *that* command rather than the
+    /// empty `{}` the model actually sent, and — approved — a real `cargo
+    /// test` runs and its real output reaches the already-unit-tested
+    /// summarizer. Nothing here is mocked; `cargo` is guaranteed present
+    /// because this test is itself running under `cargo test`, and the
+    /// fixture crate is small enough to compile in about a second.
+    #[tokio::test]
+    async fn run_tests_end_to_end_against_a_real_cargo_crate() {
+        let (dir, tools, gate) = write_fixture(true).await;
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            "#[test]\nfn it_passes() { assert_eq!(2 + 2, 4); }\n",
+        )
+        .unwrap();
+
+        let result = tools
+            .execute("run_tests", &json!({}))
+            .await
+            .expect("run_tests");
+
+        assert!(result.starts_with("1 passed"), "summary line: {result}");
+        assert!(
+            result.contains("test result: ok"),
+            "raw cargo output should follow the summary: {result}"
+        );
+        assert_eq!(gate.names(), ["run_tests"]);
+        assert_eq!(
+            gate.last_input(),
+            json!({"command": "cargo test"}),
+            "the user must be asked to approve the resolved command, not an empty {{}}"
+        );
+    }
+
+    /// Detection failing must short-circuit before the user is ever asked to
+    /// approve anything — there is no command yet to show them, and asking
+    /// consent for a call that cannot succeed is just noise.
+    #[tokio::test]
+    async fn run_tests_with_no_recognizable_project_never_reaches_the_gate() {
+        let (_dir, tools, gate) = write_fixture(true).await;
+        // write_fixture's directory has only src/lib.rs — no Cargo.toml, no
+        // package.json — so no ecosystem is detected.
+
+        let result = tools.execute("run_tests", &json!({})).await;
+
+        assert!(result.unwrap_err().contains("no recognized test setup"));
+        assert!(
+            gate.names().is_empty(),
+            "the gate must not be consulted when there is nothing to approve"
+        );
+    }
+
     // ---- save_memory is mutating, and gated like one (SEC-002) ----
 
     async fn memory_entries(tools: &ProjectTools) -> Vec<devos_ai::MemoryEntry> {
@@ -1190,6 +1325,12 @@ mod tests {
     async fn every_mutating_tool_is_refused_when_the_user_denies() {
         let (dir, tools, gate) = write_fixture(false).await;
         std::fs::write(dir.path().join("src/lib.rs"), "fn one() {}\n").unwrap();
+        // `run_tests` resolves its command *before* the approval gate runs
+        // (see `execute()`), so a fixture with no recognizable test setup
+        // would fail at detection and never reach the gate at all — this
+        // test needs the gate itself exercised, not detection's own error
+        // path, so it gets a minimal marker file to detect against.
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
         devos_ai::repo::init(&tools.pool).await.unwrap();
         let marker = dir.path().join("approval_bypassed.txt");
 
@@ -1204,6 +1345,7 @@ mod tests {
                 "run_command",
                 json!({"command": format!("echo x > {}", marker.display())}),
             ),
+            ("run_tests", json!({})),
         ];
         assert_eq!(
             inputs.len(),
@@ -1222,7 +1364,13 @@ mod tests {
 
         assert_eq!(
             gate.names(),
-            ["save_memory", "edit_file", "write_file", "run_command"]
+            [
+                "save_memory",
+                "edit_file",
+                "write_file",
+                "run_command",
+                "run_tests"
+            ]
         );
         assert!(memory_entries(&tools).await.is_empty());
         assert_eq!(

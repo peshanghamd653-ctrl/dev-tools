@@ -62,16 +62,33 @@ function approvalFields(approval: PendingApproval): ApprovalField[] {
           hint: "stored, and added to every future conversation about this project",
         },
       ];
+    case "run_tests":
+      return [
+        {
+          label: "Command",
+          value: str("command"),
+          hint: "detected for this project — not chosen by the model",
+        },
+      ];
     default:
       return [{ label: "Input", value: approval.input }];
   }
 }
 
-const TITLES: Record<string, string> = {
-  run_command: "Claude wants to run a command",
-  edit_file: "Claude wants to edit a file",
-  write_file: "Claude wants to create a file",
-  save_memory: "Claude wants to save this to project memory",
+/**
+ * `%s wants to ...`, filled in with whichever provider is actually running —
+ * this used to hardcode "Claude" for every tool, which became wrong the
+ * moment Ollama could drive the same tool loop (see
+ * `providerSupportsTools` in `./providers.ts`). A denied or approved call
+ * from an Ollama conversation was captioning itself with the wrong model's
+ * name for as long as that gap existed.
+ */
+const TITLE_TEMPLATES: Record<string, string> = {
+  run_command: "wants to run a command",
+  edit_file: "wants to edit a file",
+  write_file: "wants to create a file",
+  save_memory: "wants to save this to project memory",
+  run_tests: "wants to run the test suite",
 };
 
 function FieldView({ field }: { field: ApprovalField }) {
@@ -129,18 +146,22 @@ function FieldView({ field }: { field: ApprovalField }) {
 export function ApprovalCard({
   approval,
   onRespond,
+  providerLabel = "The AI",
 }: {
   approval: PendingApproval;
   onRespond: (id: string, approved: boolean) => void;
+  /** e.g. "Claude", "Ollama" — whichever provider this conversation runs. */
+  providerLabel?: string;
 }) {
   const fields = approvalFields(approval);
+  const action = TITLE_TEMPLATES[approval.name] ?? "wants to run a tool";
 
   return (
     <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/5 p-3">
       <div className="flex items-center gap-2 pb-2">
         <span className="text-sm">⚡</span>
         <p className="text-sm font-medium">
-          {TITLES[approval.name] ?? "Claude wants to run a tool"}{" "}
+          {providerLabel} {action}{" "}
           <span className="font-mono text-xs text-muted-foreground">
             {approval.name}
           </span>

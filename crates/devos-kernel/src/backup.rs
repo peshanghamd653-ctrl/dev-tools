@@ -1429,22 +1429,26 @@ mod tests {
     /// schedule, and a test that plants a fake one before that lands is
     /// testing the OS rather than the code.
     ///
-    /// The budget below is 30 s, not the 2 s it was written with. This
-    /// crate's tests had never actually run on a GitHub Actions Windows
-    /// runner until the CI pipeline itself was fixed on 2026-08-08 — so 2 s
-    /// was untested against real CI I/O, not merely generous-in-theory. It
-    /// failed on the very first two runs that exercised it, both with the
-    /// identical panic this function raises: `SQLite never released
-    /// ...-shm`. That is an OS releasing a memory mapping more slowly under
-    /// CI's disk contention, not a logic bug — the loop only ever *waits*,
-    /// it does not retry an action — so widening the ceiling is the correct
-    /// fix rather than a band-aid. It costs nothing on the common path: the
-    /// loop returns the moment the sidecar is gone, almost always within the
-    /// first iteration, and 30 s is only ever spent on a genuine hang.
+    /// The budget below is 60 s. It started at 2 s, the CI runner failed that
+    /// twice in a row (`SQLite never released ...-shm`), and it was widened
+    /// to 30 s on 2026-08-08 — the first time this crate's tests had ever run
+    /// on a GitHub Actions Windows runner, so 2 s was untested against real
+    /// CI I/O, not merely generous-in-theory. 30 s then failed too, on
+    /// `a_restore_announces_itself_and_names_the_preserved_database` — a test
+    /// that calls this helper *twice* (shut down, stage a restore, boot,
+    /// shut down again), so it gets two independent chances to land on a slow
+    /// moment where a single-`shut_down` test gets one. Both failures are the
+    /// identical panic, which is the tell that this is CI disk contention
+    /// making Windows unmap the `-shm` file more slowly, not a logic bug —
+    /// the loop only ever *waits*, it does not retry an action — so widening
+    /// the ceiling again is the correct fix rather than a band-aid. It costs
+    /// nothing on the common path: the loop returns the moment the sidecar is
+    /// gone, almost always within the first iteration, and the full budget is
+    /// only ever spent on a genuine hang.
     async fn shut_down(kernel: crate::Kernel, db_path: &Path) {
         kernel.pool.close().await;
         drop(kernel);
-        for _ in 0..3_000 {
+        for _ in 0..6_000 {
             if !sidecar(db_path, "-shm").exists() {
                 return;
             }

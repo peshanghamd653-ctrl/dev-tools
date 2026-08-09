@@ -1,0 +1,11 @@
+[package]
+name = "devos-redact"
+description = "DevOS secret detection: pattern-matches common credential shapes and redacts them before text reaches an AI provider"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+regex = { workspace = true }

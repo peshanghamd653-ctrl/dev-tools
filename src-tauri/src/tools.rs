@@ -905,7 +905,7 @@ impl ToolExecutor for ProjectTools {
             self.approve(name, input).await?;
         }
 
-        match name {
+        let result = match name {
             "read_file" => self.read_file(input),
             "list_dir" => self.list_dir(input),
             "find_files" => self.find_files(input),
@@ -920,7 +920,20 @@ impl ToolExecutor for ProjectTools {
             "git_commit" => self.git_commit(input).await,
             "git_create_branch" => self.git_create_branch(input).await,
             other => Err(format!("unknown tool: {other}")),
-        }
+        };
+
+        // One choke point for every tool's *successful* output, not a
+        // per-arm judgment call about which tools might return sensitive
+        // content — deliberately the same shape as the grant/approval checks
+        // above, after SEC-002 showed what per-arm handling of a
+        // security property costs. `read_file`, `git_diff`, `run_command`
+        // and friends can echo back an `.env` line or a pasted key; a
+        // confirmation string like "edited src/main.rs" simply never matches
+        // anything in `devos_redact`'s patterns, so this costs nothing on
+        // the common case. Errors are left alone — they are diagnostic text,
+        // not file content, and redacting them would only make a failure
+        // harder to read.
+        result.map(|output| devos_redact::redact(&output).into_text())
     }
 }
 
@@ -978,6 +991,46 @@ mod tests {
         let listing = tools.execute("list_dir", &json!({})).await.unwrap();
         assert!(listing.contains("src/"));
         assert!(listing.contains("README.md"));
+    }
+
+    /// SEC-relevant: a tool that echoes real file/command content back to
+    /// the model must never hand it a live credential. `read_file` here
+    /// stands in for the whole class — `git_diff`, `run_command`,
+    /// `search_code` all go through the same `execute()` choke point.
+    #[tokio::test]
+    async fn a_secret_in_a_file_never_reaches_the_model_unredacted() {
+        let (_dir, tools) = fixture().await;
+        std::fs::write(
+            tools.root.join(".env"),
+            "OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz123456\nPORT=3000\n",
+        )
+        .unwrap();
+
+        let content = tools
+            .execute("read_file", &json!({"path": ".env"}))
+            .await
+            .unwrap();
+
+        assert!(
+            !content.contains("sk-abcdefghijklmnopqrstuvwxyz123456"),
+            "the raw key must not survive: {content}"
+        );
+        assert!(content.contains("[REDACTED:"));
+        assert!(
+            content.contains("PORT=3000"),
+            "unrelated lines are untouched"
+        );
+        assert!(content.contains("DevOS redacted 1 potential secret"));
+    }
+
+    #[tokio::test]
+    async fn ordinary_file_content_is_unaffected_by_the_redaction_pass() {
+        let (_dir, tools) = fixture().await;
+        let content = tools
+            .execute("read_file", &json!({"path": "src/main.rs"}))
+            .await
+            .unwrap();
+        assert_eq!(content, "fn main() {}\n");
     }
 
     #[tokio::test]

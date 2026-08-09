@@ -1121,6 +1121,7 @@ dependencies = [
  "devos-kernel",
  "devos-mcp",
  "devos-monitor",
+ "devos-redact",
  "devos-secrets",
  "devos-snippets",
  "devos-system",
@@ -1263,6 +1264,13 @@ dependencies = [
  "toml 0.9.12+spec-1.1.0",
  "wasmi",
  "wat",
+]
+
+[[package]]
+name = "devos-redact"
+version = "0.1.0"
+dependencies = [
+ "regex",
 ]
 
 [[package]]

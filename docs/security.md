@@ -169,6 +169,22 @@ The riskiest new surface as of M2: giving an LLM read access to files.
 - **Output is bounded**: file reads cap at 256 KB, tool output at 64 KB,
   directory listings at 500 entries, recursive search at depth 12 / 200
   results — all enforced before the content reaches the model or the UI.
+- **Secrets are redacted before a tool result reaches the model.** Every
+  successful tool call's output passes through `devos-redact` — one choke
+  point after the dispatch `match`, not a per-arm judgment call, the same
+  shape that fixed `save_memory`'s gap above — which pattern-matches known
+  credential shapes (`sk-ant-…`, `AKIA…`, GitHub/Slack/Google tokens, JWTs,
+  PEM private-key blocks, and a generic `SOME_TOKEN=…`/`SOME_SECRET=…`
+  catch-all) and replaces each with `[REDACTED:<kind>]`. `read_file` on a
+  stray `.env`, a `git_diff` that adds a config line, `run_command` output
+  that echoes an env var — all pass through the same filter, so a new tool
+  that returns raw content is covered automatically rather than needing to
+  remember to wire it in. This is shape-matching, not a secret scanner with
+  provenance analysis: it will miss a bespoke internal token with no
+  recognizable prefix, and it will occasionally redact a config value that
+  happens to match a shape. The second failure direction is deliberate —
+  over-redacting a harmless value costs a little context; under-redacting a
+  real key costs the credential.
 - **Every tool call is visible** in the chat UI in real time (name,
   arguments, success/failure) — no silent tool use.
 

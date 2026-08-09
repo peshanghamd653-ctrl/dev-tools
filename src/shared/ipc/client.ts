@@ -45,6 +45,7 @@ import type { IndexHit } from "./bindings/IndexHit";
 import type { IndexStats } from "./bindings/IndexStats";
 import type { JobInfo } from "./bindings/JobInfo";
 import type { KernelEvent } from "./bindings/KernelEvent";
+import type { MemoryCategory } from "./bindings/MemoryCategory";
 import type { MemoryEntry } from "./bindings/MemoryEntry";
 import type { Monitor } from "./bindings/Monitor";
 import type { MonitorCheck } from "./bindings/MonitorCheck";
@@ -104,6 +105,7 @@ export type {
   IssueTarget,
   JobInfo,
   KernelEvent,
+  MemoryCategory,
   MemoryEntry,
   Monitor,
   MonitorCheck,
@@ -313,8 +315,11 @@ export const ipc = {
 
   aiMemoryList: (projectPath: string) =>
     call<MemoryEntry[]>("ai_memory_list", { projectPath }),
-  aiMemoryAdd: (projectPath: string, content: string) =>
-    call<MemoryEntry>("ai_memory_add", { projectPath, content }),
+  aiMemoryAdd: (
+    projectPath: string,
+    content: string,
+    category: MemoryCategory,
+  ) => call<MemoryEntry>("ai_memory_add", { projectPath, content, category }),
   aiMemoryDelete: (id: string) => call<void>("ai_memory_delete", { id }),
   aiCommitMessage: (path: string, provider: string, model: string) =>
     call<string>("ai_commit_message", { path, provider, model }),

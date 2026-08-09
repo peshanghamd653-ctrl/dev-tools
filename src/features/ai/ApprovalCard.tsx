@@ -61,6 +61,10 @@ function approvalFields(approval: PendingApproval): ApprovalField[] {
           value: str("content"),
           hint: "stored, and added to every future conversation about this project",
         },
+        {
+          label: "Category",
+          value: str("category") || "other",
+        },
       ];
     case "run_tests":
     case "run_lint":

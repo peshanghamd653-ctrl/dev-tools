@@ -101,7 +101,9 @@ describe("ApprovalCard argument rendering", () => {
 
     expect(screen.getByText("New file")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Show all/ }));
-    const panes = [...document.querySelectorAll("pre")].map((p) => p.textContent);
+    const panes = [...document.querySelectorAll("pre")].map(
+      (p) => p.textContent,
+    );
     expect(panes).toContain(content);
   });
 
@@ -126,6 +128,34 @@ describe("ApprovalCard argument rendering", () => {
       screen.getByText(/every future conversation about this project/),
     ).toBeInTheDocument();
     expect(screen.queryByText("Input")).not.toBeInTheDocument();
+  });
+
+  it("shows the category the model chose", () => {
+    render(
+      <ApprovalCard
+        approval={approval("save_memory", {
+          content: "uses pnpm, not npm",
+          category: "convention",
+        })}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Category")).toBeInTheDocument();
+    const panes = document.querySelectorAll("pre");
+    expect(panes[1]).toHaveTextContent("convention");
+  });
+
+  it("shows 'other' rather than a blank field when no category arrives", () => {
+    render(
+      <ApprovalCard
+        approval={approval("save_memory", { content: "no category set" })}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    const panes = document.querySelectorAll("pre");
+    expect(panes[1]).toHaveTextContent("other");
   });
 
   it("falls back to the raw arguments rather than guessing", () => {
@@ -163,13 +193,17 @@ describe("ApprovalCard argument rendering", () => {
   it("renders run_lint's resolved command the same way as run_tests", () => {
     render(
       <ApprovalCard
-        approval={approval("run_lint", { command: "cargo clippy --all-targets -- -D warnings" })}
+        approval={approval("run_lint", {
+          command: "cargo clippy --all-targets -- -D warnings",
+        })}
         onRespond={vi.fn()}
       />,
     );
 
     expect(screen.getByText("Command")).toBeInTheDocument();
-    expect(pre()).toHaveTextContent("cargo clippy --all-targets -- -D warnings");
+    expect(pre()).toHaveTextContent(
+      "cargo clippy --all-targets -- -D warnings",
+    );
     expect(screen.queryByText("Input")).not.toBeInTheDocument();
   });
 
@@ -182,7 +216,9 @@ describe("ApprovalCard argument rendering", () => {
   it("renders git_commit's message as its own case, not a generic Input blob", () => {
     render(
       <ApprovalCard
-        approval={approval("git_commit", { message: "fix: correct the boundary check" })}
+        approval={approval("git_commit", {
+          message: "fix: correct the boundary check",
+        })}
         onRespond={vi.fn()}
       />,
     );
@@ -224,7 +260,9 @@ describe("ApprovalCard title", () => {
       />,
     );
 
-    expect(screen.getByText(/^Ollama wants to run a command/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/^Ollama wants to run a command/),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Claude/)).not.toBeInTheDocument();
   });
 
@@ -236,7 +274,9 @@ describe("ApprovalCard title", () => {
       />,
     );
 
-    expect(screen.getByText(/^The AI wants to run a command/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/^The AI wants to run a command/),
+    ).toBeInTheDocument();
   });
 });
 

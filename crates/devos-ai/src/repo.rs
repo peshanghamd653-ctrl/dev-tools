@@ -5,7 +5,7 @@
 use sqlx::{Row, SqlitePool};
 
 use crate::providers::{AiError, AiResult};
-use crate::types::{ChatMessage, Conversation, MemoryEntry};
+use crate::types::{ChatMessage, Conversation, MemoryCategory, MemoryEntry};
 
 const MAX_MEMORY_CONTENT: usize = 500;
 const MAX_MEMORY_ENTRIES: i64 = 100;
@@ -63,6 +63,28 @@ pub async fn init(pool: &SqlitePool) -> AiResult<()> {
     )
     .execute(pool)
     .await?;
+    add_category_column(pool).await?;
+    Ok(())
+}
+
+/// The first additive migration this module has needed (see the module doc
+/// comment: a real per-module migration table is still future work). `init`
+/// runs on every boot, not just the first one, so this has to be idempotent
+/// by hand: check `PRAGMA table_info` before altering, because SQLite errors
+/// on `ADD COLUMN` for a column that already exists rather than no-op'ing.
+/// Existing rows backfill to `Other` via the column's own `DEFAULT`.
+async fn add_category_column(pool: &SqlitePool) -> AiResult<()> {
+    let columns = sqlx::query("PRAGMA table_info(ai_memory)")
+        .fetch_all(pool)
+        .await?;
+    let has_category = columns
+        .iter()
+        .any(|row| row.get::<String, _>("name") == "category");
+    if !has_category {
+        sqlx::query("ALTER TABLE ai_memory ADD COLUMN category TEXT NOT NULL DEFAULT 'other'")
+            .execute(pool)
+            .await?;
+    }
     Ok(())
 }
 
@@ -70,7 +92,7 @@ pub async fn init(pool: &SqlitePool) -> AiResult<()> {
 
 pub async fn memory_list(pool: &SqlitePool, project: &str) -> AiResult<Vec<MemoryEntry>> {
     let rows = sqlx::query(
-        "SELECT id, project, content, created_at FROM ai_memory
+        "SELECT id, project, content, category, created_at FROM ai_memory
          WHERE project = ?1 ORDER BY created_at ASC, id ASC",
     )
     .bind(project)
@@ -82,12 +104,18 @@ pub async fn memory_list(pool: &SqlitePool, project: &str) -> AiResult<Vec<Memor
             id: row.get("id"),
             project: row.get("project"),
             content: row.get("content"),
+            category: MemoryCategory::parse(&row.get::<String, _>("category")),
             created_at: row.get("created_at"),
         })
         .collect())
 }
 
-pub async fn memory_add(pool: &SqlitePool, project: &str, content: &str) -> AiResult<MemoryEntry> {
+pub async fn memory_add(
+    pool: &SqlitePool,
+    project: &str,
+    content: &str,
+    category: MemoryCategory,
+) -> AiResult<MemoryEntry> {
     let content = content.trim();
     if content.is_empty() {
         return Err(AiError::InvalidInput("memory content is empty".into()));
@@ -111,15 +139,20 @@ pub async fn memory_add(pool: &SqlitePool, project: &str, content: &str) -> AiRe
         id: new_id(),
         project: project.to_string(),
         content: content.to_string(),
+        category,
         created_at: now_ms(),
     };
-    sqlx::query("INSERT INTO ai_memory (id, project, content, created_at) VALUES (?1, ?2, ?3, ?4)")
-        .bind(&entry.id)
-        .bind(&entry.project)
-        .bind(&entry.content)
-        .bind(entry.created_at)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "INSERT INTO ai_memory (id, project, content, category, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+    )
+    .bind(&entry.id)
+    .bind(&entry.project)
+    .bind(&entry.content)
+    .bind(entry.category.as_str())
+    .bind(entry.created_at)
+    .execute(pool)
+    .await?;
     Ok(entry)
 }
 
@@ -326,28 +359,78 @@ mod tests {
     #[tokio::test]
     async fn memory_roundtrip_isolation_and_caps() {
         let (_dir, pool) = test_pool().await;
-        let a = memory_add(&pool, "C:/proj/a", "uses pnpm, not npm")
-            .await
-            .unwrap();
-        memory_add(&pool, "C:/proj/a", "CI runs on windows-latest")
-            .await
-            .unwrap();
-        memory_add(&pool, "C:/proj/b", "different project fact")
-            .await
-            .unwrap();
+        let a = memory_add(
+            &pool,
+            "C:/proj/a",
+            "uses pnpm, not npm",
+            MemoryCategory::Convention,
+        )
+        .await
+        .unwrap();
+        memory_add(
+            &pool,
+            "C:/proj/a",
+            "CI runs on windows-latest",
+            MemoryCategory::Architecture,
+        )
+        .await
+        .unwrap();
+        memory_add(
+            &pool,
+            "C:/proj/b",
+            "different project fact",
+            MemoryCategory::Other,
+        )
+        .await
+        .unwrap();
 
         let listed = memory_list(&pool, "C:/proj/a").await.unwrap();
         assert_eq!(listed.len(), 2, "memory is per-project");
         assert_eq!(listed[0].content, "uses pnpm, not npm");
+        assert_eq!(listed[0].category, MemoryCategory::Convention);
+        assert_eq!(listed[1].category, MemoryCategory::Architecture);
 
-        assert!(memory_add(&pool, "C:/proj/a", "   ").await.is_err());
-        assert!(memory_add(&pool, "C:/proj/a", &"x".repeat(600))
+        assert!(memory_add(&pool, "C:/proj/a", "   ", MemoryCategory::Other)
             .await
             .is_err());
+        assert!(
+            memory_add(&pool, "C:/proj/a", &"x".repeat(600), MemoryCategory::Other)
+                .await
+                .is_err()
+        );
 
         memory_delete(&pool, &a.id).await.unwrap();
         assert!(memory_delete(&pool, &a.id).await.is_err(), "double delete");
         assert_eq!(memory_list(&pool, "C:/proj/a").await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_row_from_before_categorization_reads_back_as_other() {
+        let (_dir, pool) = test_pool().await;
+        // Simulates a database that already had `ai_memory` rows before this
+        // migration existed — bypasses `memory_add` to insert without a
+        // `category`, the way the pre-migration schema would have.
+        sqlx::query(
+            "INSERT INTO ai_memory (id, project, content, created_at) VALUES (?1, ?2, ?3, ?4)",
+        )
+        .bind("legacy-1")
+        .bind("C:/proj/a")
+        .bind("a fact saved before categories existed")
+        .bind(now_ms())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let listed = memory_list(&pool, "C:/proj/a").await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].category, MemoryCategory::Other);
+    }
+
+    #[tokio::test]
+    async fn running_init_twice_does_not_error_on_the_category_column() {
+        let (_dir, pool) = test_pool().await;
+        init(&pool).await.unwrap();
+        init(&pool).await.unwrap();
     }
 
     #[tokio::test]

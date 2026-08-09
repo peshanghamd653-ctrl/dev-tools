@@ -253,13 +253,43 @@ async fn project_context(pool: &sqlx::SqlitePool, project_path: &str) -> String 
     if let Ok(memories) = devos_ai::repo::memory_list(pool, &project).await {
         if !memories.is_empty() {
             ctx.push_str("\nSaved project memory (facts the user asked to remember):");
-            for entry in memories.iter().take(50) {
-                ctx.push_str(&format!("\n- {}", entry.content));
+            // Grouped by category rather than dumped in save order: a model
+            // skimming the prompt for "is there a known issue with this" finds
+            // it under one heading instead of scattered through 50 lines.
+            for category in [
+                devos_ai::MemoryCategory::Architecture,
+                devos_ai::MemoryCategory::Convention,
+                devos_ai::MemoryCategory::Decision,
+                devos_ai::MemoryCategory::KnownIssue,
+                devos_ai::MemoryCategory::Other,
+            ] {
+                let entries: Vec<_> = memories
+                    .iter()
+                    .filter(|entry| entry.category == category)
+                    .take(50)
+                    .collect();
+                if entries.is_empty() {
+                    continue;
+                }
+                ctx.push_str(&format!("\n{}:", memory_heading(category)));
+                for entry in entries {
+                    ctx.push_str(&format!("\n- {}", entry.content));
+                }
             }
         }
     }
     ctx.push_str("\nBe concise and practical.");
     ctx
+}
+
+fn memory_heading(category: devos_ai::MemoryCategory) -> &'static str {
+    match category {
+        devos_ai::MemoryCategory::Architecture => "Architecture",
+        devos_ai::MemoryCategory::Convention => "Conventions",
+        devos_ai::MemoryCategory::Decision => "Decisions",
+        devos_ai::MemoryCategory::KnownIssue => "Known issues",
+        devos_ai::MemoryCategory::Other => "Other",
+    }
 }
 
 // ---- Long-term memory (visible/editable surface for the Memory panel) ----
@@ -279,11 +309,13 @@ pub async fn ai_memory_add(
     state: State<'_, AppState>,
     project_path: String,
     content: String,
+    category: devos_ai::MemoryCategory,
 ) -> Result<devos_ai::MemoryEntry, String> {
     ai_repo::memory_add(
         &state.kernel.pool,
         &devos_index::project_key(&project_path),
         &content,
+        category,
     )
     .await
     .map_err(|e| e.to_string())

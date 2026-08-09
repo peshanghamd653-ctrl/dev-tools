@@ -20,7 +20,7 @@ import { toast } from "sonner";
 
 import { useProjects } from "@/features/projects/hooks";
 import { useActiveWorkspace } from "@/features/workspaces/hooks";
-import { isDesktopShell, ipc } from "@/shared/ipc/client";
+import { isDesktopShell, ipc, type MemoryCategory } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
 import { useProjectStore } from "@/shared/stores/project";
 import { Button } from "@/shared/ui/button";
@@ -35,7 +35,11 @@ import {
 } from "@/shared/ui/dropdown-menu";
 import { Input } from "@/shared/ui/input";
 import { ApprovalCard } from "./ApprovalCard";
-import { credentialHint, ollamaMenuMessage, providerSupportsTools } from "./providers";
+import {
+  credentialHint,
+  ollamaMenuMessage,
+  providerSupportsTools,
+} from "./providers";
 import {
   aiKeys,
   useConversations,
@@ -137,7 +141,9 @@ export function AiPage() {
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
             <Sparkles className="size-6 text-muted-foreground" />
-            <p className="font-medium">The AI assistant needs the desktop shell</p>
+            <p className="font-medium">
+              The AI assistant needs the desktop shell
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -167,7 +173,11 @@ export function AiPage() {
     <div className="grid h-full grid-cols-[280px_1fr]">
       <aside className="flex min-h-0 flex-col border-r">
         <div className="flex h-11 shrink-0 items-center gap-1 border-b px-2">
-          <Button size="sm" className="flex-1 gap-1.5" onClick={newConversation}>
+          <Button
+            size="sm"
+            className="flex-1 gap-1.5"
+            onClick={newConversation}
+          >
             <Plus className="size-4" />
             New chat
           </Button>
@@ -176,7 +186,11 @@ export function AiPage() {
             onOpenChange={setProviderMenuOpen}
           >
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1 px-2 text-xs">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1 px-2 text-xs"
+              >
                 {PROVIDER_LABELS[provider] ?? provider}
                 <ChevronsUpDown className="size-3 text-muted-foreground" />
               </Button>
@@ -518,6 +532,27 @@ function MessageBubble({
   );
 }
 
+/**
+ * Display order and labels for memory categories, matching the grouping
+ * `ai_commands.rs::memory_heading` builds into the system prompt — the
+ * dialog and what the model actually reads should group facts the same way.
+ */
+const CATEGORY_ORDER: MemoryCategory[] = [
+  "architecture",
+  "convention",
+  "decision",
+  "known-issue",
+  "other",
+];
+
+const CATEGORY_LABELS: Record<MemoryCategory, string> = {
+  architecture: "Architecture",
+  convention: "Conventions",
+  decision: "Decisions",
+  "known-issue": "Known issues",
+  other: "Other",
+};
+
 /** All long-term memory for the attached project: list, add, delete. */
 function MemoryDialog({
   open,
@@ -533,6 +568,7 @@ function MemoryDialog({
   const queryClient = useQueryClient();
   const { data: memories } = useMemoryEntries(open ? projectPath : null);
   const [newFact, setNewFact] = useState("");
+  const [category, setCategory] = useState<MemoryCategory>("other");
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: aiKeys.memory(projectPath) });
@@ -541,7 +577,7 @@ function MemoryDialog({
     const content = newFact.trim();
     if (!content) return;
     void ipc
-      .aiMemoryAdd(projectPath, content)
+      .aiMemoryAdd(projectPath, content, category)
       .then(() => {
         setNewFact("");
         return refresh();
@@ -559,44 +595,67 @@ function MemoryDialog({
           </DialogTitle>
           <DialogDescription>
             Facts included in every conversation about this project. The
-            assistant can add entries with its save_memory tool; you can add
-            or delete them here.
+            assistant can add entries with its save_memory tool; you can add or
+            delete them here.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-72 space-y-1 overflow-y-auto">
+        <div className="max-h-72 space-y-3 overflow-y-auto">
           {memories?.length === 0 && (
             <p className="py-4 text-center text-sm text-muted-foreground">
               Nothing saved yet.
             </p>
           )}
-          {memories?.map((entry) => (
-            <div
-              key={entry.id}
-              className="group flex items-start gap-2 rounded-md border px-2.5 py-1.5"
-            >
-              <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm">
-                {entry.content}
-              </p>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100"
-                aria-label="Delete memory entry"
-                onClick={() =>
-                  void ipc
-                    .aiMemoryDelete(entry.id)
-                    .then(refresh)
-                    .catch((error) => toast.error(String(error)))
-                }
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          ))}
+          {CATEGORY_ORDER.map((cat) => {
+            const entries = memories?.filter((entry) => entry.category === cat);
+            if (!entries || entries.length === 0) return null;
+            return (
+              <div key={cat} className="space-y-1">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  {CATEGORY_LABELS[cat]}
+                </p>
+                {entries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="group flex items-start gap-2 rounded-md border px-2.5 py-1.5"
+                  >
+                    <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm">
+                      {entry.content}
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100"
+                      aria-label="Delete memory entry"
+                      onClick={() =>
+                        void ipc
+                          .aiMemoryDelete(entry.id)
+                          .then(refresh)
+                          .catch((error) => toast.error(String(error)))
+                      }
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
 
         <div className="flex gap-2">
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value as MemoryCategory)}
+            aria-label="Category"
+            className="h-9 shrink-0 rounded-md border bg-transparent px-2 text-xs outline-none focus-visible:border-ring"
+          >
+            {CATEGORY_ORDER.map((cat) => (
+              <option key={cat} value={cat} className="bg-popover">
+                {CATEGORY_LABELS[cat]}
+              </option>
+            ))}
+          </select>
           <Input
             value={newFact}
             onChange={(e) => setNewFact(e.target.value)}

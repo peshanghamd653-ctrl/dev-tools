@@ -90,9 +90,14 @@ pub fn tool_defs() -> Vec<ToolDef> {
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "content": { "type": "string", "description": "One concise fact worth remembering" }
+                    "content": { "type": "string", "description": "One concise fact worth remembering" },
+                    "category": {
+                        "type": "string",
+                        "enum": ["architecture", "convention", "decision", "known-issue", "other"],
+                        "description": "What kind of fact this is, so the Memory panel and future system prompts can group it"
+                    }
                 },
-                "required": ["content"]
+                "required": ["content", "category"]
             }),
         },
         ToolDef {
@@ -445,8 +450,16 @@ impl ProjectTools {
 
     async fn save_memory(&self, input: &Value) -> Result<String, String> {
         let content = input["content"].as_str().ok_or("missing 'content'")?;
+        // A model that ignores the enum constraint (or an older cached tool
+        // definition with no `category` at all) falls back to `Other` rather
+        // than failing the call — the fact is still worth saving even if it
+        // arrives uncategorized.
+        let category = input["category"]
+            .as_str()
+            .map(devos_ai::MemoryCategory::parse)
+            .unwrap_or(devos_ai::MemoryCategory::Other);
         let project = devos_index::project_key(&self.root.to_string_lossy());
-        let entry = devos_ai::repo::memory_add(&self.pool, &project, content)
+        let entry = devos_ai::repo::memory_add(&self.pool, &project, content, category)
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("saved to project memory: {}", entry.content))

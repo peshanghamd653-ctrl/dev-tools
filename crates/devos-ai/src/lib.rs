@@ -11,7 +11,7 @@ pub use providers::ollama::run_agent as run_agent_ollama;
 pub use providers::{
     AiError, AiProvider, AiRegistry, AiResult, StreamRequest, ToolDef, ToolExecutor,
 };
-pub use types::{AiDelta, ChatMessage, ChatTurn, Conversation, MemoryEntry};
+pub use types::{AiDelta, ChatMessage, ChatTurn, Conversation, MemoryCategory, MemoryEntry};
 
 use devos_kernel::module::{Module, ModuleCtx};
 use devos_kernel::types::CommandDescriptor;

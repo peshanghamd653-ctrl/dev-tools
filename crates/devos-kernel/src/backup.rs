@@ -1428,10 +1428,23 @@ mod tests {
     /// makes SQLite drop the sidecars, but Windows unmaps `-shm` on its own
     /// schedule, and a test that plants a fake one before that lands is
     /// testing the OS rather than the code.
+    ///
+    /// The budget below is 30 s, not the 2 s it was written with. This
+    /// crate's tests had never actually run on a GitHub Actions Windows
+    /// runner until the CI pipeline itself was fixed on 2026-08-08 — so 2 s
+    /// was untested against real CI I/O, not merely generous-in-theory. It
+    /// failed on the very first two runs that exercised it, both with the
+    /// identical panic this function raises: `SQLite never released
+    /// ...-shm`. That is an OS releasing a memory mapping more slowly under
+    /// CI's disk contention, not a logic bug — the loop only ever *waits*,
+    /// it does not retry an action — so widening the ceiling is the correct
+    /// fix rather than a band-aid. It costs nothing on the common path: the
+    /// loop returns the moment the sidecar is gone, almost always within the
+    /// first iteration, and 30 s is only ever spent on a genuine hang.
     async fn shut_down(kernel: crate::Kernel, db_path: &Path) {
         kernel.pool.close().await;
         drop(kernel);
-        for _ in 0..200 {
+        for _ in 0..3_000 {
             if !sidecar(db_path, "-shm").exists() {
                 return;
             }

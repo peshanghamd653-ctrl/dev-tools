@@ -7,6 +7,8 @@ import { invoke, type Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { AiDelta } from "./bindings/AiDelta";
+import type { ApiEnvVar } from "./bindings/ApiEnvVar";
+import type { ApiEnvironment } from "./bindings/ApiEnvironment";
 import type { ApiHeader } from "./bindings/ApiHeader";
 import type { ApiHistoryEntry } from "./bindings/ApiHistoryEntry";
 import type { ApiRequestSpec } from "./bindings/ApiRequestSpec";
@@ -62,6 +64,8 @@ import type { Workspace } from "./bindings/Workspace";
 
 export type {
   AiDelta,
+  ApiEnvVar,
+  ApiEnvironment,
   ApiHeader,
   ApiHistoryEntry,
   ApiRequestSpec,
@@ -282,6 +286,16 @@ export const ipc = {
   apiRequests: () => call<SavedRequest[]>("api_requests"),
   apiRequestDelete: (id: string) => call<void>("api_request_delete", { id }),
   apiHistory: () => call<ApiHistoryEntry[]>("api_history"),
+
+  apiEnvironments: () => call<ApiEnvironment[]>("api_environments"),
+  apiEnvironmentCreate: (name: string) =>
+    call<ApiEnvironment>("api_environment_create", { name }),
+  apiEnvironmentUpdate: (id: string, name: string, vars: ApiEnvVar[]) =>
+    call<ApiEnvironment>("api_environment_update", { id, name, vars }),
+  apiEnvironmentDelete: (id: string) =>
+    call<void>("api_environment_delete", { id }),
+  apiEnvironmentSetActive: (id: string | null) =>
+    call<void>("api_environment_set_active", { id }),
 
   dbConnections: () => call<DbConnection[]>("db_connections"),
   dbConnect: (name: string, path: string) =>

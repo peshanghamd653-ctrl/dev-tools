@@ -3,7 +3,9 @@
 
 use sqlx::{Row, SqlitePool};
 
-use crate::{ApiHeader, ApiHistoryEntry, ApiRequestSpec, ApiResult, SavedRequest};
+use crate::{
+    ApiEnvVar, ApiEnvironment, ApiHeader, ApiHistoryEntry, ApiRequestSpec, ApiResult, SavedRequest,
+};
 
 const HISTORY_CAP: i64 = 100;
 
@@ -42,7 +44,164 @@ pub async fn init(pool: &SqlitePool) -> ApiResult<()> {
     )
     .execute(pool)
     .await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS api_environments (
+            id         TEXT PRIMARY KEY,
+            name       TEXT NOT NULL,
+            vars       TEXT NOT NULL,
+            is_active  INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await?;
     Ok(())
+}
+
+fn environment_from_row(row: &sqlx::sqlite::SqliteRow) -> ApiEnvironment {
+    ApiEnvironment {
+        id: row.get("id"),
+        name: row.get("name"),
+        vars: serde_json::from_str::<Vec<ApiEnvVar>>(row.get("vars")).unwrap_or_default(),
+        active: row.get::<i64, _>("is_active") != 0,
+        updated_at: row.get("updated_at"),
+    }
+}
+
+pub async fn create_environment(pool: &SqlitePool, name: &str) -> ApiResult<ApiEnvironment> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(crate::ApiError::Invalid("environment name is empty".into()));
+    }
+    let env = ApiEnvironment {
+        id: new_id(),
+        name: name.to_string(),
+        vars: Vec::new(),
+        active: false,
+        updated_at: now_ms(),
+    };
+    sqlx::query(
+        "INSERT INTO api_environments (id, name, vars, is_active, updated_at)
+         VALUES (?1, ?2, ?3, 0, ?4)",
+    )
+    .bind(&env.id)
+    .bind(&env.name)
+    .bind("[]")
+    .bind(env.updated_at)
+    .execute(pool)
+    .await?;
+    Ok(env)
+}
+
+/// Rename an environment and replace its variable set wholesale — simpler
+/// and easier to reason about than diffing individual variable edits, and
+/// the frontend already holds the full list in the editor it calls this
+/// from.
+pub async fn update_environment(
+    pool: &SqlitePool,
+    id: &str,
+    name: &str,
+    vars: &[ApiEnvVar],
+) -> ApiResult<ApiEnvironment> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(crate::ApiError::Invalid("environment name is empty".into()));
+    }
+    let vars_json =
+        serde_json::to_string(vars).map_err(|e| crate::ApiError::Invalid(e.to_string()))?;
+    let updated_at = now_ms();
+    let result = sqlx::query(
+        "UPDATE api_environments SET name = ?1, vars = ?2, updated_at = ?3 WHERE id = ?4",
+    )
+    .bind(name)
+    .bind(&vars_json)
+    .bind(updated_at)
+    .bind(id)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(crate::ApiError::Invalid(format!(
+            "environment not found: {id}"
+        )));
+    }
+    let active: bool = sqlx::query("SELECT is_active FROM api_environments WHERE id = ?1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .map(|row| row.get::<i64, _>("is_active") != 0)?;
+    Ok(ApiEnvironment {
+        id: id.to_string(),
+        name: name.to_string(),
+        vars: vars.to_vec(),
+        active,
+        updated_at,
+    })
+}
+
+pub async fn delete_environment(pool: &SqlitePool, id: &str) -> ApiResult<()> {
+    let result = sqlx::query("DELETE FROM api_environments WHERE id = ?1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(crate::ApiError::Invalid(format!(
+            "environment not found: {id}"
+        )));
+    }
+    Ok(())
+}
+
+pub async fn list_environments(pool: &SqlitePool) -> ApiResult<Vec<ApiEnvironment>> {
+    let rows = sqlx::query(
+        "SELECT id, name, vars, is_active, updated_at FROM api_environments ORDER BY name",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.iter().map(environment_from_row).collect())
+}
+
+/// Make `id` the active environment, or clear the active environment
+/// entirely when `id` is `None`. "At most one active row" is a transaction
+/// (clear every row, then set the target), not a database constraint,
+/// because SQLite has no partial-unique-index shorthand for "at most one
+/// row where this column is true" simple enough to be worth reaching for
+/// here — the invariant is small enough that a transaction enforces it just
+/// as reliably, and a local desktop app has no concurrent writer to race.
+pub async fn set_active_environment(pool: &SqlitePool, id: Option<&str>) -> ApiResult<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE api_environments SET is_active = 0")
+        .execute(&mut *tx)
+        .await?;
+    if let Some(id) = id {
+        let result = sqlx::query("UPDATE api_environments SET is_active = 1 WHERE id = ?1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        if result.rows_affected() == 0 {
+            // Roll back rather than leave every environment inactive because
+            // the one the caller asked for does not exist.
+            tx.rollback().await?;
+            return Err(crate::ApiError::Invalid(format!(
+                "environment not found: {id}"
+            )));
+        }
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// The environment `api_send` should resolve `{{VAR}}` placeholders
+/// against, or `None` when nothing is active — in which case a request
+/// containing placeholders is sent exactly as typed, literal braces and
+/// all, which is the same "leave it visible rather than guess" choice
+/// [`crate::substitute`] makes for an unrecognized key.
+pub async fn active_environment(pool: &SqlitePool) -> ApiResult<Option<ApiEnvironment>> {
+    let row = sqlx::query(
+        "SELECT id, name, vars, is_active, updated_at FROM api_environments WHERE is_active = 1",
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| environment_from_row(&r)))
 }
 
 pub async fn save_request(
@@ -243,5 +402,90 @@ mod tests {
         assert_eq!(history.len(), 100, "history capped");
         assert_eq!(history[0].url, "http://x/109", "newest first");
         assert_eq!(history[0].method, "GET");
+    }
+
+    fn env_var(key: &str, value: &str, secret: bool) -> ApiEnvVar {
+        ApiEnvVar {
+            key: key.into(),
+            value: value.into(),
+            secret,
+        }
+    }
+
+    #[tokio::test]
+    async fn environment_create_list_update_delete_roundtrip() {
+        let (_dir, pool) = test_pool().await;
+        let env = create_environment(&pool, "Local").await.unwrap();
+        assert_eq!(env.name, "Local");
+        assert!(env.vars.is_empty());
+        assert!(!env.active);
+
+        assert!(
+            create_environment(&pool, "   ").await.is_err(),
+            "blank name refused"
+        );
+
+        let vars = vec![
+            env_var("API_URL", "http://localhost:3000", false),
+            env_var("TOKEN", "dev-secret", true),
+        ];
+        let updated = update_environment(&pool, &env.id, "Local (renamed)", &vars)
+            .await
+            .unwrap();
+        assert_eq!(updated.name, "Local (renamed)");
+        assert_eq!(updated.vars.len(), 2);
+        assert!(
+            updated.vars[1].secret,
+            "the secret flag survives the JSON roundtrip"
+        );
+
+        let listed = list_environments(&pool).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].vars[0].value, "http://localhost:3000");
+
+        assert!(update_environment(&pool, "missing", "x", &[])
+            .await
+            .is_err());
+
+        delete_environment(&pool, &env.id).await.unwrap();
+        assert!(delete_environment(&pool, &env.id).await.is_err());
+        assert!(list_environments(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn at_most_one_environment_is_ever_active() {
+        let (_dir, pool) = test_pool().await;
+        let a = create_environment(&pool, "Local").await.unwrap();
+        let b = create_environment(&pool, "Production").await.unwrap();
+
+        assert!(active_environment(&pool).await.unwrap().is_none());
+
+        set_active_environment(&pool, Some(&a.id)).await.unwrap();
+        assert_eq!(active_environment(&pool).await.unwrap().unwrap().id, a.id);
+
+        // Switching active environments must not leave both marked active.
+        set_active_environment(&pool, Some(&b.id)).await.unwrap();
+        let active = active_environment(&pool).await.unwrap().unwrap();
+        assert_eq!(active.id, b.id);
+        let all = list_environments(&pool).await.unwrap();
+        assert_eq!(all.iter().filter(|e| e.active).count(), 1);
+
+        set_active_environment(&pool, None).await.unwrap();
+        assert!(active_environment(&pool).await.unwrap().is_none());
+    }
+
+    /// Asking to activate an environment that does not exist must change
+    /// nothing — not even clear whatever was already active — rather than
+    /// leaving the app with no active environment because of a typo'd id.
+    #[tokio::test]
+    async fn activating_an_unknown_environment_leaves_the_previous_one_active() {
+        let (_dir, pool) = test_pool().await;
+        let a = create_environment(&pool, "Local").await.unwrap();
+        set_active_environment(&pool, Some(&a.id)).await.unwrap();
+
+        let result = set_active_environment(&pool, Some("does-not-exist")).await;
+        assert!(result.is_err());
+
+        assert_eq!(active_environment(&pool).await.unwrap().unwrap().id, a.id);
     }
 }

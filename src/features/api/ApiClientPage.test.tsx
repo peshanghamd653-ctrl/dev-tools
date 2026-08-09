@@ -4,7 +4,13 @@
  * are easy to break silently — a half-typed header row leaking into the
  * request, or a JSON body arriving as one unreadable line.
  */
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/shared/ipc/client", async () => {
@@ -14,6 +20,7 @@ vi.mock("@/shared/ipc/client", async () => {
 
 import {
   ipc,
+  type ApiEnvironment,
   type ApiResponse,
   type SavedRequest,
 } from "@/shared/ipc/client";
@@ -51,6 +58,29 @@ const SAVED: SavedRequest = {
 function stubSidebar(saved: SavedRequest[] = [], history: never[] = []) {
   vi.mocked(ipc.apiRequests).mockResolvedValue(saved);
   vi.mocked(ipc.apiHistory).mockResolvedValue(history);
+}
+
+function environment(over: Partial<ApiEnvironment> = {}): ApiEnvironment {
+  return {
+    id: "e1",
+    name: "Production",
+    vars: [{ key: "API_URL", value: "https://api.example.com", secret: false }],
+    active: false,
+    updatedAt: 1_700_000_000_000,
+    ...over,
+  };
+}
+
+/** The environments query also runs on every mount alongside the sidebar. */
+function stubEnvironments(environments: ApiEnvironment[] = []) {
+  vi.mocked(ipc.apiEnvironments).mockResolvedValue(environments);
+}
+
+function openEnvironmentMenu() {
+  fireEvent.pointerDown(screen.getByRole("button", { name: "Environment" }), {
+    pointerId: 1,
+    button: 0,
+  });
 }
 
 const urlField = () =>
@@ -238,16 +268,158 @@ describe("ApiClientPage saved requests", () => {
 
     expect(urlField()).toHaveValue("https://api.example.com/v1/users");
     expect(methodField()).toHaveValue("POST");
-    expect(screen.getByRole("button", { name: "Headers (1)" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Headers (1)" }),
+    ).toBeInTheDocument();
   });
 
   it("groups saved requests under their collection", async () => {
-    stubSidebar([SAVED, { ...SAVED, id: "s2", name: "Get user", collection: "Users" }]);
+    stubSidebar([
+      SAVED,
+      { ...SAVED, id: "s2", name: "Get user", collection: "Users" },
+    ]);
     const { container } = renderWithClient(<ApiClientPage />);
 
     await screen.findByText(/List users/);
     const sidebar = within(container.querySelector("aside")!);
     expect(sidebar.getByText("Users")).toBeInTheDocument();
     expect(sidebar.getByText("Get user")).toBeInTheDocument();
+  });
+});
+
+describe("ApiClientPage environment picker", () => {
+  it("shows no environment when none is active", async () => {
+    stubSidebar();
+    stubEnvironments([environment({ active: false })]);
+    renderWithClient(<ApiClientPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Environment" }),
+      ).toHaveTextContent("No environment"),
+    );
+  });
+
+  it("shows the active environment's name", async () => {
+    stubSidebar();
+    stubEnvironments([environment({ active: true })]);
+    renderWithClient(<ApiClientPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Environment" }),
+      ).toHaveTextContent("Production"),
+    );
+  });
+
+  it("activates a different environment from the list", async () => {
+    stubSidebar();
+    stubEnvironments([
+      environment({ id: "e1", name: "Production", active: true }),
+      environment({ id: "e2", name: "Staging", active: false }),
+    ]);
+    vi.mocked(ipc.apiEnvironmentSetActive).mockResolvedValue(undefined);
+    renderWithClient(<ApiClientPage />);
+
+    await screen.findByRole("button", { name: "Environment" });
+    openEnvironmentMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Staging" }));
+
+    await waitFor(() =>
+      expect(ipc.apiEnvironmentSetActive).toHaveBeenCalledWith("e2"),
+    );
+  });
+
+  it("clears the active environment via 'No environment'", async () => {
+    stubSidebar();
+    stubEnvironments([environment({ active: true })]);
+    vi.mocked(ipc.apiEnvironmentSetActive).mockResolvedValue(undefined);
+    renderWithClient(<ApiClientPage />);
+
+    await screen.findByRole("button", { name: "Environment" });
+    openEnvironmentMenu();
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /No environment/ }),
+    );
+
+    await waitFor(() =>
+      expect(ipc.apiEnvironmentSetActive).toHaveBeenCalledWith(null),
+    );
+  });
+});
+
+describe("ApiClientPage environments dialog", () => {
+  async function openManageDialog() {
+    await screen.findByRole("button", { name: "Environment" });
+    openEnvironmentMenu();
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Manage environments…" }),
+    );
+    return within(screen.getByRole("dialog"));
+  }
+
+  it("creates a new environment", async () => {
+    stubSidebar();
+    stubEnvironments([]);
+    vi.mocked(ipc.apiEnvironmentCreate).mockResolvedValue(
+      environment({ id: "new", name: "Staging", vars: [] }),
+    );
+    renderWithClient(<ApiClientPage />);
+
+    const dialog = await openManageDialog();
+    fireEvent.change(dialog.getByLabelText("Name"), {
+      target: { value: "Staging" },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(ipc.apiEnvironmentCreate).toHaveBeenCalledWith("Staging"),
+    );
+  });
+
+  it("adds a variable to an existing environment and saves", async () => {
+    stubSidebar();
+    const env = environment({ vars: [] });
+    stubEnvironments([env]);
+    vi.mocked(ipc.apiEnvironmentUpdate).mockResolvedValue({
+      ...env,
+      vars: [
+        { key: "API_URL", value: "https://api.example.com", secret: false },
+      ],
+    });
+    renderWithClient(<ApiClientPage />);
+
+    const dialog = await openManageDialog();
+    fireEvent.click(dialog.getByText("Production"));
+    fireEvent.click(dialog.getByRole("button", { name: "Add variable" }));
+    fireEvent.change(dialog.getByPlaceholderText("API_URL"), {
+      target: { value: "API_URL" },
+    });
+    fireEvent.change(dialog.getByPlaceholderText("Value"), {
+      target: { value: "https://api.example.com" },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(ipc.apiEnvironmentUpdate).toHaveBeenCalledWith(
+        "e1",
+        "Production",
+        [{ key: "API_URL", value: "https://api.example.com", secret: false }],
+      ),
+    );
+  });
+
+  it("deletes an environment", async () => {
+    stubSidebar();
+    stubEnvironments([environment()]);
+    vi.mocked(ipc.apiEnvironmentDelete).mockResolvedValue(undefined);
+    renderWithClient(<ApiClientPage />);
+
+    const dialog = await openManageDialog();
+    fireEvent.click(dialog.getByRole("button", { name: "Delete Production" }));
+
+    await waitFor(() =>
+      expect(ipc.apiEnvironmentDelete).toHaveBeenCalledWith("e1"),
+    );
   });
 });

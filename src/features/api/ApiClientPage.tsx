@@ -1,11 +1,25 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { History, Plus, Save, Send, Trash2, X } from "lucide-react";
+import {
+  ChevronsUpDown,
+  Check,
+  Eye,
+  EyeOff,
+  History,
+  Layers,
+  Plus,
+  Save,
+  Send,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
   ipc,
   isDesktopShell,
+  type ApiEnvironment,
+  type ApiEnvVar,
   type ApiHeader,
   type ApiRequestSpec,
   type ApiResponse,
@@ -23,6 +37,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/shared/ui/dropdown-menu";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
 
@@ -43,6 +65,7 @@ export function ApiClientPage() {
   const [responseTab, setResponseTab] = useState<"body" | "headers">("body");
   const [response, setResponse] = useState<ApiResponse | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [envDialogOpen, setEnvDialogOpen] = useState(false);
 
   const { data: saved } = useQuery({
     queryKey: ["api", "saved"],
@@ -53,6 +76,19 @@ export function ApiClientPage() {
     queryKey: ["api", "history"],
     queryFn: ipc.apiHistory,
     enabled: isDesktopShell(),
+  });
+  const { data: environments } = useQuery({
+    queryKey: ["api", "environments"],
+    queryFn: ipc.apiEnvironments,
+    enabled: isDesktopShell(),
+  });
+  const activeEnvironment = environments?.find((e) => e.active) ?? null;
+
+  const setActiveEnvironment = useMutation({
+    mutationFn: (id: string | null) => ipc.apiEnvironmentSetActive(id),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["api", "environments"] }),
+    onError: (error) => toast.error(String(error)),
   });
 
   const spec = (): ApiRequestSpec => ({
@@ -85,7 +121,9 @@ export function ApiClientPage() {
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
             <Send className="size-6 text-muted-foreground" />
-            <p className="font-medium">The API client needs the desktop shell</p>
+            <p className="font-medium">
+              The API client needs the desktop shell
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -224,6 +262,54 @@ export function ApiClientPage() {
           >
             <Save className="size-4" />
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Environment"
+                className="gap-1 px-2 text-xs"
+              >
+                <Layers className="size-3.5 text-muted-foreground" />
+                {activeEnvironment ? activeEnvironment.name : "No environment"}
+                <ChevronsUpDown className="size-3 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Environment</DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() => setActiveEnvironment.mutate(null)}
+              >
+                <Check
+                  className={cn(
+                    "size-3.5",
+                    activeEnvironment ? "opacity-0" : "opacity-100",
+                  )}
+                />
+                No environment
+              </DropdownMenuItem>
+              {environments?.map((env) => (
+                <DropdownMenuItem
+                  key={env.id}
+                  onClick={() => setActiveEnvironment.mutate(env.id)}
+                >
+                  <Check
+                    className={cn(
+                      "size-3.5",
+                      activeEnvironment?.id === env.id
+                        ? "opacity-100"
+                        : "opacity-0",
+                    )}
+                  />
+                  {env.name}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setEnvDialogOpen(true)}>
+                Manage environments…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <div className="shrink-0 border-b">
@@ -359,7 +445,9 @@ export function ApiClientPage() {
             </div>
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              {send.isPending ? "Sending…" : "Send a request to see the response."}
+              {send.isPending
+                ? "Sending…"
+                : "Send a request to see the response."}
             </div>
           )}
         </div>
@@ -380,6 +468,12 @@ export function ApiClientPage() {
             })
             .catch((error) => toast.error(String(error)));
         }}
+      />
+
+      <EnvironmentsDialog
+        open={envDialogOpen}
+        onOpenChange={setEnvDialogOpen}
+        environments={environments ?? []}
       />
     </div>
   );
@@ -432,6 +526,274 @@ function SaveDialog({
             onClick={() => onSave(name.trim(), collection.trim())}
           >
             Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EnvironmentsDialog({
+  open,
+  onOpenChange,
+  environments,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  environments: ApiEnvironment[];
+}) {
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [vars, setVars] = useState<ApiEnvVar[]>([]);
+  const [revealed, setRevealed] = useState<Set<number>>(new Set());
+
+  const selected = environments.find((e) => e.id === selectedId) ?? null;
+
+  function select(env: ApiEnvironment) {
+    setSelectedId(env.id);
+    setName(env.name);
+    setVars(env.vars);
+    setRevealed(new Set());
+  }
+
+  function startNew() {
+    setSelectedId(null);
+    setName("");
+    setVars([]);
+    setRevealed(new Set());
+  }
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ["api", "environments"] });
+
+  const create = useMutation({
+    mutationFn: (newName: string) => ipc.apiEnvironmentCreate(newName),
+    onSuccess: (env) => {
+      void invalidate();
+      select(env);
+    },
+    onError: (error) => toast.error(String(error)),
+  });
+
+  const update = useMutation({
+    mutationFn: () => {
+      if (!selected) throw new Error("No environment selected");
+      return ipc.apiEnvironmentUpdate(selected.id, name.trim(), vars);
+    },
+    onSuccess: (env) => {
+      void invalidate();
+      select(env);
+      toast.success(`Saved "${env.name}"`);
+    },
+    onError: (error) => toast.error(String(error)),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => ipc.apiEnvironmentDelete(id),
+    onSuccess: () => {
+      void invalidate();
+      startNew();
+    },
+    onError: (error) => toast.error(String(error)),
+  });
+
+  const setActive = useMutation({
+    mutationFn: (id: string) => ipc.apiEnvironmentSetActive(id),
+    onSuccess: () => void invalidate(),
+    onError: (error) => toast.error(String(error)),
+  });
+
+  function updateVar(i: number, patch: Partial<ApiEnvVar>) {
+    setVars((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) startNew();
+      }}
+    >
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Environments</DialogTitle>
+        </DialogHeader>
+        <div className="grid grid-cols-[160px_1fr] gap-4">
+          <div className="space-y-1">
+            <ul className="space-y-0.5">
+              {environments.map((env) => (
+                <li
+                  key={env.id}
+                  className="group flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-accent/60"
+                >
+                  <button
+                    type="button"
+                    onClick={() => select(env)}
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-left text-xs",
+                      selectedId === env.id && "font-medium text-foreground",
+                    )}
+                  >
+                    {env.name}
+                    {env.active && (
+                      <span className="ml-1 text-[10px] text-emerald-400">
+                        active
+                      </span>
+                    )}
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-5 opacity-0 group-hover:opacity-70 hover:!opacity-100"
+                    aria-label={`Delete ${env.name}`}
+                    onClick={() => remove.mutate(env.id)}
+                  >
+                    <Trash2 className="size-3" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 px-1.5 text-xs text-muted-foreground"
+              onClick={startNew}
+            >
+              <Plus className="size-3.5" />
+              New environment
+            </Button>
+          </div>
+
+          <div className="min-w-0 space-y-3 border-l pl-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="env-name">Name</Label>
+              <Input
+                id="env-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Production"
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Variables</Label>
+              {!selected ? (
+                <p className="text-xs text-muted-foreground">
+                  Create the environment first, then add variables.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {vars.map((v, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <Input
+                        value={v.key}
+                        onChange={(e) => updateVar(i, { key: e.target.value })}
+                        placeholder="API_URL"
+                        className="h-7 flex-1 font-mono text-xs"
+                      />
+                      <Input
+                        value={v.value}
+                        onChange={(e) =>
+                          updateVar(i, { value: e.target.value })
+                        }
+                        placeholder="Value"
+                        type={
+                          v.secret && !revealed.has(i) ? "password" : "text"
+                        }
+                        className="h-7 flex-[2] font-mono text-xs"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
+                        aria-label={
+                          revealed.has(i) ? "Hide value" : "Reveal value"
+                        }
+                        onClick={() =>
+                          setRevealed((set) => {
+                            const next = new Set(set);
+                            if (next.has(i)) next.delete(i);
+                            else next.add(i);
+                            return next;
+                          })
+                        }
+                      >
+                        {revealed.has(i) ? (
+                          <EyeOff className="size-3.5" />
+                        ) : (
+                          <Eye className="size-3.5" />
+                        )}
+                      </Button>
+                      <Button
+                        variant={v.secret ? "secondary" : "ghost"}
+                        size="icon"
+                        className="size-7"
+                        aria-label={
+                          v.secret ? "Marked secret" : "Mark as secret"
+                        }
+                        title="Secret only masks the value in this editor — it is not encrypted"
+                        onClick={() => updateVar(i, { secret: !v.secret })}
+                      >
+                        <span className="text-[10px] font-semibold">S</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
+                        aria-label="Remove variable"
+                        onClick={() =>
+                          setVars((rows) => rows.filter((_, j) => j !== i))
+                        }
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 text-xs text-muted-foreground"
+                    onClick={() =>
+                      setVars((rows) => [
+                        ...rows,
+                        { key: "", value: "", secret: false },
+                      ])
+                    }
+                  >
+                    <Plus className="size-3.5" />
+                    Add variable
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">
+                    Marking a variable secret only masks it in this editor —
+                    values are stored as plain text, same as headers.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          {selected && !selected.active && (
+            <Button
+              variant="outline"
+              onClick={() => setActive.mutate(selected.id)}
+            >
+              Set as active
+            </Button>
+          )}
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+          <Button
+            disabled={!name.trim()}
+            onClick={() =>
+              selected ? update.mutate() : create.mutate(name.trim())
+            }
+          >
+            {selected ? "Save" : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>

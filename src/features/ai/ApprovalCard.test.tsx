@@ -172,6 +172,39 @@ describe("ApprovalCard argument rendering", () => {
     expect(pre()).toHaveTextContent("cargo clippy --all-targets -- -D warnings");
     expect(screen.queryByText("Input")).not.toBeInTheDocument();
   });
+
+  /**
+   * Unlike run_tests/run_lint, this message *is* what the model chose — the
+   * point of this test is that it renders as its own labelled field (and
+   * says plainly that it becomes permanent history) rather than falling
+   * through to a raw JSON blob the way an unrecognised tool would.
+   */
+  it("renders git_commit's message as its own case, not a generic Input blob", () => {
+    render(
+      <ApprovalCard
+        approval={approval("git_commit", { message: "fix: correct the boundary check" })}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Commit message")).toBeInTheDocument();
+    expect(pre()).toHaveTextContent("fix: correct the boundary check");
+    expect(screen.getByText(/permanent history/)).toBeInTheDocument();
+    expect(screen.queryByText("Input")).not.toBeInTheDocument();
+  });
+
+  it("renders git_create_branch's name as its own case", () => {
+    render(
+      <ApprovalCard
+        approval={approval("git_create_branch", { name: "feature/login-fix" })}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("New branch")).toBeInTheDocument();
+    expect(pre()).toHaveTextContent("feature/login-fix");
+    expect(screen.queryByText("Input")).not.toBeInTheDocument();
+  });
 });
 
 describe("ApprovalCard title", () => {

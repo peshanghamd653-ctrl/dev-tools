@@ -95,6 +95,14 @@ pub fn tool_defs() -> Vec<ToolDef> {
                 "required": ["content"]
             }),
         },
+        ToolDef {
+            name: "git_diff".into(),
+            description: "Show the diff of currently staged changes in the project (git diff --cached), capped at 24KB. Read-only — inspects the repository without changing anything. Empty if nothing is staged, even when unstaged changes exist. If the project is not a git repository the result says so rather than failing oddly.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {},
+            }),
+        },
     ]
 }
 
@@ -115,17 +123,26 @@ pub const MUTATING_TOOLS: &[&str] = &[
     "run_command",
     "run_tests",
     "run_lint",
+    "git_commit",
+    "git_create_branch",
 ];
 
 /// Tools that need the second (write/execute) grant to exist at all. Distinct
 /// from [`MUTATING_TOOLS`]: the grant decides which tools the model is *told
 /// about*, approval decides whether a call *runs* (ADR-0005).
+///
+/// `git_diff` is deliberately absent from both this list and
+/// [`MUTATING_TOOLS`] — it reads repository state and changes nothing, the
+/// same tier as `read_file`/`search_code`, so it needs neither the write
+/// grant nor per-call approval.
 const WRITE_GRANT_TOOLS: &[&str] = &[
     "edit_file",
     "write_file",
     "run_command",
     "run_tests",
     "run_lint",
+    "git_commit",
+    "git_create_branch",
 ];
 
 /// Mutating tools, offered only when the user grants the second (write)
@@ -184,6 +201,28 @@ pub fn write_tool_defs() -> Vec<ToolDef> {
             input_schema: json!({
                 "type": "object",
                 "properties": {},
+            }),
+        },
+        ToolDef {
+            name: "git_commit".into(),
+            description: "Commit currently staged changes with the given message. Fails if nothing is staged or the message is empty — this does not stage anything itself; use run_command with \"git add\" first, or ask the user to stage what they want committed. Requires user approval per call: the user sees the exact message before it becomes part of permanent history.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "message": { "type": "string", "description": "The commit message" }
+                },
+                "required": ["message"]
+            }),
+        },
+        ToolDef {
+            name: "git_create_branch".into(),
+            description: "Create a new branch from the current HEAD and switch to it. Fails if a branch with that name already exists. Requires user approval per call.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "The new branch name" }
+                },
+                "required": ["name"]
             }),
         },
     ]
@@ -446,6 +485,32 @@ impl ProjectTools {
             .join("\n"))
     }
 
+    /// Read-only: reports the staged diff, or explains why there is none,
+    /// rather than returning an empty string a model could misread as "no
+    /// changes exist" when the truer answer is "nothing is staged yet" or
+    /// "this is not a git repository".
+    async fn git_diff(&self) -> Result<String, String> {
+        const MAX_DIFF_BYTES: usize = 24 * 1024; // matches ai_commit_message's own limit
+        let diff = devos_git::staged_diff(&self.root, MAX_DIFF_BYTES)
+            .await
+            .map_err(|e| e.to_string())?;
+        if !diff.trim().is_empty() {
+            return Ok(diff);
+        }
+        // Distinguish "nothing staged" from "nothing changed at all" — the
+        // model (and the user reading its answer) should not conclude the
+        // working tree is clean just because the index is.
+        match devos_git::status(&self.root).await {
+            Ok((_, entries)) if !entries.is_empty() => Ok(format!(
+                "no staged changes ({} file(s) changed but not staged — \
+                 stage them with run_command's \"git add\" first if you want to commit them)",
+                entries.len()
+            )),
+            Ok(_) => Ok("no staged changes, and the working tree is clean".into()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     /// Containment check for paths that may not exist yet: no `..`/absolute
     /// components allowed, parent directory must exist inside the root.
     fn resolve_for_write(&self, relative: &str) -> Result<PathBuf, String> {
@@ -603,6 +668,30 @@ impl ProjectTools {
         Ok(format!("{}\n\n{}", summary.render(), exec.formatted()))
     }
 
+    /// Unlike `run_tests`/`run_lint`, the message here *is* what the model
+    /// chose — there is nothing for `execute()` to resolve first, so this is
+    /// approval-gated the same direct way `edit_file`/`write_file` are: the
+    /// argument the model sent is exactly what the user is shown and exactly
+    /// what runs.
+    async fn git_commit(&self, input: &Value) -> Result<String, String> {
+        let message = input["message"].as_str().ok_or("missing 'message'")?;
+        let commit_id = devos_git::commit(&self.root, message)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(format!("committed {commit_id}"))
+    }
+
+    async fn git_create_branch(&self, input: &Value) -> Result<String, String> {
+        let name = input["name"].as_str().ok_or("missing 'name'")?;
+        if name.trim().is_empty() {
+            return Err("branch name is empty".into());
+        }
+        devos_git::switch(&self.root, name, true)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(format!("created and switched to branch {name}"))
+    }
+
     /// Spawn, capture, truncate. Shared by `run_command` (model-chosen
     /// command, the conversation's configured timeout), `run_tests` and
     /// `run_lint` (both backend-chosen commands with their own longer fixed
@@ -715,6 +804,8 @@ fn audit_target(name: &str, input: &Value) -> Option<String> {
         // actual command that will run, not the empty `{}` the model asked
         // with.
         "run_command" | "run_tests" | "run_lint" => "command",
+        "git_commit" => "message",
+        "git_create_branch" => "name",
         _ => return None,
     };
     input[field].as_str().map(str::to_string)
@@ -807,11 +898,14 @@ impl ToolExecutor for ProjectTools {
             "find_files" => self.find_files(input),
             "search_code" => self.search_code(input).await,
             "save_memory" => self.save_memory(input).await,
+            "git_diff" => self.git_diff().await,
             "edit_file" => self.edit_file(input),
             "write_file" => self.write_file(input),
             "run_command" => self.run_command(input).await,
             "run_tests" => self.run_tests(input).await,
             "run_lint" => self.run_lint(input).await,
+            "git_commit" => self.git_commit(input).await,
+            "git_create_branch" => self.git_create_branch(input).await,
             other => Err(format!("unknown tool: {other}")),
         }
     }
@@ -982,6 +1076,31 @@ mod tests {
         let pool = test_pool(dir.path()).await;
         let tools = ProjectTools::with_write_access(dir.path().to_path_buf(), pool, gate.clone());
         (dir, tools, gate)
+    }
+
+    /// A real `git init`, shelled out directly rather than through
+    /// `devos_git` — its `run_git` is crate-private, reachable from its own
+    /// test module (`init_repo` in `crates/modules/devos-git/src/ops.rs`,
+    /// which this mirrors exactly) but not from here. These tests need a
+    /// repository that genuinely exists on disk, not a mock of one, the same
+    /// way `run_tests`'/`run_lint`'s tests need a crate that genuinely
+    /// compiles.
+    async fn init_git_repo(path: &Path) {
+        for args in [
+            &["init", "-b", "main"][..],
+            &["config", "user.email", "dev@devos.local"],
+            &["config", "user.name", "DevOS Test"],
+        ] {
+            let status = tokio::process::Command::new("git")
+                .args(args)
+                .current_dir(path)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .await
+                .expect("git must be on PATH to run this test");
+            assert!(status.success(), "git {args:?} failed");
+        }
     }
 
     /// The read tier as `ai_send` builds it: no write/execute tools, but a
@@ -1384,6 +1503,146 @@ mod tests {
         assert!(gate.names().is_empty());
     }
 
+    // ---- git tools: real repositories, not mocked ----
+
+    #[tokio::test]
+    async fn git_diff_reports_a_real_staged_diff_with_no_approval_needed() {
+        let (dir, tools, gate) = write_fixture(true).await;
+        init_git_repo(dir.path()).await;
+        std::fs::write(dir.path().join("new.txt"), "hello\n").unwrap();
+        assert!(tokio::process::Command::new("git")
+            .args(["add", "new.txt"])
+            .current_dir(dir.path())
+            .status()
+            .await
+            .unwrap()
+            .success());
+
+        let result = tools
+            .execute("git_diff", &json!({}))
+            .await
+            .expect("git_diff");
+
+        assert!(result.contains("+hello"), "diff content: {result}");
+        assert!(
+            gate.names().is_empty(),
+            "git_diff reads repository state and must not require approval"
+        );
+    }
+
+    /// A genuinely empty repository — nothing written into it at all, not
+    /// even `write_fixture`'s own `src/lib.rs`, and the sqlite pool file
+    /// deliberately lives in a *different* temp directory so it cannot show
+    /// up as an untracked file and quietly falsify "clean".
+    #[tokio::test]
+    async fn git_diff_on_a_genuinely_clean_repo_says_so() {
+        let repo_dir = tempfile::tempdir().unwrap();
+        init_git_repo(repo_dir.path()).await;
+        let db_dir = tempfile::tempdir().unwrap();
+        let gate = StubGate::new(true);
+        let pool = test_pool(db_dir.path()).await;
+        let tools =
+            ProjectTools::with_write_access(repo_dir.path().to_path_buf(), pool, gate.clone());
+
+        let result = tools.execute("git_diff", &json!({})).await.unwrap();
+
+        assert!(result.contains("working tree is clean"), "{result}");
+        assert!(gate.names().is_empty());
+    }
+
+    /// The distinction that matters: an empty diff must not read as "nothing
+    /// changed" when the truer answer is "changed, but not staged" — a model
+    /// (or a user reading its summary) concluding the working tree is clean
+    /// when it is not would be actively misleading. `write_fixture` already
+    /// leaves `src/lib.rs` untracked, which is exactly the state this needs.
+    #[tokio::test]
+    async fn git_diff_distinguishes_unstaged_changes_from_clean() {
+        let (dir, tools, _gate) = write_fixture(true).await;
+        init_git_repo(dir.path()).await;
+
+        let result = tools.execute("git_diff", &json!({})).await.unwrap();
+
+        assert!(result.contains("not staged"), "{result}");
+        assert!(!result.contains("working tree is clean"), "{result}");
+    }
+
+    #[tokio::test]
+    async fn git_commit_end_to_end_lands_a_real_commit() {
+        let (dir, tools, gate) = write_fixture(true).await;
+        init_git_repo(dir.path()).await;
+        std::fs::write(dir.path().join("new.txt"), "hello\n").unwrap();
+        assert!(tokio::process::Command::new("git")
+            .args(["add", "new.txt"])
+            .current_dir(dir.path())
+            .status()
+            .await
+            .unwrap()
+            .success());
+
+        let result = tools
+            .execute("git_commit", &json!({"message": "feat: add new.txt"}))
+            .await
+            .expect("git_commit");
+
+        assert!(result.starts_with("committed "), "{result}");
+        assert_eq!(
+            gate.last_input(),
+            json!({"message": "feat: add new.txt"}),
+            "the user must see the exact message that becomes permanent history"
+        );
+
+        let log = devos_git::log(dir.path(), 5).await.expect("log");
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].summary, "feat: add new.txt");
+    }
+
+    /// `devos_git::commit` does not pre-check staging itself — it relies on
+    /// git's own refusal — so this pins that the tool surfaces that refusal
+    /// as an error rather than reporting a false success.
+    #[tokio::test]
+    async fn git_commit_with_nothing_staged_fails_rather_than_lying() {
+        let (dir, tools, _gate) = write_fixture(true).await;
+        init_git_repo(dir.path()).await;
+
+        let result = tools
+            .execute("git_commit", &json!({"message": "nothing to commit"}))
+            .await;
+
+        assert!(result.is_err(), "a no-op commit must not report success");
+    }
+
+    #[tokio::test]
+    async fn git_create_branch_end_to_end_switches_to_a_real_new_branch() {
+        let (dir, tools, gate) = write_fixture(true).await;
+        init_git_repo(dir.path()).await;
+        // A branch needs a commit to branch from.
+        std::fs::write(dir.path().join("new.txt"), "hello\n").unwrap();
+        tokio::process::Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(dir.path())
+            .status()
+            .await
+            .unwrap();
+        devos_git::commit(dir.path(), "initial")
+            .await
+            .expect("initial commit");
+
+        let result = tools
+            .execute("git_create_branch", &json!({"name": "feature/x"}))
+            .await
+            .expect("git_create_branch");
+
+        assert!(result.contains("feature/x"), "{result}");
+        assert_eq!(gate.last_input(), json!({"name": "feature/x"}));
+
+        let branches = devos_git::branches(dir.path()).await.expect("branches");
+        let current = branches
+            .iter()
+            .find(|b| b.current)
+            .expect("a current branch");
+        assert_eq!(current.name, "feature/x");
+    }
+
     // ---- save_memory is mutating, and gated like one (SEC-002) ----
 
     async fn memory_entries(tools: &ProjectTools) -> Vec<devos_ai::MemoryEntry> {
@@ -1482,6 +1741,8 @@ mod tests {
             ),
             ("run_tests", json!({})),
             ("run_lint", json!({})),
+            ("git_commit", json!({"message": "should never land"})),
+            ("git_create_branch", json!({"name": "should-never-exist"})),
         ];
         assert_eq!(
             inputs.len(),
@@ -1506,7 +1767,9 @@ mod tests {
                 "write_file",
                 "run_command",
                 "run_tests",
-                "run_lint"
+                "run_lint",
+                "git_commit",
+                "git_create_branch"
             ]
         );
         assert!(memory_entries(&tools).await.is_empty());

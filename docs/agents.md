@@ -99,14 +99,34 @@ the frontend's approval UI, and never round-trip back to Ollama.
   desktop layer implements it as `ProjectTools` (`src-tauri/src/tools.rs`),
   scoped to one canonicalized project root.
 - Tool set today: `read_file`, `list_dir`, `find_files`, `search_code`,
-  `save_memory` (read level) plus `edit_file`, `write_file`, `run_command`,
-  `run_tests`, `run_lint` (write level). See [security.md](security.md) for
-  containment and approval guarantees. `search_code` queries the FTS5
-  project index (bm25-ranked, file:line + snippet); if the project isn't
-  indexed it tells the model to ask the user to index it rather than
-  failing. `save_memory` sits at the read level deliberately: it writes only
-  to DevOS's own memory store, which is fully visible and deletable in the
-  Memory dialog — it cannot touch project files.
+  `save_memory`, `git_diff` (read level) plus `edit_file`, `write_file`,
+  `run_command`, `run_tests`, `run_lint`, `git_commit`, `git_create_branch`
+  (write level). See [security.md](security.md) for containment and
+  approval guarantees. `search_code` queries the FTS5 project index
+  (bm25-ranked, file:line + snippet); if the project isn't indexed it tells
+  the model to ask the user to index it rather than failing. `save_memory`
+  sits at the read level deliberately: it writes only to DevOS's own
+  memory store, which is fully visible and deletable in the Memory dialog
+  — it cannot touch project files.
+
+  `git_diff` also sits at the read level — it shells out to `devos_git::
+  staged_diff` (the same call `ai_commit_message` already made, same 24 KB
+  cap) and changes nothing, so it needs neither the write grant nor
+  approval, the same tier as `read_file`. An empty diff distinguishes
+  "nothing staged, but N files changed" from "nothing staged, and the
+  working tree is genuinely clean" — collapsing those two into one silent
+  empty string would let a model (and the user reading its summary)
+  conclude nothing had changed when the truer answer is that nothing had
+  been staged yet.
+
+  `git_commit` and `git_create_branch` are the write-level counterparts.
+  Unlike `run_tests`/`run_lint` neither resolves anything on the model's
+  behalf — the commit message and the branch name are exactly what the
+  model sent, shown to the approval gate as-is, the same direct pattern
+  `edit_file`/`write_file` already use. `git_commit` does not stage
+  anything itself (`run_command` with `git add`, or the Git page, does
+  that); if nothing is staged the underlying `git commit` fails and that
+  failure is what the model sees, not a false success.
 
   `run_tests` and `run_lint` take no argument from the model at all —
   `src-tauri/src/test_runner.rs` detects the project's command (test:

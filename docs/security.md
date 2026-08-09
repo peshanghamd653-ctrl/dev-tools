@@ -95,8 +95,10 @@ The riskiest new surface as of M2: giving an LLM read access to files.
   agent loop) is empty unless the user toggles the "Tools" chip on (read-only
   level).
   A second chip adds `edit_file`/`write_file`/`run_command`/`run_tests`/
-  `run_lint` — and revoking the read level automatically revokes the write
-  level too.
+  `run_lint`/`git_commit`/`git_create_branch` — and revoking the read level
+  automatically revokes the write level too. `git_diff` stays in the read
+  tier alongside `read_file` and `search_code`: it inspects repository state
+  and changes nothing.
 - **The write grant is session-scoped.** It is deliberately not persisted,
   and a grant left on disk by an older build is forced off on rehydration.
   "Off by default" has to mean off at every launch, not off on first run —

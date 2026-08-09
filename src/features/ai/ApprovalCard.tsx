@@ -71,6 +71,16 @@ function approvalFields(approval: PendingApproval): ApprovalField[] {
           hint: "detected for this project — not chosen by the model",
         },
       ];
+    case "git_commit":
+      return [
+        {
+          label: "Commit message",
+          value: str("message"),
+          hint: "becomes permanent history — this does not stage anything itself",
+        },
+      ];
+    case "git_create_branch":
+      return [{ label: "New branch", value: str("name") }];
     default:
       return [{ label: "Input", value: approval.input }];
   }
@@ -91,6 +101,8 @@ const TITLE_TEMPLATES: Record<string, string> = {
   save_memory: "wants to save this to project memory",
   run_tests: "wants to run the test suite",
   run_lint: "wants to run the linter",
+  git_commit: "wants to commit staged changes",
+  git_create_branch: "wants to create a branch",
 };
 
 function FieldView({ field }: { field: ApprovalField }) {

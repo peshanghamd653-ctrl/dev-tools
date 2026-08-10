@@ -11,6 +11,7 @@ import {
   Rocket,
   Send,
   Settings,
+  ShieldCheck,
   Sparkles,
   Terminal,
   Wrench,
@@ -50,6 +51,12 @@ export const primaryNav: NavItem[] = [
   { to: "/snippets", label: "Snippets", icon: Code, shortcut: "Ctrl+Shift+N" },
   { to: "/mcp", label: "MCP Servers", icon: Plug, shortcut: "Ctrl+Shift+M" },
   { to: "/toolbox", label: "Toolbox", icon: Wrench, shortcut: "Ctrl+Shift+U" },
+  {
+    to: "/security",
+    label: "Security",
+    icon: ShieldCheck,
+    shortcut: "Ctrl+Shift+E",
+  },
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+," },
 ];
 

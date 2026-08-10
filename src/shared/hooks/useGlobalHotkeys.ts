@@ -11,7 +11,8 @@ import { useUiStore } from "@/shared/stores/ui";
  *   Ctrl+2  projects
  *   Ctrl+Shift+D  deployments    Ctrl+Shift+N  snippets
  *   Ctrl+Shift+M  MCP servers    Ctrl+Shift+S  report a bug
- *   Ctrl+Shift+U  toolbox        Ctrl+,  settings
+ *   Ctrl+Shift+U  toolbox        Ctrl+Shift+E  security
+ *   Ctrl+,  settings
  */
 export function useGlobalHotkeys() {
   const navigate = useNavigate();
@@ -54,6 +55,10 @@ export function useGlobalHotkeys() {
         if (e.code === "KeyU") {
           e.preventDefault();
           void navigate({ to: "/toolbox" });
+        }
+        if (e.code === "KeyE") {
+          e.preventDefault();
+          void navigate({ to: "/security" });
         }
         return;
       }

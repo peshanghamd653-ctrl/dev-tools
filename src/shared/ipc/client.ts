@@ -30,11 +30,14 @@ import type { DbColumn } from "./bindings/DbColumn";
 import type { DbConnection } from "./bindings/DbConnection";
 import type { DbSchema } from "./bindings/DbSchema";
 import type { DbTable } from "./bindings/DbTable";
+import type { DependencyCheck } from "./bindings/DependencyCheck";
+import type { DependencyStatus } from "./bindings/DependencyStatus";
 import type { DeployProject } from "./bindings/DeployProject";
 import type { Deployment } from "./bindings/Deployment";
 import type { DockerContainer } from "./bindings/DockerContainer";
 import type { DockerImage } from "./bindings/DockerImage";
 import type { GitBranch } from "./bindings/GitBranch";
+import type { GitCheck } from "./bindings/GitCheck";
 import type { GitCommit } from "./bindings/GitCommit";
 import type { GitFileEntry } from "./bindings/GitFileEntry";
 import type { GitRepoInfo } from "./bindings/GitRepoInfo";
@@ -59,6 +62,9 @@ import type { DiskInfo } from "./bindings/DiskInfo";
 import type { ProcessInfo } from "./bindings/ProcessInfo";
 import type { SystemHistoryPoint } from "./bindings/SystemHistoryPoint";
 import type { SystemSnapshot } from "./bindings/SystemSnapshot";
+import type { SecretFinding } from "./bindings/SecretFinding";
+import type { SecretScan } from "./bindings/SecretScan";
+import type { SecurityReport } from "./bindings/SecurityReport";
 import type { Snippet } from "./bindings/Snippet";
 import type { SnippetDraft } from "./bindings/SnippetDraft";
 import type { SymbolHit } from "./bindings/SymbolHit";
@@ -92,11 +98,14 @@ export type {
   DbConnection,
   DbSchema,
   DbTable,
+  DependencyCheck,
+  DependencyStatus,
   DeployProject,
   Deployment,
   DockerContainer,
   DockerImage,
   GitBranch,
+  GitCheck,
   GitCommit,
   GitFileEntry,
   GitRepoInfo,
@@ -120,6 +129,9 @@ export type {
   QueryResult,
   DiskInfo,
   ProcessInfo,
+  SecretFinding,
+  SecretScan,
+  SecurityReport,
   Snippet,
   SnippetDraft,
   SymbolHit,
@@ -346,6 +358,9 @@ export const ipc = {
    */
   mcpDiscoverTools: (command: string, args: string[]) =>
     call<[string, McpTool[]]>("mcp_discover_tools", { command, args }),
+
+  securityScan: (projectPath: string) =>
+    call<SecurityReport>("security_scan", { projectPath }),
 
   monitorsList: () => call<MonitorStatus[]>("monitors_list"),
   monitorCreate: (name: string, url: string, intervalSecs: number) =>

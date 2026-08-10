@@ -13,6 +13,7 @@ import { Route as ToolboxRouteImport } from './routes/toolbox'
 import { Route as TerminalRouteImport } from './routes/terminal'
 import { Route as SnippetsRouteImport } from './routes/snippets'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SecurityRouteImport } from './routes/security'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as MonitorsRouteImport } from './routes/monitors'
 import { Route as McpRouteImport } from './routes/mcp'
@@ -43,6 +44,11 @@ const SnippetsRoute = SnippetsRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SecurityRoute = SecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/mcp': typeof McpRoute
   '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
+  '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
   '/snippets': typeof SnippetsRoute
   '/terminal': typeof TerminalRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/mcp': typeof McpRoute
   '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
+  '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
   '/snippets': typeof SnippetsRoute
   '/terminal': typeof TerminalRoute
@@ -148,6 +156,7 @@ export interface FileRoutesById {
   '/mcp': typeof McpRoute
   '/monitors': typeof MonitorsRoute
   '/projects': typeof ProjectsRoute
+  '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
   '/snippets': typeof SnippetsRoute
   '/terminal': typeof TerminalRoute
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/monitors'
     | '/projects'
+    | '/security'
     | '/settings'
     | '/snippets'
     | '/terminal'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/monitors'
     | '/projects'
+    | '/security'
     | '/settings'
     | '/snippets'
     | '/terminal'
@@ -201,6 +212,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/monitors'
     | '/projects'
+    | '/security'
     | '/settings'
     | '/snippets'
     | '/terminal'
@@ -219,6 +231,7 @@ export interface RootRouteChildren {
   McpRoute: typeof McpRoute
   MonitorsRoute: typeof MonitorsRoute
   ProjectsRoute: typeof ProjectsRoute
+  SecurityRoute: typeof SecurityRoute
   SettingsRoute: typeof SettingsRoute
   SnippetsRoute: typeof SnippetsRoute
   TerminalRoute: typeof TerminalRoute
@@ -253,6 +266,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/security': {
+      id: '/security'
+      path: '/security'
+      fullPath: '/security'
+      preLoaderRoute: typeof SecurityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -347,6 +367,7 @@ const rootRouteChildren: RootRouteChildren = {
   McpRoute: McpRoute,
   MonitorsRoute: MonitorsRoute,
   ProjectsRoute: ProjectsRoute,
+  SecurityRoute: SecurityRoute,
   SettingsRoute: SettingsRoute,
   SnippetsRoute: SnippetsRoute,
   TerminalRoute: TerminalRoute,

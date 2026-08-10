@@ -1123,6 +1123,7 @@ dependencies = [
  "devos-monitor",
  "devos-redact",
  "devos-secrets",
+ "devos-security",
  "devos-snippets",
  "devos-system",
  "devos-terminal",

@@ -15,6 +15,7 @@ mod issue_commands;
 mod mcp_commands;
 mod monitor_commands;
 mod pathsafe;
+mod security_commands;
 mod snippet_commands;
 mod startup_error;
 mod state;
@@ -311,6 +312,7 @@ pub fn run() {
             kernel.register_module(&devos_issue::IssueModule);
             kernel.register_module(&devos_snippets::SnippetsModule);
             kernel.register_module(&devos_mcp::McpModule);
+            kernel.register_module(&devos_security::SecurityModule);
             let modules_us = phase.elapsed().as_micros() as u64;
             let kernel = Arc::new(kernel);
 
@@ -604,6 +606,7 @@ pub fn run() {
             mcp_commands::mcp_server_create,
             mcp_commands::mcp_server_delete,
             mcp_commands::mcp_discover_tools,
+            security_commands::security_scan,
             monitor_commands::monitors_list,
             monitor_commands::monitor_create,
             monitor_commands::monitor_delete,

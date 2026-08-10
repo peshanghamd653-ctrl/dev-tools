@@ -31,6 +31,7 @@ devos-deploy = { path = "../crates/modules/devos-deploy" }
 devos-issue = { path = "../crates/modules/devos-issue" }
 devos-snippets = { path = "../crates/modules/devos-snippets" }
 devos-mcp = { path = "../crates/modules/devos-mcp" }
+devos-security = { path = "../crates/modules/devos-security" }
 devos-redact = { path = "../crates/devos-redact" }
 sqlx.workspace = true
 tauri = { version = "2", features = ["protocol-asset"] }

@@ -30,17 +30,14 @@ export function ollamaMenuMessage(query: OllamaQueryState): string {
 
 /**
  * Providers whose conversations can drive the agentic tool loop —
- * `devos_ai::run_agent` / `run_agent_ollama` in the Rust layer.
- *
- * Gemini is deliberately absent: `crates/devos-ai/src/providers/gemini.rs`
- * documents why (Gemini has function calling, but nothing here has adapted
- * its streaming shape to it yet). Checked in one place so the toggle buttons
- * below and the backend's own gate in `ai_commands.rs` cannot drift apart —
- * they already agreed on "claude" alone once; the day this file forgets to
- * add a name the backend just enabled is the day tools become a toggle that
- * appears in the UI but silently no-ops.
+ * `devos_ai::run_agent` / `run_agent_ollama` / `run_agent_gemini` in the
+ * Rust layer. Checked in one place so the toggle buttons below and the
+ * backend's own gate in `ai_commands.rs` cannot drift apart — they already
+ * agreed on "claude" alone once; the day this file forgets to add a name the
+ * backend just enabled is the day tools become a toggle that appears in the
+ * UI but silently no-ops.
  */
-const TOOL_CAPABLE_PROVIDERS = new Set(["claude", "ollama"]);
+const TOOL_CAPABLE_PROVIDERS = new Set(["claude", "ollama", "gemini"]);
 
 export function providerSupportsTools(provider: string): boolean {
   return TOOL_CAPABLE_PROVIDERS.has(provider);

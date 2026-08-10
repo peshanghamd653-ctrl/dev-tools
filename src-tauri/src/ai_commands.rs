@@ -400,13 +400,16 @@ pub async fn ai_send(
     // additionally need the second grant, and each call still goes through
     // per-call approval (ADR-0005).
     //
-    // Claude and Ollama drive the agentic loop (`devos_ai::run_agent` /
-    // `run_agent_ollama`); Gemini does not yet — see the note at the top of
-    // `crates/devos-ai/src/providers/gemini.rs` for why, and
-    // `providers::mod`'s doc comment for how the two implementations differ.
+    // All three providers drive the agentic loop (`devos_ai::run_agent` /
+    // `run_agent_ollama` / `run_agent_gemini`) — see `providers::mod`'s doc
+    // comment for why each needs its own implementation rather than one
+    // generic loop.
     let use_tools = tools_enabled.unwrap_or(false)
         && project_path.is_some()
-        && matches!(conversation.provider.as_str(), "claude" | "ollama");
+        && matches!(
+            conversation.provider.as_str(),
+            "claude" | "ollama" | "gemini"
+        );
     let use_write_tools = use_tools && write_tools_enabled.unwrap_or(false);
 
     let result = if use_tools {
@@ -456,9 +459,29 @@ pub async fn ai_send(
                 )
                 .await
             }
+            "gemini" => {
+                let key = api_key.as_deref().ok_or("no Gemini API key configured")?;
+                // `base_url` resolves to `None` here regardless of what is
+                // passed in: `base_url_setting_for` only names Ollama's
+                // endpoint as user-configurable, so this is not the SEC-*
+                // key-redirection bug the base_url plumbing exists to avoid
+                // for Ollama — Gemini's endpoint is not user-settable at all.
+                devos_ai::run_agent_gemini(
+                    &state.ai.gemini,
+                    key,
+                    base_url.as_deref(),
+                    &conversation.model,
+                    system.as_deref(),
+                    &turns,
+                    &defs,
+                    &executor,
+                    &tx,
+                )
+                .await
+            }
             // `use_tools` above is the only place this branch is reachable
-            // from, and it already restricts the provider to these two.
-            _ => unreachable!("use_tools only allows claude or ollama"),
+            // from, and it already restricts the provider to these three.
+            _ => unreachable!("use_tools only allows claude, ollama or gemini"),
         }
     } else {
         provider

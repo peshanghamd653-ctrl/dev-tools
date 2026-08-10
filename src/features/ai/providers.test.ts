@@ -72,17 +72,17 @@ describe("credentialHint", () => {
 describe("providerSupportsTools", () => {
   /**
    * Mirrors the gate in `src-tauri/src/ai_commands.rs` —
-   * `matches!(conversation.provider.as_str(), "claude" | "ollama")`. The two
-   * are checked independently rather than one importing the other (there is
-   * no such link across the Rust/TypeScript boundary), so this test is the
-   * thing that would catch the day someone extends one side and forgets the
-   * other — the toggle buttons would then appear for a provider whose
-   * backend still silently streams plain chat, or vice versa.
+   * `matches!(conversation.provider.as_str(), "claude" | "ollama" | "gemini")`.
+   * The two are checked independently rather than one importing the other
+   * (there is no such link across the Rust/TypeScript boundary), so this
+   * test is the thing that would catch the day someone extends one side and
+   * forgets the other — the toggle buttons would then appear for a provider
+   * whose backend still silently streams plain chat, or vice versa.
    */
-  it("agrees with the backend's tool-loop gate: claude and ollama, nothing else", () => {
+  it("agrees with the backend's tool-loop gate: claude, ollama and gemini, nothing else", () => {
     expect(providerSupportsTools("claude")).toBe(true);
     expect(providerSupportsTools("ollama")).toBe(true);
-    expect(providerSupportsTools("gemini")).toBe(false);
+    expect(providerSupportsTools("gemini")).toBe(true);
     expect(providerSupportsTools("something-new")).toBe(false);
   });
 });

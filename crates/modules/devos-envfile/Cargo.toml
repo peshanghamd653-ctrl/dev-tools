@@ -1,0 +1,16 @@
+[package]
+name = "devos-envfile"
+description = "DevOS environment variable manager: read/write .env-style files at a project root"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

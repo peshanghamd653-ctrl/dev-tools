@@ -12,7 +12,7 @@ import { useUiStore } from "@/shared/stores/ui";
  *   Ctrl+Shift+D  deployments    Ctrl+Shift+N  snippets
  *   Ctrl+Shift+M  MCP servers    Ctrl+Shift+S  report a bug
  *   Ctrl+Shift+U  toolbox        Ctrl+Shift+E  security
- *   Ctrl+,  settings
+ *   Ctrl+Shift+V  env variables  Ctrl+,  settings
  */
 export function useGlobalHotkeys() {
   const navigate = useNavigate();
@@ -59,6 +59,12 @@ export function useGlobalHotkeys() {
         if (e.code === "KeyE") {
           e.preventDefault();
           void navigate({ to: "/security" });
+        }
+        if (e.code === "KeyV") {
+          // Ctrl+Shift+V is "paste without formatting" in a browser; inside
+          // the shell there is no rich-text field for that to apply to.
+          e.preventDefault();
+          void navigate({ to: "/env" });
         }
         return;
       }

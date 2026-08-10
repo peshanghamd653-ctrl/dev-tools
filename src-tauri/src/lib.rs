@@ -8,6 +8,7 @@ mod core_module;
 mod db_commands;
 mod deploy_commands;
 mod docker_commands;
+mod env_commands;
 mod fs_commands;
 mod git_commands;
 mod index_commands;
@@ -607,6 +608,10 @@ pub fn run() {
             mcp_commands::mcp_server_delete,
             mcp_commands::mcp_discover_tools,
             security_commands::security_scan,
+            env_commands::env_file_list,
+            env_commands::env_file_read,
+            env_commands::env_file_set,
+            env_commands::env_file_delete_key,
             monitor_commands::monitors_list,
             monitor_commands::monitor_create,
             monitor_commands::monitor_delete,

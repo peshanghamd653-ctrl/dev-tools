@@ -38,6 +38,7 @@ import type { DockerContainer } from "./bindings/DockerContainer";
 import type { DockerImage } from "./bindings/DockerImage";
 import type { DockerRootCheck } from "./bindings/DockerRootCheck";
 import type { DockerRootStatus } from "./bindings/DockerRootStatus";
+import type { EnvEntry } from "./bindings/EnvEntry";
 import type { EnvFileCheck } from "./bindings/EnvFileCheck";
 import type { OutdatedCheck } from "./bindings/OutdatedCheck";
 import type { OutdatedStatus } from "./bindings/OutdatedStatus";
@@ -111,6 +112,7 @@ export type {
   DockerImage,
   DockerRootCheck,
   DockerRootStatus,
+  EnvEntry,
   EnvFileCheck,
   OutdatedCheck,
   OutdatedStatus,
@@ -371,6 +373,19 @@ export const ipc = {
 
   securityScan: (projectPath: string) =>
     call<SecurityReport>("security_scan", { projectPath }),
+
+  envFileList: (projectPath: string) =>
+    call<string[]>("env_file_list", { projectPath }),
+  envFileRead: (projectPath: string, fileName: string) =>
+    call<EnvEntry[]>("env_file_read", { projectPath, fileName }),
+  envFileSet: (
+    projectPath: string,
+    fileName: string,
+    key: string,
+    value: string,
+  ) => call<void>("env_file_set", { projectPath, fileName, key, value }),
+  envFileDeleteKey: (projectPath: string, fileName: string, key: string) =>
+    call<void>("env_file_delete_key", { projectPath, fileName, key }),
 
   monitorsList: () => call<MonitorStatus[]>("monitors_list"),
   monitorCreate: (name: string, url: string, intervalSecs: number) =>

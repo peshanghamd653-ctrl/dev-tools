@@ -9,91 +9,27 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ToolboxRouteImport } from './routes/toolbox'
-import { Route as TerminalRouteImport } from './routes/terminal'
-import { Route as SnippetsRouteImport } from './routes/snippets'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as SecurityRouteImport } from './routes/security'
-import { Route as ProjectsRouteImport } from './routes/projects'
-import { Route as MonitorsRouteImport } from './routes/monitors'
-import { Route as McpRouteImport } from './routes/mcp'
-import { Route as GitRouteImport } from './routes/git'
-import { Route as FilesRouteImport } from './routes/files'
-import { Route as DockerRouteImport } from './routes/docker'
-import { Route as DeployRouteImport } from './routes/deploy'
-import { Route as DatabaseRouteImport } from './routes/database'
-import { Route as ApiRouteImport } from './routes/api'
-import { Route as AiRouteImport } from './routes/ai'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AiRouteImport } from './routes/ai'
+import { Route as ApiRouteImport } from './routes/api'
+import { Route as DatabaseRouteImport } from './routes/database'
+import { Route as DeployRouteImport } from './routes/deploy'
+import { Route as DockerRouteImport } from './routes/docker'
+import { Route as EnvRouteImport } from './routes/env'
+import { Route as FilesRouteImport } from './routes/files'
+import { Route as GitRouteImport } from './routes/git'
+import { Route as McpRouteImport } from './routes/mcp'
+import { Route as MonitorsRouteImport } from './routes/monitors'
+import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as SecurityRouteImport } from './routes/security'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SnippetsRouteImport } from './routes/snippets'
+import { Route as TerminalRouteImport } from './routes/terminal'
+import { Route as ToolboxRouteImport } from './routes/toolbox'
 
-const ToolboxRoute = ToolboxRouteImport.update({
-  id: '/toolbox',
-  path: '/toolbox',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TerminalRoute = TerminalRouteImport.update({
-  id: '/terminal',
-  path: '/terminal',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SnippetsRoute = SnippetsRouteImport.update({
-  id: '/snippets',
-  path: '/snippets',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SecurityRoute = SecurityRouteImport.update({
-  id: '/security',
-  path: '/security',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProjectsRoute = ProjectsRouteImport.update({
-  id: '/projects',
-  path: '/projects',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MonitorsRoute = MonitorsRouteImport.update({
-  id: '/monitors',
-  path: '/monitors',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const McpRoute = McpRouteImport.update({
-  id: '/mcp',
-  path: '/mcp',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GitRoute = GitRouteImport.update({
-  id: '/git',
-  path: '/git',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FilesRoute = FilesRouteImport.update({
-  id: '/files',
-  path: '/files',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DockerRoute = DockerRouteImport.update({
-  id: '/docker',
-  path: '/docker',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DeployRoute = DeployRouteImport.update({
-  id: '/deploy',
-  path: '/deploy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DatabaseRoute = DatabaseRouteImport.update({
-  id: '/database',
-  path: '/database',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiRoute = ApiRouteImport.update({
-  id: '/api',
-  path: '/api',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AiRoute = AiRouteImport.update({
@@ -101,9 +37,79 @@ const AiRoute = AiRouteImport.update({
   path: '/ai',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ApiRoute = ApiRouteImport.update({
+  id: '/api',
+  path: '/api',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DatabaseRoute = DatabaseRouteImport.update({
+  id: '/database',
+  path: '/database',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeployRoute = DeployRouteImport.update({
+  id: '/deploy',
+  path: '/deploy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DockerRoute = DockerRouteImport.update({
+  id: '/docker',
+  path: '/docker',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EnvRoute = EnvRouteImport.update({
+  id: '/env',
+  path: '/env',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FilesRoute = FilesRouteImport.update({
+  id: '/files',
+  path: '/files',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GitRoute = GitRouteImport.update({
+  id: '/git',
+  path: '/git',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitorsRoute = MonitorsRouteImport.update({
+  id: '/monitors',
+  path: '/monitors',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsRoute = ProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SecurityRoute = SecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SnippetsRoute = SnippetsRouteImport.update({
+  id: '/snippets',
+  path: '/snippets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TerminalRoute = TerminalRouteImport.update({
+  id: '/terminal',
+  path: '/terminal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolboxRoute = ToolboxRouteImport.update({
+  id: '/toolbox',
+  path: '/toolbox',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/database': typeof DatabaseRoute
   '/deploy': typeof DeployRoute
   '/docker': typeof DockerRoute
+  '/env': typeof EnvRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
   '/mcp': typeof McpRoute
@@ -132,6 +139,7 @@ export interface FileRoutesByTo {
   '/database': typeof DatabaseRoute
   '/deploy': typeof DeployRoute
   '/docker': typeof DockerRoute
+  '/env': typeof EnvRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
   '/mcp': typeof McpRoute
@@ -151,6 +159,7 @@ export interface FileRoutesById {
   '/database': typeof DatabaseRoute
   '/deploy': typeof DeployRoute
   '/docker': typeof DockerRoute
+  '/env': typeof EnvRoute
   '/files': typeof FilesRoute
   '/git': typeof GitRoute
   '/mcp': typeof McpRoute
@@ -171,6 +180,7 @@ export interface FileRouteTypes {
     | '/database'
     | '/deploy'
     | '/docker'
+    | '/env'
     | '/files'
     | '/git'
     | '/mcp'
@@ -189,6 +199,7 @@ export interface FileRouteTypes {
     | '/database'
     | '/deploy'
     | '/docker'
+    | '/env'
     | '/files'
     | '/git'
     | '/mcp'
@@ -207,6 +218,7 @@ export interface FileRouteTypes {
     | '/database'
     | '/deploy'
     | '/docker'
+    | '/env'
     | '/files'
     | '/git'
     | '/mcp'
@@ -226,6 +238,7 @@ export interface RootRouteChildren {
   DatabaseRoute: typeof DatabaseRoute
   DeployRoute: typeof DeployRoute
   DockerRoute: typeof DockerRoute
+  EnvRoute: typeof EnvRoute
   FilesRoute: typeof FilesRoute
   GitRoute: typeof GitRoute
   McpRoute: typeof McpRoute
@@ -240,102 +253,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/toolbox': {
-      id: '/toolbox'
-      path: '/toolbox'
-      fullPath: '/toolbox'
-      preLoaderRoute: typeof ToolboxRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/terminal': {
-      id: '/terminal'
-      path: '/terminal'
-      fullPath: '/terminal'
-      preLoaderRoute: typeof TerminalRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/snippets': {
-      id: '/snippets'
-      path: '/snippets'
-      fullPath: '/snippets'
-      preLoaderRoute: typeof SnippetsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/security': {
-      id: '/security'
-      path: '/security'
-      fullPath: '/security'
-      preLoaderRoute: typeof SecurityRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/projects': {
-      id: '/projects'
-      path: '/projects'
-      fullPath: '/projects'
-      preLoaderRoute: typeof ProjectsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/monitors': {
-      id: '/monitors'
-      path: '/monitors'
-      fullPath: '/monitors'
-      preLoaderRoute: typeof MonitorsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mcp': {
-      id: '/mcp'
-      path: '/mcp'
-      fullPath: '/mcp'
-      preLoaderRoute: typeof McpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/git': {
-      id: '/git'
-      path: '/git'
-      fullPath: '/git'
-      preLoaderRoute: typeof GitRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/files': {
-      id: '/files'
-      path: '/files'
-      fullPath: '/files'
-      preLoaderRoute: typeof FilesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/docker': {
-      id: '/docker'
-      path: '/docker'
-      fullPath: '/docker'
-      preLoaderRoute: typeof DockerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/deploy': {
-      id: '/deploy'
-      path: '/deploy'
-      fullPath: '/deploy'
-      preLoaderRoute: typeof DeployRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/database': {
-      id: '/database'
-      path: '/database'
-      fullPath: '/database'
-      preLoaderRoute: typeof DatabaseRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api': {
-      id: '/api'
-      path: '/api'
-      fullPath: '/api'
-      preLoaderRoute: typeof ApiRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ai': {
@@ -345,11 +267,109 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AiRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/api': {
+      id: '/api'
+      path: '/api'
+      fullPath: '/api'
+      preLoaderRoute: typeof ApiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/database': {
+      id: '/database'
+      path: '/database'
+      fullPath: '/database'
+      preLoaderRoute: typeof DatabaseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/deploy': {
+      id: '/deploy'
+      path: '/deploy'
+      fullPath: '/deploy'
+      preLoaderRoute: typeof DeployRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docker': {
+      id: '/docker'
+      path: '/docker'
+      fullPath: '/docker'
+      preLoaderRoute: typeof DockerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/env': {
+      id: '/env'
+      path: '/env'
+      fullPath: '/env'
+      preLoaderRoute: typeof EnvRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/files': {
+      id: '/files'
+      path: '/files'
+      fullPath: '/files'
+      preLoaderRoute: typeof FilesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/git': {
+      id: '/git'
+      path: '/git'
+      fullPath: '/git'
+      preLoaderRoute: typeof GitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitors': {
+      id: '/monitors'
+      path: '/monitors'
+      fullPath: '/monitors'
+      preLoaderRoute: typeof MonitorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects': {
+      id: '/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/security': {
+      id: '/security'
+      path: '/security'
+      fullPath: '/security'
+      preLoaderRoute: typeof SecurityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/snippets': {
+      id: '/snippets'
+      path: '/snippets'
+      fullPath: '/snippets'
+      preLoaderRoute: typeof SnippetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terminal': {
+      id: '/terminal'
+      path: '/terminal'
+      fullPath: '/terminal'
+      preLoaderRoute: typeof TerminalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/toolbox': {
+      id: '/toolbox'
+      path: '/toolbox'
+      fullPath: '/toolbox'
+      preLoaderRoute: typeof ToolboxRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -362,6 +382,7 @@ const rootRouteChildren: RootRouteChildren = {
   DatabaseRoute: DatabaseRoute,
   DeployRoute: DeployRoute,
   DockerRoute: DockerRoute,
+  EnvRoute: EnvRoute,
   FilesRoute: FilesRoute,
   GitRoute: GitRoute,
   McpRoute: McpRoute,

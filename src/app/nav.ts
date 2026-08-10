@@ -6,6 +6,7 @@ import {
   FolderKanban,
   FolderTree,
   GitBranch,
+  KeySquare,
   LayoutDashboard,
   Plug,
   Rocket,
@@ -56,6 +57,12 @@ export const primaryNav: NavItem[] = [
     label: "Security",
     icon: ShieldCheck,
     shortcut: "Ctrl+Shift+E",
+  },
+  {
+    to: "/env",
+    label: "Environment Variables",
+    icon: KeySquare,
+    shortcut: "Ctrl+Shift+V",
   },
   { to: "/settings", label: "Settings", icon: Settings, shortcut: "Ctrl+," },
 ];

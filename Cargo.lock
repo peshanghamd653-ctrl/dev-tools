@@ -1146,6 +1146,7 @@ dependencies = [
  "devos-db",
  "devos-deploy",
  "devos-docker",
+ "devos-envfile",
  "devos-git",
  "devos-index",
  "devos-issue",
@@ -1184,6 +1185,16 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "ts-rs",
+]
+
+[[package]]
+name = "devos-envfile"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
+ "thiserror 2.0.20",
  "ts-rs",
 ]
 

@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Camera,
@@ -12,7 +11,7 @@ import {
 import { toast } from "sonner";
 
 import { primaryNav } from "@/app/nav";
-import { useAiStore } from "@/features/ai/store";
+import { useAskAi } from "@/features/ai/hooks";
 import { useModuleCommands } from "@/features/app/hooks";
 import { useGitStore } from "@/features/git/store";
 import { useProjects } from "@/features/projects/hooks";
@@ -110,7 +109,7 @@ export function CommandPalette() {
   const setAddProjectOpen = useDialogStore((s) => s.setAddProjectOpen);
   const setCaptureIssueOpen = useDialogStore((s) => s.setCaptureIssueOpen);
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const askAi = useAskAi();
   const { data: moduleCommands } = useModuleCommands();
   const activeWorkspace = useActiveWorkspace();
   const { data: projects } = useProjects(activeWorkspace?.id);
@@ -142,25 +141,13 @@ export function CommandPalette() {
    * matching static command still does something, because it becomes a
    * prompt for the AI assistant — which has real read/write tools
    * (`run_command`, `search_code`, `run_tests`, git operations) and can
-   * often just do what was asked, rather than only searching for it. Same
-   * queue-a-conversation flow `TerminalPage`'s "diagnose this" already
-   * uses: create a conversation, stash the prompt, navigate, and `AiPage`
-   * sends it once that conversation is actually active.
+   * often just do what was asked, rather than only searching for it.
+   * `useAskAi` (shared with the security center's "fix with AI" and
+   * anything else that wants this) is the create-conversation → stash the
+   * prompt → navigate flow.
    */
-  async function askAi(prompt: string) {
-    try {
-      const { provider, model, setActiveConversation, setPendingPrompt } =
-        useAiStore.getState();
-      const conversation = await ipc.aiConversationCreate(provider, model);
-      await queryClient.invalidateQueries({
-        queryKey: ["ai", "conversations"],
-      });
-      setActiveConversation(conversation.id);
-      setPendingPrompt(prompt);
-      void navigate({ to: "/ai" });
-    } catch (error) {
-      toast.error(String(error));
-    }
+  function askAiAndReport(prompt: string) {
+    askAi(prompt).catch((error: unknown) => toast.error(String(error)));
   }
 
   function runModuleCommand(id: string) {
@@ -269,7 +256,7 @@ export function CommandPalette() {
             <CommandItem
               key={preset.label}
               keywords={preset.keywords}
-              onSelect={() => runAndClose(() => void askAi(preset.prompt))}
+              onSelect={() => runAndClose(() => askAiAndReport(preset.prompt))}
             >
               <Sparkles className="size-4" />
               {preset.label}
@@ -278,7 +265,7 @@ export function CommandPalette() {
           {query.trim() && (
             <CommandItem
               value={query}
-              onSelect={() => runAndClose(() => void askAi(query.trim()))}
+              onSelect={() => runAndClose(() => askAiAndReport(query.trim()))}
             >
               <Sparkles className="size-4" />
               Ask AI: &ldquo;{query.trim()}&rdquo;

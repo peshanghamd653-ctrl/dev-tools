@@ -1,12 +1,10 @@
 import { useCallback, useRef, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { Channel } from "@tauri-apps/api/core";
 
 import { isDesktopShell, ipc, type AiDelta } from "@/shared/ipc/client";
+import { useAiStore } from "./store";
 
 export const aiKeys = {
   conversations: ["ai", "conversations"] as const,
@@ -56,6 +54,35 @@ export function useOllamaModels(enabled: boolean) {
     staleTime: 30_000,
     retry: false,
   });
+}
+
+/**
+ * Hands a prompt to the AI assistant from anywhere in the app: creates a
+ * fresh conversation, stashes the prompt, and navigates to `/ai`, which
+ * consumes it once that conversation is actually active (`AiPage`'s own
+ * effect on `pendingPrompt`). One implementation shared by every "hand this
+ * off to AI" entry point — the command palette's natural-language fallback,
+ * the terminal's "diagnose this", the security center's "fix with AI" — so
+ * they can't quietly drift into three different flows for the same thing.
+ */
+export function useAskAi() {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  return useCallback(
+    async (prompt: string) => {
+      const { provider, model, setActiveConversation, setPendingPrompt } =
+        useAiStore.getState();
+      const conversation = await ipc.aiConversationCreate(provider, model);
+      await queryClient.invalidateQueries({
+        queryKey: aiKeys.conversations,
+      });
+      setActiveConversation(conversation.id);
+      setPendingPrompt(prompt);
+      void navigate({ to: "/ai" });
+    },
+    [queryClient, navigate],
+  );
 }
 
 export interface ToolActivity {

@@ -3,10 +3,12 @@ import {
   FolderPlus,
   RefreshCw,
   ShieldAlert,
+  Sparkles,
   TriangleAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { useAskAi } from "@/features/ai/hooks";
 import { useGitStore } from "@/features/git/store";
 import { useProjects } from "@/features/projects/hooks";
 import { useActiveWorkspace } from "@/features/workspaces/hooks";
@@ -15,11 +17,56 @@ import {
   type DependencyCheck,
   type GitCheck,
   type SecretScan,
+  type SecurityReport,
 } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent } from "@/shared/ui/card";
 import { useSecurityScan } from "./hooks";
+
+/**
+ * Turns a report into a prompt naming every issue by file/line/kind —
+ * never the matched secret text itself, since the report never carries it
+ * either. The model can `read_file` whatever it needs to actually look at;
+ * this just points it at what to look at and why.
+ */
+function buildFixPrompt(report: SecurityReport): string {
+  const lines: string[] = [
+    "Review and fix the following security issues found in this project. " +
+      "Do not paste or repeat any secret values in your response — describe " +
+      "and fix the problem, don't quote the credential.",
+  ];
+  if (!report.git.clean) {
+    lines.push(
+      `- Git: ${report.git.changedFiles} uncommitted file(s). Review the changes before continuing.`,
+    );
+  }
+  for (const finding of report.secrets.findings) {
+    lines.push(
+      `- Possible ${finding.kind} in ${finding.file}:${finding.line}. Look at ` +
+        "it, and if it's a real credential, remove it from the file, make " +
+        "sure the file is gitignored if it should be, and note that the " +
+        "value should be rotated (you cannot rotate it yourself).",
+    );
+  }
+  for (const dep of report.dependencies) {
+    if (dep.status === "vulnerable") {
+      lines.push(
+        `- ${dep.vulnerabilityCount} known ${dep.ecosystem} dependency vulnerabilit${dep.vulnerabilityCount === 1 ? "y" : "ies"}. ` +
+          `Run the ${dep.ecosystem} audit tool to see details, then update or patch the affected packages.`,
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
+function hasIssues(report: SecurityReport): boolean {
+  return (
+    !report.git.clean ||
+    report.secrets.findings.length > 0 ||
+    report.dependencies.some((d) => d.status === "vulnerable")
+  );
+}
 
 export function SecurityPage() {
   const activeWorkspace = useActiveWorkspace();
@@ -28,6 +75,7 @@ export function SecurityPage() {
   const project =
     projects?.find((p) => p.id === selectedProjectId) ?? projects?.[0] ?? null;
   const scan = useSecurityScan();
+  const askAi = useAskAi();
 
   if (!isDesktopShell()) {
     return <EmptyCard title="The security center needs the desktop shell" />;
@@ -54,20 +102,36 @@ export function SecurityPage() {
             for {project.name}.
           </p>
         </div>
-        <Button
-          size="sm"
-          disabled={scan.isPending}
-          onClick={() =>
-            scan.mutate(project.path, {
-              onError: (error) => toast.error(String(error)),
-            })
-          }
-        >
-          <RefreshCw
-            className={cn("size-4", scan.isPending && "animate-spin")}
-          />
-          {scan.isPending ? "Scanning…" : report ? "Re-scan" : "Scan"}
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          {report && hasIssues(report) && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                askAi(buildFixPrompt(report)).catch((error: unknown) =>
+                  toast.error(String(error)),
+                )
+              }
+            >
+              <Sparkles className="size-4" />
+              Fix with AI
+            </Button>
+          )}
+          <Button
+            size="sm"
+            disabled={scan.isPending}
+            onClick={() =>
+              scan.mutate(project.path, {
+                onError: (error) => toast.error(String(error)),
+              })
+            }
+          >
+            <RefreshCw
+              className={cn("size-4", scan.isPending && "animate-spin")}
+            />
+            {scan.isPending ? "Scanning…" : report ? "Re-scan" : "Scan"}
+          </Button>
+        </div>
       </div>
 
       {!report && !scan.isPending && (

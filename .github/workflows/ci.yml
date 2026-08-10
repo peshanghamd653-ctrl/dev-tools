@@ -52,6 +52,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # `devos-kernel::backup`'s tests write and swap real SQLite files
+      # (including a memory-mapped `-shm` sidecar) under `%TEMP%`, then wait
+      # for Windows to release the mapping before the next step can rename
+      # the file — the same constraint a real restore-at-boot has. That wait
+      # got widened three times (2s → 30s → 60s) chasing a
+      # `SQLite never released ...-shm` panic that recurred each time at the
+      # new ceiling, always on the one test that performs a *second* restore
+      # mid-test and so writes a fresh backup file right before the wait.
+      # Windows Defender's real-time scan synchronously touching that
+      # freshly-written file is the most likely explanation for
+      # exactly-that-test being the one that stalls, and for the stall
+      # growing rather than resolving as the runner got busier — so this
+      # excludes the test temp directory from scanning, addressing the
+      # likely cause rather than budgeting around it again. The runner
+      # account has the local admin rights `Add-MpPreference` needs; this is
+      # a standard technique for Windows CI jobs with heavy temp-file I/O.
+      # The widened wait stays as defense in depth — this is a probable
+      # fix, not a proven one.
+      - name: Exclude the test temp directory from Windows Defender
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath $env:TEMP
+
       # This action publishes no semver tags; `@stable` names the toolchain
       # channel and is upstream's documented usage, so it is as pinned as this
       # action gets. The trade-off is real — a stable release that breaks the

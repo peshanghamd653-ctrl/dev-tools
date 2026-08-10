@@ -97,6 +97,37 @@ pub async fn list_containers() -> DockerResult<Vec<DockerContainer>> {
     Ok(summaries.into_iter().map(map_container).collect())
 }
 
+/// Names of running containers whose effective user is root — the same
+/// signal `docker inspect --format '{{.Config.User}}'` gives per container,
+/// batched into one call so a caller (the security center) doesn't have to
+/// spawn N inspects itself. An empty `User` means "whatever the image's
+/// Dockerfile set, which defaults to root if it never called `USER`" — the
+/// same default `docker inspect` itself reports as an empty string.
+pub async fn containers_running_as_root() -> DockerResult<Vec<String>> {
+    let docker = connect()?;
+    // `all: false` (the default) is exactly "running containers only" —
+    // stopped containers aren't an active risk in the sense this check cares
+    // about.
+    let summaries = docker
+        .list_containers(Some(ListContainersOptions::<String>::default()))
+        .await
+        .map_err(api_err)?;
+
+    let mut root_containers = Vec::new();
+    for summary in summaries {
+        let Some(id) = summary.id.clone() else {
+            continue;
+        };
+        let name = container_name(&summary);
+        let inspect = docker.inspect_container(&id, None).await.map_err(api_err)?;
+        let user = inspect.config.and_then(|c| c.user).unwrap_or_default();
+        if user.is_empty() || user == "root" || user == "0" {
+            root_containers.push(name);
+        }
+    }
+    Ok(root_containers)
+}
+
 pub async fn list_images() -> DockerResult<Vec<DockerImage>> {
     let docker = connect()?;
     let summaries = docker
@@ -168,13 +199,17 @@ pub async fn container_logs(id: &str, tail: usize) -> DockerResult<String> {
     Ok(String::from_utf8_lossy(&out).into_owned())
 }
 
-fn map_container(summary: ContainerSummary) -> DockerContainer {
-    let name = summary
+fn container_name(summary: &ContainerSummary) -> String {
+    summary
         .names
-        .unwrap_or_default()
-        .first()
+        .as_ref()
+        .and_then(|names| names.first())
         .map(|n| n.trim_start_matches('/').to_string())
-        .unwrap_or_else(|| "unnamed".into());
+        .unwrap_or_else(|| "unnamed".into())
+}
+
+fn map_container(summary: ContainerSummary) -> DockerContainer {
+    let name = container_name(&summary);
     let ports = summary
         .ports
         .unwrap_or_default()
@@ -297,6 +332,22 @@ mod tests {
                     containers.len(),
                     images.len()
                 );
+            }
+        }
+    }
+
+    /// Same honest-skip shape as `daemon_roundtrip_when_available` — this
+    /// only asserts the call succeeds and returns *some* list, since asserting
+    /// on which containers are root would mean depending on whatever happens
+    /// to be running on the machine the test executes on.
+    #[tokio::test]
+    async fn root_check_roundtrip_when_available() {
+        match containers_running_as_root().await {
+            Err(e) => {
+                eprintln!("docker unavailable, skipping root-check test: {e}");
+            }
+            Ok(root_containers) => {
+                eprintln!("docker ok: {} root container(s)", root_containers.len());
             }
         }
     }

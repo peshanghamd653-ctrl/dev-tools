@@ -15,6 +15,7 @@ import { useActiveWorkspace } from "@/features/workspaces/hooks";
 import {
   isDesktopShell,
   type DependencyCheck,
+  type DockerRootCheck,
   type EnvFileCheck,
   type GitCheck,
   type SecretScan,
@@ -59,6 +60,13 @@ function buildFixPrompt(report: SecurityReport): string {
         "separate step you cannot do yourself.",
     );
   }
+  if (report.dockerRoot.status === "runningAsRoot") {
+    lines.push(
+      `- Docker container(s) running as root: ${report.dockerRoot.containers.join(", ")}. ` +
+        "Look at the Dockerfile(s) for these images and add a non-root USER " +
+        "instruction if one isn't already there for a good reason.",
+    );
+  }
   for (const dep of report.dependencies) {
     if (dep.status === "vulnerable") {
       lines.push(
@@ -75,6 +83,7 @@ function hasIssues(report: SecurityReport): boolean {
     !report.git.clean ||
     report.secrets.findings.length > 0 ||
     report.envFiles.files.length > 0 ||
+    report.dockerRoot.status === "runningAsRoot" ||
     report.dependencies.some((d) => d.status === "vulnerable")
   );
 }
@@ -109,8 +118,9 @@ export function SecurityPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Security</h1>
           <p className="text-sm text-muted-foreground">
-            Git cleanliness, a secret scan, unignored .env files, and a
-            dependency vulnerability audit for {project.name}.
+            Git cleanliness, a secret scan, unignored .env files, Docker
+            containers running as root, and a dependency vulnerability audit for{" "}
+            {project.name}.
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -157,6 +167,7 @@ export function SecurityPage() {
           <GitSection check={report.git} />
           <SecretsSection scan={report.secrets} />
           <EnvFilesSection check={report.envFiles} />
+          <DockerRootSection check={report.dockerRoot} />
           {report.dependencies.map((check) => (
             <DependencySection key={check.ecosystem} check={check} />
           ))}
@@ -265,6 +276,35 @@ function EnvFilesSection({ check }: { check: EnvFileCheck }) {
           {check.files.map((file) => (
             <li key={file} className="font-mono text-xs text-muted-foreground">
               {file}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DockerRootSection({ check }: { check: DockerRootCheck }) {
+  if (check.status === "unavailable") {
+    return <StatusRow ok={false} title="Docker not running" />;
+  }
+  if (check.status === "ok") {
+    return <StatusRow ok title="No containers running as root" />;
+  }
+  return (
+    <Card className="gap-0 py-3">
+      <CardContent className="space-y-2 px-4">
+        <div className="flex items-start gap-3">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-yellow-300" />
+          <p className="text-sm">
+            {check.containers.length} container
+            {check.containers.length === 1 ? "" : "s"} running as root
+          </p>
+        </div>
+        <ul className="space-y-1 pl-7">
+          {check.containers.map((name) => (
+            <li key={name} className="font-mono text-xs text-muted-foreground">
+              {name}
             </li>
           ))}
         </ul>

@@ -1294,6 +1294,7 @@ dependencies = [
 name = "devos-security"
 version = "0.1.0"
 dependencies = [
+ "devos-docker",
  "devos-git",
  "devos-kernel",
  "devos-redact",

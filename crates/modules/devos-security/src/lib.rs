@@ -1,29 +1,30 @@
-//! Security center: a point-in-time snapshot of four things a developer
+//! Security center: a point-in-time snapshot of five things a developer
 //! wants to know are true before they trust a project — the working tree is
 //! clean, nothing that looks like a credential is sitting in a tracked
-//! file, no `.env` file is one `git add` away from being committed, and the
-//! dependency tree has no known vulnerabilities.
+//! file, no `.env` file is one `git add` away from being committed, no
+//! running Docker container is running as root, and the dependency tree has
+//! no known vulnerabilities.
 //!
 //! Deliberately not attempted in this pass: outdated-package detection (no
 //! standard `cargo` subcommand for it, and `npm outdated`'s exit-code and
 //! output shape are different enough from `npm audit`'s to be a second
-//! feature), a Docker "running as root" check (needs `devos-docker`'s
-//! container inspection extended with something it doesn't expose yet), and
-//! git *history* secret scanning (`secrets::scan` only walks files on disk
-//! today — a credential committed and later removed would not be caught).
-//! All three are real gaps, named rather than silently absent.
+//! feature) and git *history* secret scanning (`secrets::scan` only walks
+//! files on disk today — a credential committed and later removed would not
+//! be caught). Both are real gaps, named rather than silently absent.
 //!
 //! Nothing here mutates anything — every check is a read (a `git status`, a
-//! `git check-ignore`, a file walk, spawning an audit tool that itself only
-//! reads a lockfile) — so there is no approval gate to design, unlike the AI
-//! tool-calling surface this crate's secret-detection dependency
-//! (`devos-redact`) also serves.
+//! `git check-ignore`, a file walk, a Docker inspect, spawning an audit tool
+//! that itself only reads a lockfile) — so there is no approval gate to
+//! design, unlike the AI tool-calling surface this crate's secret-detection
+//! dependency (`devos-redact`) also serves.
 
 mod audit;
+mod docker_root;
 mod env_files;
 mod secrets;
 
 pub use audit::{audit, DependencyCheck, DependencyStatus};
+pub use docker_root::{check as check_docker_root, DockerRootCheck, DockerRootStatus};
 pub use env_files::{check as check_env_files, EnvFileCheck};
 pub use secrets::{scan as scan_secrets, SecretFinding, SecretScan};
 
@@ -52,6 +53,7 @@ pub struct SecurityReport {
     pub git: GitCheck,
     pub secrets: SecretScan,
     pub env_files: EnvFileCheck,
+    pub docker_root: DockerRootCheck,
     pub dependencies: Vec<DependencyCheck>,
 }
 
@@ -71,13 +73,16 @@ async fn git_check(root: &Path) -> GitCheck {
 }
 
 /// The whole report for one project root, in one call — the UI's "Scan"
-/// button asks for all four checks together rather than issuing four round
-/// trips it would have to coordinate the loading state of.
+/// button asks for all five checks together rather than issuing five round
+/// trips it would have to coordinate the loading state of. `docker_root` is
+/// the one check not scoped to `root`: a container running as root is a
+/// machine-wide fact, not a project-specific one.
 pub async fn scan(root: &Path) -> SecurityReport {
     SecurityReport {
         git: git_check(root).await,
         secrets: scan_secrets(root),
         env_files: check_env_files(root).await,
+        docker_root: check_docker_root().await,
         dependencies: audit(root).await,
     }
 }
@@ -118,7 +123,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scan_combines_all_four_checks_for_a_plain_directory() {
+    async fn scan_combines_all_five_checks_for_a_plain_directory() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("notes.txt"), "just notes\n").unwrap();
 
@@ -130,5 +135,8 @@ mod tests {
             "not a git repo, nothing to report"
         );
         assert!(report.dependencies.is_empty(), "no manifest, no audit");
+        if report.docker_root.status == DockerRootStatus::Unavailable {
+            assert!(report.docker_root.containers.is_empty());
+        }
     }
 }

@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 devos-kernel = { path = "../../devos-kernel" }
 devos-git = { path = "../devos-git" }
+devos-docker = { path = "../devos-docker" }
 devos-redact = { path = "../../devos-redact" }
 tokio = { workspace = true, features = ["process"] }
 serde.workspace = true

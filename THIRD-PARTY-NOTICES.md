@@ -289,7 +289,7 @@ Apache License
 <summary>Packages (2)</summary>
 
 - **@ungap/structured-clone 1.3.3**
-- **lucide-react 1.25.0**
+- **lucide-react 1.30.0**
 
 </details>
 
@@ -360,49 +360,50 @@ SOFTWARE.
 ### MIT
 
 <details>
-<summary>Packages (131)</summary>
+<summary>Packages (132)</summary>
 
 - **@floating-ui/core 1.8.0**
 - **@floating-ui/dom 1.8.0**
 - **@floating-ui/react-dom 2.1.9**
 - **@floating-ui/utils 0.2.12**
-- **@hookform/resolvers 5.4.0**
-- **react-hook-form 7.81.0**
-- **@radix-ui/primitive 1.1.5**
-- **@radix-ui/react-arrow 1.1.11**
-- **@radix-ui/react-collection 1.1.12**
-- **@radix-ui/react-compose-refs 1.1.3**
-- **@radix-ui/react-context 1.2.0**
-- **@radix-ui/react-dialog 1.1.19**
-- **@radix-ui/react-direction 1.1.2**
-- **@radix-ui/react-dismissable-layer 1.1.15**
-- **@radix-ui/react-dropdown-menu 2.1.20**
-- **@radix-ui/react-focus-guards 1.1.4**
-- **@radix-ui/react-focus-scope 1.1.12**
-- **@radix-ui/react-id 1.1.2**
-- **@radix-ui/react-label 2.1.11**
-- **@radix-ui/react-menu 2.1.20**
-- **@radix-ui/react-popper 1.3.3**
-- **@radix-ui/react-portal 1.1.13**
-- **@radix-ui/react-presence 1.1.7**
-- **@radix-ui/react-primitive 2.1.7**
-- **@radix-ui/react-roving-focus 1.1.15**
-- **@radix-ui/react-separator 1.1.11**
-- **@radix-ui/react-slot 1.3.0**
-- **@radix-ui/react-tooltip 1.2.12**
-- **@radix-ui/react-use-callback-ref 1.1.2**
-- **@radix-ui/react-use-controllable-state 1.2.3**
-- **@radix-ui/react-use-is-hydrated 0.1.1**
-- **@radix-ui/react-use-layout-effect 1.1.2**
-- **@radix-ui/react-use-size 1.1.2**
-- **@radix-ui/react-visually-hidden 1.2.7**
+- **@hookform/resolvers 5.7.1**
+- **react-hook-form 7.85.0**
+- **@radix-ui/primitive 1.1.7**
+- **@radix-ui/react-arrow 1.1.15**
+- **@radix-ui/react-collection 1.1.15**
+- **@radix-ui/react-compose-refs 1.1.5**
+- **@radix-ui/react-context 1.2.2**
+- **@radix-ui/react-dialog 1.1.23**
+- **@radix-ui/react-direction 1.1.4**
+- **@radix-ui/react-dismissable-layer 1.1.19**
+- **@radix-ui/react-dropdown-menu 2.1.24**
+- **@radix-ui/react-focus-guards 1.1.6**
+- **@radix-ui/react-focus-scope 1.1.16**
+- **@radix-ui/react-id 1.1.4**
+- **@radix-ui/react-label 2.1.15**
+- **@radix-ui/react-menu 2.1.24**
+- **@radix-ui/react-popper 1.3.7**
+- **@radix-ui/react-portal 1.1.17**
+- **@radix-ui/react-presence 1.1.10**
+- **@radix-ui/react-primitive 2.1.10**
+- **@radix-ui/react-roving-focus 1.1.19**
+- **@radix-ui/react-separator 1.1.15**
+- **@radix-ui/react-slot 1.3.3**
+- **@radix-ui/react-tooltip 1.2.16**
+- **@radix-ui/react-use-callback-ref 1.1.4**
+- **@radix-ui/react-use-controllable-state 1.2.6**
+- **@radix-ui/react-use-effect-event 0.0.5**
+- **@radix-ui/react-use-is-hydrated 0.1.3**
+- **@radix-ui/react-use-layout-effect 1.1.4**
+- **@radix-ui/react-use-size 1.1.4**
+- **@radix-ui/react-visually-hidden 1.2.11**
 - **@tailwindcss/typography 0.5.20**
 - **tailwindcss 4.3.3**
-- **@tanstack/history 1.162.0**
-- **@tanstack/query-core 5.101.2**
-- **@tanstack/react-query 5.101.2**
-- **@tanstack/react-router 1.170.18**
-- **@tanstack/router-core 1.171.15**
+- **@tanstack/history 1.162.1**
+- **@tanstack/query-core 5.101.4**
+- **@tanstack/react-query 5.101.4**
+- **@tanstack/react-router 1.170.24**
+- **@tanstack/router-core 1.171.20**
 - **@tanstack/react-store 0.9.3**
 - **@tanstack/store 0.9.3**
 - **@xterm/addon-fit 0.11.0**
@@ -475,14 +476,14 @@ SOFTWARE.
 - **mdast-util-phrasing 4.1.0**
 - **micromark-extension-gfm-footnote 2.1.0**
 - **property-information 7.2.0**
-- **react 19.2.7**
-- **react-dom 19.2.7**
+- **react 19.2.8**
+- **react-dom 19.2.8**
 - **scheduler 0.27.0**
 - **use-sync-external-store 1.6.0**
 - **react-markdown 10.1.0**
 - **react-remove-scroll-bar 2.3.8**
 - **remark-parse 11.0.0**
-- **sonner 2.0.7**
+- **sonner 2.0.8**
 - **style-to-js 1.1.21**
 - **style-to-object 1.0.14**
 - **tailwind-merge 3.6.0**
@@ -1378,8 +1379,8 @@ SOFTWARE.
 <details>
 <summary>Packages (2)</summary>
 
-- **@fontsource-variable/inter 5.2.8**
-- **@fontsource-variable/jetbrains-mono 5.2.8**
+- **@fontsource-variable/inter 5.3.0**
+- **@fontsource-variable/jetbrains-mono 5.3.0**
 
 </details>
 
@@ -1582,7 +1583,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 Summary of what the Rust half of the binary is licensed under:
 
-- **MIT License** (352)
+- **MIT License** (353)
 - **Unicode License v3** (19)
 - **Apache License 2.0** (13)
 - **BSD 3-Clause "New" or "Revised" License** (5)
@@ -2671,7 +2672,7 @@ Apache License
 - **bollard-stubs 1.45.0-rc.26.0.1**
 - **dunce 1.0.5**
 - **ryu 1.0.23**
-- **serial2 0.2.37**
+- **serial2 0.2.38**
 - **sync_wrapper 1.0.2**
 
 </details>
@@ -3322,9 +3323,9 @@ DEALINGS IN THE SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **cc 1.2.67**
+- **cc 1.4.2**
 - **cfg-if 1.0.4**
-- **find-msvc-tools 0.1.9**
+- **find-msvc-tools 0.1.10**
 - **pkg-config 0.3.33**
 - **socket2 0.6.5**
 
@@ -3431,10 +3432,10 @@ THE SOFTWARE.
 
 - **bitflags 1.3.2**
 - **bitflags 2.13.1**
-- **glob 0.3.3**
+- **glob 0.3.4**
 - **log 0.4.33**
 - **num-traits 0.2.19**
-- **regex-automata 0.4.16**
+- **regex-automata 0.4.18**
 - **regex-syntax 0.8.11**
 - **regex 1.13.1**
 
@@ -3515,7 +3516,7 @@ DEALINGS IN THE SOFTWARE.
 
 - **html5ever 0.38.0**
 - **markup5ever 0.38.0**
-- **web_atoms 0.2.5**
+- **web_atoms 0.2.6**
 
 </details>
 
@@ -3623,7 +3624,7 @@ DEALINGS IN THE SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **hyper 1.10.1**
+- **hyper 1.11.0**
 
 </details>
 
@@ -3655,9 +3656,9 @@ THE SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **either 1.16.0**
-- **serde_with 3.21.0**
-- **serde_with_macros 3.21.0**
+- **either 1.17.0**
+- **serde_with 3.22.0**
+- **serde_with_macros 3.22.0**
 
 </details>
 
@@ -4161,7 +4162,7 @@ DEALINGS IN THE SOFTWARE.
 <summary>Crates distributed under this notice</summary>
 
 - **hyper-rustls 0.27.9**
-- **rustls 0.23.42**
+- **rustls 0.23.43**
 
 </details>
 
@@ -4853,7 +4854,7 @@ THE SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **cookie 0.18.1**
+- **cookie 0.18.2**
 
 </details>
 
@@ -4930,7 +4931,7 @@ DEALINGS IN THE SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **http 1.4.2**
+- **http 1.5.0**
 
 </details>
 
@@ -6252,7 +6253,7 @@ DEALINGS IN THE SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **rustls-pki-types 1.15.0**
+- **rustls-pki-types 1.15.1**
 
 </details>
 
@@ -6427,10 +6428,10 @@ SOFTWARE.
 
 - **serde_spanned 1.1.1**
 - **toml 0.9.12+spec-1.1.0**
-- **toml 1.1.3+spec-1.1.0**
+- **toml 1.1.4+spec-1.1.0**
 - **toml_datetime 0.7.5+spec-1.1.0**
 - **toml_datetime 1.1.1+spec-1.1.0**
-- **toml_parser 1.1.2+spec-1.1.0**
+- **toml_parser 1.1.3+spec-1.1.0**
 - **toml_writer 1.1.2+spec-1.1.0**
 
 </details>
@@ -6496,8 +6497,8 @@ SOFTWARE.
 <summary>Crates distributed under this notice</summary>
 
 - **time-core 0.1.9**
-- **time-macros 0.2.31**
-- **time 0.3.53**
+- **time-macros 0.2.32**
+- **time 0.3.55**
 
 </details>
 
@@ -6529,7 +6530,7 @@ SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **libc 0.2.186**
+- **libc 0.2.189**
 
 </details>
 
@@ -6625,7 +6626,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **ipnet 2.12.0**
+- **ipnet 2.12.1**
 
 </details>
 
@@ -6719,7 +6720,7 @@ SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **zerocopy 0.8.54**
+- **zerocopy 0.8.56**
 
 </details>
 
@@ -7208,7 +7209,7 @@ SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **bytemuck 1.25.1**
+- **bytemuck 1.25.2**
 
 </details>
 
@@ -7299,7 +7300,7 @@ SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **tokio-macros 2.7.1**
+- **tokio-macros 2.7.2**
 
 </details>
 
@@ -7797,9 +7798,9 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **tokio-stream 0.1.18**
-- **tokio-util 0.7.18**
-- **tokio 1.53.0**
+- **tokio-stream 0.1.19**
+- **tokio-util 0.7.19**
+- **tokio 1.53.1**
 
 </details>
 
@@ -8014,38 +8015,39 @@ DEALINGS IN THE SOFTWARE.
 <summary>Crates distributed under this notice</summary>
 
 - **adler2 2.0.1**
-- **anyhow 1.0.103**
-- **async-trait 0.1.89**
+- **anyhow 1.0.104**
+- **async-trait 0.1.92**
 - **atomic-waker 1.1.2**
-- **camino 1.2.4**
+- **camino 1.2.5**
 - **cargo-platform 0.1.9**
 - **cargo_metadata 0.19.2**
-- **displaydoc 0.2.6**
+- **displaydoc 0.2.7**
 - **dtoa 1.0.11**
 - **dyn-clone 1.0.20**
 - **erased-serde 0.4.10**
 - **event-listener 5.4.2**
-- **fastrand 2.4.1**
+- **fastrand 2.5.0**
 - **itoa 1.0.18**
 - **once_cell 1.21.4**
 - **parking 2.2.1**
 - **pin-project-lite 0.2.17**
-- **proc-macro2 1.0.106**
-- **quote 1.0.46**
+- **proc-macro2 1.0.107**
+- **quote 1.0.47**
 - **semver 1.0.28**
 - **serde-untagged 0.1.9**
-- **serde 1.0.228**
-- **serde_core 1.0.228**
-- **serde_derive 1.0.228**
+- **serde 1.0.229**
+- **serde_core 1.0.229**
+- **serde_derive 1.0.229**
 - **serde_derive_internals 0.29.1**
-- **serde_json 1.0.150**
-- **serde_repr 0.1.20**
+- **serde_json 1.0.151**
+- **serde_repr 0.1.21**
 - **servo_arc 0.4.3**
 - **syn 2.0.119**
+- **syn 3.0.3**
 - **thiserror-impl 1.0.69**
-- **thiserror-impl 2.0.18**
+- **thiserror-impl 2.0.20**
 - **thiserror 1.0.69**
-- **thiserror 2.0.18**
+- **thiserror 2.0.20**
 - **typeid 1.0.3**
 - **unicode-ident 1.0.24**
 - **zmij 1.0.23**
@@ -8374,7 +8376,7 @@ THE SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **aho-corasick 1.1.4**
+- **aho-corasick 1.1.5**
 - **byteorder-lite 0.1.0**
 - **byteorder 1.5.0**
 - **memchr 2.8.3**
@@ -8843,7 +8845,7 @@ DEALINGS IN THE SOFTWARE.
 <details>
 <summary>Crates distributed under this notice</summary>
 
-- **open 5.4.0**
+- **open 5.4.1**
 
 </details>
 

@@ -8,7 +8,49 @@ do not edit it by hand. Only `feat`, `fix` and `perf` commits appear, plus
 anything marked breaking: those are the ones that change something for a person
 using the app. Each release says how many other commits it contains.
 
-## 0.1.0 — unreleased
+## 0.2.0 — unreleased
+
+### Added
+
+- **secrets** — environment variable manager (Ctrl+Shift+V) [`0160902`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/0160902b038b34687b29e4f5e95de384c379bb1d)
+- **security** — flag outdated dependencies (npm/pnpm; cargo reports Unsupported) [`51307ca`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/51307cab5d380a482c61b69e1f5fe7999edc69f6)
+- **security** — flag Docker containers running as root [`744b189`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/744b1895a848712cab08497406e882178562d4c1)
+- **security** — flag .env files that aren't gitignored [`9a6c820`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/9a6c8203997d03f764eb3340f3de1b4ab57c241c)
+- **toolbox** — five more tools — XML formatter, JSON to YAML, diff, Markdown preview, HTTP status lookup [`8da265c`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/8da265ccfc9ec4b8e10f79cb8f6dfe35a7159a23)
+- **security** — wire the security center to a real page (Ctrl+Shift+E) [`96972a4`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/96972a460d718a61cb17414a79928f7318bd9ab1)
+- **palette** — natural-language commands in the Command Palette (item 14) [`f5572d6`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/f5572d642a8a3b2b030f00a8c66d83556572d29e)
+- **security** — security center backend — git, secret scan, dependency audit [`a3d96a1`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/a3d96a18d657b4457a4d0c941afdf336c79f8065)
+- **toolbox** — built-in utility toolbox (roadmap item 17) [`818dc3f`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/818dc3f16d2688bb48970b66959e3d4b831e7a88)
+- **security** — redact secrets before AI tool output reaches the model [`241f8be`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/241f8befe2460888dacf255787692c2396349b85)
+- **mcp** — MCP client — server config, stdio handshake, tool discovery [`ab4def1`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/ab4def10f412ad45ffa8d3900f5af779fb580221)
+- **index** — "go to symbol" — jump to a declaration by name, Ctrl+T [`7dd8875`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/7dd88750e2fd81cac663232cfd4f7dee70dba85d)
+- **ai** — categorize project memory (architecture/convention/decision/known-issue) [`46119ed`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/46119edcc9a9021e5ded12f8556d9cf7ef1b2c46)
+- **system** — performance profiler — CPU/memory history and charts [`a7cb6de`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/a7cb6de77185101931f8a21c5c232ce228c377ad)
+- **api** — environments and {{VAR}} substitution for the API client [`1f6ecb9`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/1f6ecb9b48f2504fef63ca0732ff036877557bcf)
+- **ai** — git-aware tools — inspect a diff, commit, create a branch [`5785523`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/57855230c7e6d7a02a2c58ae05a925ce230bb71b)
+- **ai** — add a structured lint tool alongside run_tests [`a0e9df7`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/a0e9df7913d7d0b5af46be4519b2c96284286bc1)
+- **ai** — add a structured test-runner tool, and fix a provider-naming bug it surfaced [`d5c83b5`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/d5c83b5cb49c231f0ee99aef2f66793b89852ddd)
+- **ai** — extend tool calling to Ollama [`f94fe62`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/f94fe624467b5e4d6c5ae8f7d74f331127a99dea)
+- tell the user why DevOS could not start [`a2e69ef`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/a2e69ef086fd5b992eed602b56c794dab923bdea)
+
+### Fixed
+
+- **deps** — bump xcb 1.7.0 -> 1.7.1, dropping vulnerable quick-xml 0.30.0 [`05cf010`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/05cf010704e8be11c41a65ad196eef2319215a91)
+- **kernel** — serialize devos-kernel backup tests instead of widening the wait again [`b83aec4`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/b83aec4790c92c24abbed8a1275ab6e7bb8c86ac)
+- **kernel** — widen shm-release wait to 120s, correct the earlier theory [`0faaec1`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/0faaec1c5c2a6e1f2ba3e9f8fdd8370231b3fcc0)
+- **kernel** — widen the shm-release wait again — 30s still wasn't enough on CI [`efc4f35`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/efc4f35ffbbf16c5d10cac06b9200c37c63c23ac)
+- **kernel** — give CI enough time to see Windows release a memory-mapped file [`ac95890`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/ac958906094f6a01b273637094c3df59e6192e05)
+- **security** — stop sending the Gemini key to the Ollama endpoint [`b1d1be8`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/b1d1be8a80ae25276dad0d2c87360d6a445a8406)
+- **web** — make the first run survivable, starting with Ollama being unreachable [`8e00e4a`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/8e00e4a4abed3a069bf7c673bca5d1707615e14d)
+
+### Performance
+
+- **kernel** — move the daily backup off the boot path [`d7a9c46`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/d7a9c461c7706d656a4fa2df3f3ffdb445879fb1)
+- find where startup actually goes — 90-96% is WebView2 creation [`299da86`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/299da86bed32a64ab00a1051f1ee2f2e087e3ef3)
+
+_4 further commits in this release changed no user-facing behaviour (documentation, CI, tests, refactors) and are not listed. `git log` has them._
+
+## 0.1.0 — 2026-08-08
 
 ### Added
 
@@ -37,6 +79,7 @@ using the app. Each release says how many other commits it contains.
 
 ### Fixed
 
+- pin migration line endings, which decided whether the app starts at all [`c7a71a3`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/c7a71a3734f4eb03642c9680f3f99cbb89fbc32e)
 - **deps** — re-resolve nanoid to the patched 3.3.17 [`172b048`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/172b0484f3529516b4bc60d69c117318990e2c7f)
 - **security** — screenshot retention, path containment, prototype-chain themes [`8693faa`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/8693faa0037470663c968f61432d3de79babb782)
 - **plugin** — the sandbox did not hold on three axes it claimed to [`a2b9dbc`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/a2b9dbcb5e26b0a986d4fd693a04f576a6426da8)
@@ -49,5 +92,5 @@ using the app. Each release says how many other commits it contains.
 
 - **web** — defer the boot-blocking overlays, 650 kB -> 506 kB entry chunk [`66d9390`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/66d9390022bd64f0816b31eba7e4935b6794a43a)
 
-_20 further commits in this release changed no user-facing behaviour (documentation, CI, tests, refactors) and are not listed. `git log` has them._
+_21 further commits in this release changed no user-facing behaviour (documentation, CI, tests, refactors) and are not listed. `git log` has them._
 

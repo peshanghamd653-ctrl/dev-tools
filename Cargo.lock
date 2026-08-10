@@ -1069,7 +1069,7 @@ dependencies = [
 
 [[package]]
 name = "devos-ai"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1089,7 +1089,7 @@ dependencies = [
 
 [[package]]
 name = "devos-api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "devos-kernel",
@@ -1107,7 +1107,7 @@ dependencies = [
 
 [[package]]
 name = "devos-db"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "devos-kernel",
@@ -1125,7 +1125,7 @@ dependencies = [
 
 [[package]]
 name = "devos-deploy"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "devos-kernel",
  "reqwest 0.12.28",
@@ -1138,7 +1138,7 @@ dependencies = [
 
 [[package]]
 name = "devos-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "devos-ai",
@@ -1176,7 +1176,7 @@ dependencies = [
 
 [[package]]
 name = "devos-docker"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bollard",
  "devos-kernel",
@@ -1190,7 +1190,7 @@ dependencies = [
 
 [[package]]
 name = "devos-envfile"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "tempfile",
@@ -1200,7 +1200,7 @@ dependencies = [
 
 [[package]]
 name = "devos-git"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "devos-kernel",
  "serde",
@@ -1213,7 +1213,7 @@ dependencies = [
 
 [[package]]
 name = "devos-index"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1234,7 +1234,7 @@ dependencies = [
 
 [[package]]
 name = "devos-issue"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arboard",
  "devos-kernel",
@@ -1250,7 +1250,7 @@ dependencies = [
 
 [[package]]
 name = "devos-kernel"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "serde",
@@ -1266,7 +1266,7 @@ dependencies = [
 
 [[package]]
 name = "devos-mcp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "devos-kernel",
@@ -1283,7 +1283,7 @@ dependencies = [
 
 [[package]]
 name = "devos-monitor"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "devos-kernel",
@@ -1300,7 +1300,7 @@ dependencies = [
 
 [[package]]
 name = "devos-plugin"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "thiserror 2.0.20",
@@ -1311,14 +1311,14 @@ dependencies = [
 
 [[package]]
 name = "devos-redact"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "regex",
 ]
 
 [[package]]
 name = "devos-secrets"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -1334,7 +1334,7 @@ dependencies = [
 
 [[package]]
 name = "devos-security"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "devos-docker",
  "devos-git",
@@ -1349,7 +1349,7 @@ dependencies = [
 
 [[package]]
 name = "devos-snippets"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "devos-kernel",
@@ -1364,7 +1364,7 @@ dependencies = [
 
 [[package]]
 name = "devos-system"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "devos-kernel",
@@ -1381,7 +1381,7 @@ dependencies = [
 
 [[package]]
 name = "devos-terminal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",

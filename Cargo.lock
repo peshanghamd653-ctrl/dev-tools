@@ -1290,6 +1290,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "devos-security"
+version = "0.1.0"
+dependencies = [
+ "devos-git",
+ "devos-kernel",
+ "devos-redact",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "ts-rs",
+]
+
+[[package]]
 name = "devos-snippets"
 version = "0.1.0"
 dependencies = [

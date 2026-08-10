@@ -1420,6 +1420,17 @@ mod tests {
         (db_path, kernel)
     }
 
+    /// Held for the duration of every test that does a real on-disk restore
+    /// swap (anything that calls [`shut_down`]). Those tests run concurrently
+    /// within the same binary by default, which puts them in contention with
+    /// each other for actual OS-level disk I/O on the CI runner — the more
+    /// likely explanation for flakes that keep landing on a different test
+    /// each time, per the history in `shut_down`'s doc comment. Tests that
+    /// never touch the disk this way (staging validation, cancellation) are
+    /// left free to run in parallel as before.
+    static BACKUP_TEST_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+        std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
+
     /// Shut a kernel down the way process exit would, so the file is free for
     /// the next boot to rename. Windows will not rename a file with an open
     /// handle, which is exactly the constraint that put restore at boot.
@@ -1429,7 +1440,7 @@ mod tests {
     /// schedule, and a test that plants a fake one before that lands is
     /// testing the OS rather than the code.
     ///
-    /// The budget below is 120 s, widened four times now: 2s → 30s (2026-08-08,
+    /// The budget below is 120 s, widened four times: 2s → 30s (2026-08-08,
     /// the first time this crate's tests ran on a GitHub Actions Windows
     /// runner at all) → 60s → 120s (2026-08-10). Each widening was chasing the
     /// identical panic, `SQLite never released ...-shm`, which is the tell
@@ -1448,17 +1459,19 @@ mod tests {
     /// Defender exclusion for the runner's temp directory was added
     /// alongside the 60s→120s widening on the chance it helps (real-time
     /// scanning of a freshly-written backup file remains a plausible partial
-    /// cause), but it did not fix the 60s failure on its own, so it is not
-    /// being credited as a fix here — only the widened budget is.
+    /// cause), but it did not fix the 60s failure on its own, so it was not
+    /// credited as a fix.
     ///
-    /// If this recurs at 120 s, the next step should stop being "widen
-    /// again" and become "serialize this module's tests against each other"
-    /// (they currently run concurrently within the same binary, competing
-    /// for the same temp-directory I/O) — a structural change, not another
-    /// number. Costs nothing on the common path either way: the loop
-    /// returns the moment the sidecar is gone, almost always within the
-    /// first iteration, and the full budget is only ever spent on a genuine
-    /// hang.
+    /// At 120 s the failure changed shape again: `sidecars_do_not_survive_the_swap`
+    /// failed not inside this wait loop (no `SQLite never released` panic —
+    /// the loop returned fine) but two steps later, when `apply_pending_restore`
+    /// came back `Refused` instead of `Restored`. That rules out "the wait
+    /// budget is still too small" — the budget was never the bottleneck this
+    /// time, something later in the same file-swap machinery hit contention
+    /// instead. Per the plan recorded here at the 60s→120s widening, the next
+    /// step is not a fifth number; it is [`BACKUP_TEST_LOCK`], serializing
+    /// every test that does real file swaps against the same kind of disk
+    /// contention, regardless of which specific step it lands on.
     async fn shut_down(kernel: crate::Kernel, db_path: &Path) {
         kernel.pool.close().await;
         drop(kernel);
@@ -1650,6 +1663,7 @@ mod tests {
     /// rows are readable *and* the database that was replaced is preserved.
     #[tokio::test]
     async fn restoring_installs_the_backup_and_preserves_what_it_replaced() {
+        let _serialize = BACKUP_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let (db_path, kernel) = booted(dir.path(), "In the backup").await;
         let backup = snapshot_now(&kernel.pool, &db_path, "2024-05-05").await;
@@ -1718,6 +1732,7 @@ mod tests {
     /// the preserved database — the one fact needed to undo a mistaken restore.
     #[tokio::test]
     async fn a_restore_announces_itself_and_names_the_preserved_database() {
+        let _serialize = BACKUP_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let (db_path, kernel) = booted(dir.path(), "Original").await;
         let backup = snapshot_now(&kernel.pool, &db_path, "2024-05-05").await;
@@ -1756,6 +1771,7 @@ mod tests {
     /// the database that was just replaced. Both sidecars must be gone.
     #[tokio::test]
     async fn sidecars_do_not_survive_the_swap() {
+        let _serialize = BACKUP_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let (db_path, kernel) = booted(dir.path(), "In the backup").await;
         let backup = snapshot_now(&kernel.pool, &db_path, "2024-05-05").await;
@@ -1791,6 +1807,7 @@ mod tests {
     /// does not sit there being ambiguous forever.
     #[tokio::test]
     async fn a_stage_that_never_committed_is_swept_and_never_applied() {
+        let _serialize = BACKUP_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let (db_path, kernel) = booted(dir.path(), "Untouched").await;
         let backup = snapshot_now(&kernel.pool, &db_path, "2024-05-05").await;
@@ -1834,6 +1851,7 @@ mod tests {
     /// without one is proof the restore finished — not a reason to redo it.
     #[tokio::test]
     async fn a_marker_left_after_the_swap_does_not_restore_twice() {
+        let _serialize = BACKUP_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let (db_path, kernel) = booted(dir.path(), "Restored already").await;
         let backup = snapshot_now(&kernel.pool, &db_path, "2024-05-05").await;
@@ -1866,6 +1884,7 @@ mod tests {
     /// that cannot destroy anything.
     #[tokio::test]
     async fn a_half_written_marker_is_not_a_request() {
+        let _serialize = BACKUP_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let (db_path, kernel) = booted(dir.path(), "Untouched").await;
         let backup = snapshot_now(&kernel.pool, &db_path, "2024-05-05").await;
@@ -1893,6 +1912,7 @@ mod tests {
     /// recovering *from* is worse than a restore that did not happen.
     #[tokio::test]
     async fn a_restore_that_cannot_preserve_the_current_database_is_refused() {
+        let _serialize = BACKUP_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let (db_path, kernel) = booted(dir.path(), "Only copy").await;
         // Snapshot somewhere other than `backups/`, which is about to become
@@ -1941,6 +1961,7 @@ mod tests {
 
     #[tokio::test]
     async fn staging_again_replaces_the_previous_request() {
+        let _serialize = BACKUP_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let (db_path, kernel) = booted(dir.path(), "First").await;
         let first = snapshot_now(&kernel.pool, &db_path, "2024-05-05").await;
@@ -1969,6 +1990,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancelling_removes_the_request_entirely() {
+        let _serialize = BACKUP_TEST_LOCK.lock().await;
         let dir = tempfile::tempdir().unwrap();
         let (db_path, kernel) = booted(dir.path(), "Kept").await;
         let backup = snapshot_now(&kernel.pool, &db_path, "2024-05-05").await;

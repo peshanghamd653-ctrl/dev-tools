@@ -12,7 +12,8 @@ import { useUiStore } from "@/shared/stores/ui";
  *   Ctrl+Shift+D  deployments    Ctrl+Shift+N  snippets
  *   Ctrl+Shift+M  MCP servers    Ctrl+Shift+S  report a bug
  *   Ctrl+Shift+U  toolbox        Ctrl+Shift+E  security
- *   Ctrl+Shift+V  env variables  Ctrl+,  settings
+ *   Ctrl+Shift+V  env variables  Ctrl+Shift+B  browser
+ *   Ctrl+,  settings
  */
 export function useGlobalHotkeys() {
   const navigate = useNavigate();
@@ -65,6 +66,12 @@ export function useGlobalHotkeys() {
           // the shell there is no rich-text field for that to apply to.
           e.preventDefault();
           void navigate({ to: "/env" });
+        }
+        if (e.code === "KeyB") {
+          // Ctrl+B (unmodified, below) already toggles the sidebar; Shift
+          // distinguishes this from that rather than colliding with it.
+          e.preventDefault();
+          void navigate({ to: "/browser" });
         }
         return;
       }

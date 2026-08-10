@@ -3,6 +3,7 @@ mod api_commands;
 mod approvals;
 mod audit_commands;
 mod backup_commands;
+mod browser_commands;
 mod commands;
 mod core_module;
 mod db_commands;
@@ -515,6 +516,7 @@ pub fn run() {
                 startup_ms,
                 db_path: db_path.display().to_string(),
                 data_dir,
+                browser: std::sync::Mutex::new(None),
             });
             Ok(())
         })
@@ -629,6 +631,14 @@ pub fn run() {
             snippet_commands::snippets_search,
             snippet_commands::snippet_save,
             snippet_commands::snippet_delete,
+            browser_commands::browser_open,
+            browser_commands::browser_navigate,
+            browser_commands::browser_reload,
+            browser_commands::browser_back,
+            browser_commands::browser_forward,
+            browser_commands::browser_set_bounds,
+            browser_commands::browser_hide,
+            browser_commands::browser_open_devtools,
         ]);
     let plugins_registered_us = phase.elapsed().as_micros() as u64;
 

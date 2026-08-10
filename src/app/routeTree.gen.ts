@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AiRouteImport } from './routes/ai'
 import { Route as ApiRouteImport } from './routes/api'
+import { Route as BrowserRouteImport } from './routes/browser'
 import { Route as DatabaseRouteImport } from './routes/database'
 import { Route as DeployRouteImport } from './routes/deploy'
 import { Route as DockerRouteImport } from './routes/docker'
@@ -40,6 +41,11 @@ const AiRoute = AiRouteImport.update({
 const ApiRoute = ApiRouteImport.update({
   id: '/api',
   path: '/api',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BrowserRoute = BrowserRouteImport.update({
+  id: '/browser',
+  path: '/browser',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DatabaseRoute = DatabaseRouteImport.update({
@@ -117,6 +123,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
   '/api': typeof ApiRoute
+  '/browser': typeof BrowserRoute
   '/database': typeof DatabaseRoute
   '/deploy': typeof DeployRoute
   '/docker': typeof DockerRoute
@@ -136,6 +143,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
   '/api': typeof ApiRoute
+  '/browser': typeof BrowserRoute
   '/database': typeof DatabaseRoute
   '/deploy': typeof DeployRoute
   '/docker': typeof DockerRoute
@@ -156,6 +164,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
   '/api': typeof ApiRoute
+  '/browser': typeof BrowserRoute
   '/database': typeof DatabaseRoute
   '/deploy': typeof DeployRoute
   '/docker': typeof DockerRoute
@@ -177,6 +186,7 @@ export interface FileRouteTypes {
     | '/'
     | '/ai'
     | '/api'
+    | '/browser'
     | '/database'
     | '/deploy'
     | '/docker'
@@ -196,6 +206,7 @@ export interface FileRouteTypes {
     | '/'
     | '/ai'
     | '/api'
+    | '/browser'
     | '/database'
     | '/deploy'
     | '/docker'
@@ -215,6 +226,7 @@ export interface FileRouteTypes {
     | '/'
     | '/ai'
     | '/api'
+    | '/browser'
     | '/database'
     | '/deploy'
     | '/docker'
@@ -235,6 +247,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AiRoute: typeof AiRoute
   ApiRoute: typeof ApiRoute
+  BrowserRoute: typeof BrowserRoute
   DatabaseRoute: typeof DatabaseRoute
   DeployRoute: typeof DeployRoute
   DockerRoute: typeof DockerRoute
@@ -272,6 +285,13 @@ declare module '@tanstack/react-router' {
       path: '/api'
       fullPath: '/api'
       preLoaderRoute: typeof ApiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/browser': {
+      id: '/browser'
+      path: '/browser'
+      fullPath: '/browser'
+      preLoaderRoute: typeof BrowserRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/database': {
@@ -379,6 +399,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AiRoute: AiRoute,
   ApiRoute: ApiRoute,
+  BrowserRoute: BrowserRoute,
   DatabaseRoute: DatabaseRoute,
   DeployRoute: DeployRoute,
   DockerRoute: DockerRoute,

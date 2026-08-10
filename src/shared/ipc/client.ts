@@ -417,6 +417,22 @@ export const ipc = {
   snippetSave: (draft: SnippetDraft) =>
     call<Snippet>("snippet_save", { draft }),
   snippetDelete: (id: string) => call<void>("snippet_delete", { id }),
+
+  browserOpen: (
+    url: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ) => call<void>("browser_open", { url, x, y, width, height }),
+  browserNavigate: (url: string) => call<void>("browser_navigate", { url }),
+  browserReload: () => call<void>("browser_reload"),
+  browserBack: () => call<void>("browser_back"),
+  browserForward: () => call<void>("browser_forward"),
+  browserSetBounds: (x: number, y: number, width: number, height: number) =>
+    call<void>("browser_set_bounds", { x, y, width, height }),
+  browserHide: () => call<void>("browser_hide"),
+  browserOpenDevtools: () => call<void>("browser_open_devtools"),
 };
 
 /** Subscribe to the kernel event stream. Returns an unsubscribe function. */
@@ -427,6 +443,28 @@ export function onKernelEvent(
   let unlisten: UnlistenFn | undefined;
   let cancelled = false;
   void listen<KernelEvent>("devos://event", (e) => handler(e.payload)).then(
+    (fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    },
+  );
+  return () => {
+    cancelled = true;
+    unlisten?.();
+  };
+}
+
+/**
+ * Subscribe to the embedded browser pane's navigation events — fired for
+ * every URL it lands on, including navigation the user triggers *inside*
+ * the page (clicking a link), not just calls this app makes. Returns an
+ * unsubscribe function, same shape as {@link onKernelEvent}.
+ */
+export function onBrowserNav(handler: (url: string) => void): () => void {
+  if (!isDesktopShell()) return () => {};
+  let unlisten: UnlistenFn | undefined;
+  let cancelled = false;
+  void listen<string>("devos://browser-nav", (e) => handler(e.payload)).then(
     (fn) => {
       if (cancelled) fn();
       else unlisten = fn;

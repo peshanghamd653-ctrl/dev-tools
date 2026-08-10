@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use devos_ai::AiRegistry;
 use devos_db::DbManager;
@@ -34,4 +34,8 @@ pub struct AppState {
     /// path nothing ever opened — the worst kind of diagnostic, since it looks
     /// authoritative while pointing at the wrong file.
     pub db_path: String,
+    /// The embedded browser pane's child webview, if the Browser page has
+    /// ever been opened this run — see `browser_commands.rs`. `None` until
+    /// then; never torn down once created, only hidden.
+    pub browser: Mutex<Option<tauri::Webview>>,
 }

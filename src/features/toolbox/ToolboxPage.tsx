@@ -2,12 +2,17 @@ import { useState } from "react";
 import {
   Braces,
   Copy,
+  Diff,
+  FileCode,
   FileKey,
+  FileText,
   Hash,
   Link2,
   Regex,
   Wrench,
 } from "lucide-react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 
 import { cn } from "@/shared/lib/utils";
@@ -18,26 +23,48 @@ import {
   base64Decode,
   base64Encode,
   decodeJwt,
+  diffLines,
   formatJson,
+  formatXml,
   hashText,
+  jsonToYaml,
+  lookupHttpStatus,
   minifyJson,
   testRegex,
   urlDecode,
   urlEncode,
+  type DiffLine,
   type HashAlgorithm,
   type ToolResult,
 } from "./utils";
 
-type ToolId = "json" | "base64" | "url" | "uuid" | "hash" | "jwt" | "regex";
+type ToolId =
+  | "json"
+  | "base64"
+  | "url"
+  | "uuid"
+  | "hash"
+  | "jwt"
+  | "regex"
+  | "xml"
+  | "yaml"
+  | "diff"
+  | "markdown"
+  | "http-status";
 
 const TOOLS: { id: ToolId; label: string; icon: typeof Braces }[] = [
   { id: "json", label: "JSON Formatter", icon: Braces },
+  { id: "yaml", label: "JSON to YAML", icon: FileCode },
+  { id: "xml", label: "XML Formatter", icon: FileCode },
+  { id: "markdown", label: "Markdown Preview", icon: FileText },
+  { id: "diff", label: "Text/JSON Diff", icon: Diff },
   { id: "base64", label: "Base64", icon: FileKey },
   { id: "url", label: "URL Encode/Decode", icon: Link2 },
   { id: "uuid", label: "UUID Generator", icon: Wrench },
   { id: "hash", label: "Hash Generator", icon: Hash },
   { id: "jwt", label: "JWT Decoder", icon: FileKey },
   { id: "regex", label: "Regex Tester", icon: Regex },
+  { id: "http-status", label: "HTTP Status Lookup", icon: Wrench },
 ];
 
 /**
@@ -75,12 +102,17 @@ export function ToolboxPage() {
 
       <section className="min-h-0 overflow-y-auto p-6">
         {active === "json" && <JsonFormatterTool />}
+        {active === "yaml" && <JsonToYamlTool />}
+        {active === "xml" && <XmlFormatterTool />}
+        {active === "markdown" && <MarkdownPreviewTool />}
+        {active === "diff" && <DiffTool />}
         {active === "base64" && <Base64Tool />}
         {active === "url" && <UrlEncodeTool />}
         {active === "uuid" && <UuidTool />}
         {active === "hash" && <HashTool />}
         {active === "jwt" && <JwtDecoderTool />}
         {active === "regex" && <RegexTesterTool />}
+        {active === "http-status" && <HttpStatusTool />}
       </section>
     </div>
   );
@@ -188,6 +220,60 @@ function JsonFormatterTool() {
           Minify
         </Button>
       </div>
+      <ResultPane result={result} />
+    </ToolShell>
+  );
+}
+
+function JsonToYamlTool() {
+  const [input, setInput] = useState("");
+  const [result, setResult] = useState<ToolResult | null>(null);
+
+  return (
+    <ToolShell
+      title="JSON to YAML"
+      description="Converts JSON to YAML. One direction only — reading arbitrary YAML back to JSON needs a real parser, not a hand-rolled one."
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="yaml-input">Input</Label>
+        <TextArea
+          id="yaml-input"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder='{"key": "value"}'
+          rows={8}
+        />
+      </div>
+      <Button size="sm" onClick={() => setResult(jsonToYaml(input))}>
+        Convert
+      </Button>
+      <ResultPane result={result} />
+    </ToolShell>
+  );
+}
+
+function XmlFormatterTool() {
+  const [input, setInput] = useState("");
+  const [result, setResult] = useState<ToolResult | null>(null);
+
+  return (
+    <ToolShell
+      title="XML Formatter"
+      description="Pretty-print and validate XML."
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="xml-input">Input</Label>
+        <TextArea
+          id="xml-input"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="<root><child>value</child></root>"
+          rows={8}
+        />
+      </div>
+      <Button size="sm" onClick={() => setResult(formatXml(input))}>
+        Format
+      </Button>
       <ResultPane result={result} />
     </ToolShell>
   );
@@ -491,6 +577,132 @@ function RegexTesterTool() {
           )}
         </div>
       )}
+    </ToolShell>
+  );
+}
+
+function MarkdownPreviewTool() {
+  const [input, setInput] = useState("");
+
+  return (
+    <ToolShell
+      title="Markdown Preview"
+      description="Renders Markdown (GitHub-flavored) as you type."
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="markdown-input">Input</Label>
+        <TextArea
+          id="markdown-input"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="# Heading&#10;&#10;Some **text**."
+          rows={8}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label>Preview</Label>
+        <div
+          className="prose prose-sm prose-invert max-w-none rounded-md border px-3 py-2 prose-pre:bg-muted prose-pre:text-xs"
+          data-testid="markdown-preview"
+        >
+          <Markdown remarkPlugins={[remarkGfm]}>{input}</Markdown>
+        </div>
+      </div>
+    </ToolShell>
+  );
+}
+
+function diffLineClass(type: DiffLine["type"]): string {
+  if (type === "added") return "bg-emerald-500/10 text-emerald-300";
+  if (type === "removed") return "bg-red-500/10 text-red-300";
+  return "";
+}
+
+function diffLinePrefix(type: DiffLine["type"]): string {
+  if (type === "added") return "+";
+  if (type === "removed") return "-";
+  return " ";
+}
+
+function DiffTool() {
+  const [left, setLeft] = useState("");
+  const [right, setRight] = useState("");
+  const [lines, setLines] = useState<DiffLine[] | null>(null);
+
+  return (
+    <ToolShell
+      title="Text/JSON Diff"
+      description="Line-by-line diff. Paste two versions of the same text — or two formattings of the same JSON — to compare."
+    >
+      <div className="flex gap-3">
+        <div className="flex-1 space-y-1.5">
+          <Label htmlFor="diff-left">Original</Label>
+          <TextArea
+            id="diff-left"
+            value={left}
+            onChange={(e) => setLeft(e.target.value)}
+            rows={8}
+          />
+        </div>
+        <div className="flex-1 space-y-1.5">
+          <Label htmlFor="diff-right">Changed</Label>
+          <TextArea
+            id="diff-right"
+            value={right}
+            onChange={(e) => setRight(e.target.value)}
+            rows={8}
+          />
+        </div>
+      </div>
+      <Button size="sm" onClick={() => setLines(diffLines(left, right))}>
+        Compare
+      </Button>
+      {lines && (
+        <pre
+          className="overflow-x-auto rounded-md border px-2.5 py-1.5 font-mono text-xs"
+          aria-label="Diff result"
+        >
+          {lines.map((line, i) => (
+            <div key={i} className={diffLineClass(line.type)}>
+              {diffLinePrefix(line.type)} {line.text}
+            </div>
+          ))}
+        </pre>
+      )}
+    </ToolShell>
+  );
+}
+
+function HttpStatusTool() {
+  const [query, setQuery] = useState("");
+  const results = lookupHttpStatus(query);
+
+  return (
+    <ToolShell
+      title="HTTP Status Lookup"
+      description="Search status codes by number or name."
+    >
+      <div className="space-y-1.5">
+        <Label htmlFor="status-query">Search</Label>
+        <Input
+          id="status-query"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="404, not found, timeout…"
+        />
+      </div>
+      <ul className="space-y-1" aria-label="HTTP status codes">
+        {results.map((status) => (
+          <li key={status.code} className="rounded-md border px-2.5 py-1.5">
+            <p className="font-mono text-xs">
+              <span className="font-semibold">{status.code}</span> {status.text}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {status.description}
+            </p>
+          </li>
+        ))}
+      </ul>
     </ToolShell>
   );
 }

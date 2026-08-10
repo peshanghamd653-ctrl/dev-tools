@@ -3,8 +3,12 @@ import {
   base64Decode,
   base64Encode,
   decodeJwt,
+  diffLines,
   formatJson,
+  formatXml,
   hashText,
+  jsonToYaml,
+  lookupHttpStatus,
   minifyJson,
   testRegex,
   urlDecode,
@@ -133,5 +137,123 @@ describe("testRegex", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.matches).toHaveLength(4);
+  });
+});
+
+describe("formatXml", () => {
+  it("indents nested elements", () => {
+    const result = formatXml("<a><b>1</b><c>2</c></a>");
+    expect(result).toEqual({
+      ok: true,
+      result: "<a>\n  <b>1</b>\n  <c>2</c>\n</a>",
+    });
+  });
+
+  it("preserves attributes", () => {
+    const result = formatXml('<a x="1"><b>hi</b></a>');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.result).toContain('<a x="1">');
+  });
+
+  it("self-closes an empty element", () => {
+    expect(formatXml("<a><b/></a>")).toEqual({
+      ok: true,
+      result: "<a>\n  <b />\n</a>",
+    });
+  });
+
+  it("reports a parse error rather than throwing", () => {
+    expect(formatXml("<a><b></a>").ok).toBe(false);
+  });
+
+  it("rejects empty input", () => {
+    expect(formatXml("   ").ok).toBe(false);
+  });
+});
+
+describe("diffLines", () => {
+  it("marks identical text as entirely unchanged", () => {
+    const result = diffLines("a\nb\nc", "a\nb\nc");
+    expect(result.every((l) => l.type === "same")).toBe(true);
+  });
+
+  it("finds an added line", () => {
+    const result = diffLines("a\nc", "a\nb\nc");
+    expect(result).toEqual([
+      { type: "same", text: "a" },
+      { type: "added", text: "b" },
+      { type: "same", text: "c" },
+    ]);
+  });
+
+  it("finds a removed line", () => {
+    const result = diffLines("a\nb\nc", "a\nc");
+    expect(result).toEqual([
+      { type: "same", text: "a" },
+      { type: "removed", text: "b" },
+      { type: "same", text: "c" },
+    ]);
+  });
+
+  it("handles a full replacement", () => {
+    const result = diffLines("old", "new");
+    expect(result).toEqual([
+      { type: "removed", text: "old" },
+      { type: "added", text: "new" },
+    ]);
+  });
+});
+
+describe("jsonToYaml", () => {
+  it("renders a flat object", () => {
+    expect(jsonToYaml('{"a":1,"b":"two"}')).toEqual({
+      ok: true,
+      result: "a: 1\nb: two",
+    });
+  });
+
+  it("renders nested objects and arrays", () => {
+    const result = jsonToYaml('{"a":{"b":[1,2]},"c":null}');
+    expect(result).toEqual({
+      ok: true,
+      result: "a:\n  b:\n    - 1\n    - 2\nc: null",
+    });
+  });
+
+  it("quotes a string that would otherwise parse as another type", () => {
+    expect(jsonToYaml('{"a":"true"}')).toEqual({
+      ok: true,
+      result: 'a: "true"',
+    });
+  });
+
+  it("renders an array of objects", () => {
+    const result = jsonToYaml('[{"a":1},{"a":2}]');
+    expect(result).toEqual({
+      ok: true,
+      result: "- a: 1\n- a: 2",
+    });
+  });
+
+  it("reports a parse error rather than throwing", () => {
+    expect(jsonToYaml("{not json").ok).toBe(false);
+  });
+});
+
+describe("lookupHttpStatus", () => {
+  it("returns everything for an empty query", () => {
+    expect(lookupHttpStatus("").length).toBeGreaterThan(30);
+  });
+
+  it("finds a status by exact code", () => {
+    const result = lookupHttpStatus("404");
+    expect(result).toHaveLength(1);
+    expect(result[0]!.text).toBe("Not Found");
+  });
+
+  it("finds statuses by text, case-insensitively", () => {
+    const result = lookupHttpStatus("not found");
+    expect(result.some((s) => s.code === 404)).toBe(true);
   });
 });

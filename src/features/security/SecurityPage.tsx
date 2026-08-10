@@ -15,6 +15,7 @@ import { useActiveWorkspace } from "@/features/workspaces/hooks";
 import {
   isDesktopShell,
   type DependencyCheck,
+  type EnvFileCheck,
   type GitCheck,
   type SecretScan,
   type SecurityReport,
@@ -49,6 +50,15 @@ function buildFixPrompt(report: SecurityReport): string {
         "value should be rotated (you cannot rotate it yourself).",
     );
   }
+  for (const file of report.envFiles.files) {
+    lines.push(
+      `- ${file} is not covered by .gitignore, so it would be committed as-is. ` +
+        "Add a rule for it (or the pattern it matches) to .gitignore. Do not " +
+        "commit the file to remove it from tracking if it's already tracked — " +
+        "check first, and if it is, explain that removing it from history is a " +
+        "separate step you cannot do yourself.",
+    );
+  }
   for (const dep of report.dependencies) {
     if (dep.status === "vulnerable") {
       lines.push(
@@ -64,6 +74,7 @@ function hasIssues(report: SecurityReport): boolean {
   return (
     !report.git.clean ||
     report.secrets.findings.length > 0 ||
+    report.envFiles.files.length > 0 ||
     report.dependencies.some((d) => d.status === "vulnerable")
   );
 }
@@ -98,8 +109,8 @@ export function SecurityPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Security</h1>
           <p className="text-sm text-muted-foreground">
-            Git cleanliness, a secret scan, and a dependency vulnerability audit
-            for {project.name}.
+            Git cleanliness, a secret scan, unignored .env files, and a
+            dependency vulnerability audit for {project.name}.
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -145,6 +156,7 @@ export function SecurityPage() {
         <div className="space-y-3">
           <GitSection check={report.git} />
           <SecretsSection scan={report.secrets} />
+          <EnvFilesSection check={report.envFiles} />
           {report.dependencies.map((check) => (
             <DependencySection key={check.ecosystem} check={check} />
           ))}
@@ -227,6 +239,32 @@ function SecretsSection({ scan }: { scan: SecretScan }) {
           {scan.findings.map((finding, i) => (
             <li key={i} className="font-mono text-xs text-muted-foreground">
               {finding.file}:{finding.line} — {finding.kind}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EnvFilesSection({ check }: { check: EnvFileCheck }) {
+  if (check.files.length === 0) {
+    return <StatusRow ok title="No unignored .env files" />;
+  }
+  return (
+    <Card className="gap-0 py-3">
+      <CardContent className="space-y-2 px-4">
+        <div className="flex items-start gap-3">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-yellow-300" />
+          <p className="text-sm">
+            {check.files.length} .env file
+            {check.files.length === 1 ? "" : "s"} not covered by .gitignore
+          </p>
+        </div>
+        <ul className="space-y-1 pl-7">
+          {check.files.map((file) => (
+            <li key={file} className="font-mono text-xs text-muted-foreground">
+              {file}
             </li>
           ))}
         </ul>

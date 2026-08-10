@@ -36,6 +36,7 @@ import type { DeployProject } from "./bindings/DeployProject";
 import type { Deployment } from "./bindings/Deployment";
 import type { DockerContainer } from "./bindings/DockerContainer";
 import type { DockerImage } from "./bindings/DockerImage";
+import type { EnvFileCheck } from "./bindings/EnvFileCheck";
 import type { GitBranch } from "./bindings/GitBranch";
 import type { GitCheck } from "./bindings/GitCheck";
 import type { GitCommit } from "./bindings/GitCommit";
@@ -104,6 +105,7 @@ export type {
   Deployment,
   DockerContainer,
   DockerImage,
+  EnvFileCheck,
   GitBranch,
   GitCheck,
   GitCommit,

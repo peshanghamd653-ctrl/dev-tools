@@ -152,22 +152,25 @@ fn extract_count(stdout: &str, path: &[&str]) -> Option<i64> {
     cursor.as_i64()
 }
 
-fn not_installed(stderr: &str) -> bool {
+/// `pub(crate)` — shared with `outdated`, which spawns the same family of
+/// tools (`cargo`/`npm`/`pnpm`) and hits the identical "not installed" text
+/// on both platforms.
+pub(crate) fn not_installed(stderr: &str) -> bool {
     let lower = stderr.to_lowercase();
     lower.contains("no such command") || lower.contains("is not recognized")
 }
 
-fn first_line(text: &str) -> Option<String> {
+pub(crate) fn first_line(text: &str) -> Option<String> {
     let line = text.lines().find(|l| !l.trim().is_empty())?;
     Some(line.trim().to_string())
 }
 
-struct RunOutput {
-    stdout: String,
-    stderr: String,
+pub(crate) struct RunOutput {
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
 }
 
-async fn run(command: &str, cwd: &Path) -> Result<RunOutput, String> {
+pub(crate) async fn run(command: &str, cwd: &Path) -> Result<RunOutput, String> {
     let mut cmd = if cfg!(windows) {
         let mut c = tokio::process::Command::new("cmd");
         c.args(["/C", command]);

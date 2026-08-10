@@ -39,6 +39,8 @@ import type { DockerImage } from "./bindings/DockerImage";
 import type { DockerRootCheck } from "./bindings/DockerRootCheck";
 import type { DockerRootStatus } from "./bindings/DockerRootStatus";
 import type { EnvFileCheck } from "./bindings/EnvFileCheck";
+import type { OutdatedCheck } from "./bindings/OutdatedCheck";
+import type { OutdatedStatus } from "./bindings/OutdatedStatus";
 import type { GitBranch } from "./bindings/GitBranch";
 import type { GitCheck } from "./bindings/GitCheck";
 import type { GitCommit } from "./bindings/GitCommit";
@@ -110,6 +112,8 @@ export type {
   DockerRootCheck,
   DockerRootStatus,
   EnvFileCheck,
+  OutdatedCheck,
+  OutdatedStatus,
   GitBranch,
   GitCheck,
   GitCommit,

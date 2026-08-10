@@ -3,6 +3,7 @@ import type { DependencyCheck } from "./DependencyCheck";
 import type { DockerRootCheck } from "./DockerRootCheck";
 import type { EnvFileCheck } from "./EnvFileCheck";
 import type { GitCheck } from "./GitCheck";
+import type { OutdatedCheck } from "./OutdatedCheck";
 import type { SecretScan } from "./SecretScan";
 
-export type SecurityReport = { git: GitCheck, secrets: SecretScan, envFiles: EnvFileCheck, dockerRoot: DockerRootCheck, dependencies: Array<DependencyCheck>, };
+export type SecurityReport = { git: GitCheck, secrets: SecretScan, envFiles: EnvFileCheck, dockerRoot: DockerRootCheck, dependencies: Array<DependencyCheck>, outdated: Array<OutdatedCheck>, };

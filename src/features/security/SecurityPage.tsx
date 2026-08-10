@@ -18,6 +18,7 @@ import {
   type DockerRootCheck,
   type EnvFileCheck,
   type GitCheck,
+  type OutdatedCheck,
   type SecretScan,
   type SecurityReport,
 } from "@/shared/ipc/client";
@@ -75,6 +76,14 @@ function buildFixPrompt(report: SecurityReport): string {
       );
     }
   }
+  for (const dep of report.outdated) {
+    if (dep.status === "outdated") {
+      lines.push(
+        `- ${dep.outdatedCount} outdated ${dep.ecosystem} package${dep.outdatedCount === 1 ? "" : "s"}. ` +
+          `Run the ${dep.ecosystem} outdated tool to see which ones, and update what's safe to update.`,
+      );
+    }
+  }
   return lines.join("\n");
 }
 
@@ -84,7 +93,8 @@ function hasIssues(report: SecurityReport): boolean {
     report.secrets.findings.length > 0 ||
     report.envFiles.files.length > 0 ||
     report.dockerRoot.status === "runningAsRoot" ||
-    report.dependencies.some((d) => d.status === "vulnerable")
+    report.dependencies.some((d) => d.status === "vulnerable") ||
+    report.outdated.some((d) => d.status === "outdated")
   );
 }
 
@@ -119,8 +129,8 @@ export function SecurityPage() {
           <h1 className="text-xl font-semibold tracking-tight">Security</h1>
           <p className="text-sm text-muted-foreground">
             Git cleanliness, a secret scan, unignored .env files, Docker
-            containers running as root, and a dependency vulnerability audit for{" "}
-            {project.name}.
+            containers running as root, dependency vulnerabilities, and outdated
+            packages for {project.name}.
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -170,6 +180,9 @@ export function SecurityPage() {
           <DockerRootSection check={report.dockerRoot} />
           {report.dependencies.map((check) => (
             <DependencySection key={check.ecosystem} check={check} />
+          ))}
+          {report.outdated.map((check) => (
+            <OutdatedSection key={check.ecosystem} check={check} />
           ))}
         </div>
       )}
@@ -353,6 +366,45 @@ function DependencySection({ check }: { check: DependencyCheck }) {
     <StatusRow
       ok={false}
       title={`${check.ecosystem} audit failed`}
+      detail={check.detail ?? undefined}
+    />
+  );
+}
+
+function OutdatedSection({ check }: { check: OutdatedCheck }) {
+  if (check.status === "ok") {
+    return <StatusRow ok title={`No outdated ${check.ecosystem} packages`} />;
+  }
+  if (check.status === "outdated") {
+    return (
+      <StatusRow
+        ok={false}
+        title={`${check.outdatedCount} outdated ${check.ecosystem} package${check.outdatedCount === 1 ? "" : "s"}`}
+      />
+    );
+  }
+  if (check.status === "toolNotInstalled") {
+    return (
+      <StatusRow
+        ok={false}
+        title={`${check.ecosystem} outdated check not run`}
+        detail={check.detail ?? undefined}
+      />
+    );
+  }
+  if (check.status === "unsupported") {
+    return (
+      <StatusRow
+        ok={false}
+        title={`${check.ecosystem} outdated check not supported yet`}
+        detail={check.detail ?? undefined}
+      />
+    );
+  }
+  return (
+    <StatusRow
+      ok={false}
+      title={`${check.ecosystem} outdated check failed`}
       detail={check.detail ?? undefined}
     />
   );

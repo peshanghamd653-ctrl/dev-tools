@@ -1429,26 +1429,40 @@ mod tests {
     /// schedule, and a test that plants a fake one before that lands is
     /// testing the OS rather than the code.
     ///
-    /// The budget below is 60 s. It started at 2 s, the CI runner failed that
-    /// twice in a row (`SQLite never released ...-shm`), and it was widened
-    /// to 30 s on 2026-08-08 — the first time this crate's tests had ever run
-    /// on a GitHub Actions Windows runner, so 2 s was untested against real
-    /// CI I/O, not merely generous-in-theory. 30 s then failed too, on
-    /// `a_restore_announces_itself_and_names_the_preserved_database` — a test
-    /// that calls this helper *twice* (shut down, stage a restore, boot,
-    /// shut down again), so it gets two independent chances to land on a slow
-    /// moment where a single-`shut_down` test gets one. Both failures are the
-    /// identical panic, which is the tell that this is CI disk contention
-    /// making Windows unmap the `-shm` file more slowly, not a logic bug —
-    /// the loop only ever *waits*, it does not retry an action — so widening
-    /// the ceiling again is the correct fix rather than a band-aid. It costs
-    /// nothing on the common path: the loop returns the moment the sidecar is
-    /// gone, almost always within the first iteration, and the full budget is
-    /// only ever spent on a genuine hang.
+    /// The budget below is 120 s, widened four times now: 2s → 30s (2026-08-08,
+    /// the first time this crate's tests ran on a GitHub Actions Windows
+    /// runner at all) → 60s → 120s (2026-08-10). Each widening was chasing the
+    /// identical panic, `SQLite never released ...-shm`, which is the tell
+    /// that this is CI disk contention making Windows unmap the file more
+    /// slowly, not a logic bug — the loop only ever *waits*, it does not
+    /// retry an action.
+    ///
+    /// What changed between the second and third widening is worth recording
+    /// plainly: the failure moved from
+    /// `a_restore_announces_itself_and_names_the_preserved_database` (which
+    /// calls this helper *twice*) to
+    /// `a_marker_left_after_the_swap_does_not_restore_twice` (which calls it
+    /// *once*). That kills the earlier theory that this was specific to
+    /// tests exercising a second restore — it is general contention that can
+    /// land on any `shut_down` call, not a property of one test. A Windows
+    /// Defender exclusion for the runner's temp directory was added
+    /// alongside the 60s→120s widening on the chance it helps (real-time
+    /// scanning of a freshly-written backup file remains a plausible partial
+    /// cause), but it did not fix the 60s failure on its own, so it is not
+    /// being credited as a fix here — only the widened budget is.
+    ///
+    /// If this recurs at 120 s, the next step should stop being "widen
+    /// again" and become "serialize this module's tests against each other"
+    /// (they currently run concurrently within the same binary, competing
+    /// for the same temp-directory I/O) — a structural change, not another
+    /// number. Costs nothing on the common path either way: the loop
+    /// returns the moment the sidecar is gone, almost always within the
+    /// first iteration, and the full budget is only ever spent on a genuine
+    /// hang.
     async fn shut_down(kernel: crate::Kernel, db_path: &Path) {
         kernel.pool.close().await;
         drop(kernel);
-        for _ in 0..6_000 {
+        for _ in 0..12_000 {
             if !sidecar(db_path, "-shm").exists() {
                 return;
             }

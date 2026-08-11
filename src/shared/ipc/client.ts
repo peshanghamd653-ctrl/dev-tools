@@ -30,6 +30,9 @@ import type { DbColumn } from "./bindings/DbColumn";
 import type { DbConnection } from "./bindings/DbConnection";
 import type { DbSchema } from "./bindings/DbSchema";
 import type { DbTable } from "./bindings/DbTable";
+import type { ComposeProject } from "./bindings/ComposeProject";
+import type { ComposeServiceStatus } from "./bindings/ComposeServiceStatus";
+import type { ComposeStatus } from "./bindings/ComposeStatus";
 import type { DependencyCheck } from "./bindings/DependencyCheck";
 import type { DependencyStatus } from "./bindings/DependencyStatus";
 import type { DeployProject } from "./bindings/DeployProject";
@@ -104,6 +107,9 @@ export type {
   Conversation,
   CreatedIssue,
   DbColumn,
+  ComposeProject,
+  ComposeServiceStatus,
+  ComposeStatus,
   DbConnection,
   DbSchema,
   DbTable,
@@ -322,6 +328,20 @@ export const ipc = {
   dockerStop: (id: string) => call<void>("docker_stop", { id }),
   dockerRestart: (id: string) => call<void>("docker_restart", { id }),
   dockerLogs: (id: string) => call<string>("docker_logs", { id }),
+
+  dockerComposeDetect: (projectPath: string) =>
+    call<string | null>("docker_compose_detect", { projectPath }),
+  dockerComposeStatus: (composeFile: string) =>
+    call<ComposeStatus>("docker_compose_status", { composeFile }),
+  dockerComposeUp: (composeFile: string, service?: string) =>
+    call<void>("docker_compose_up", { composeFile, service: service ?? null }),
+  dockerComposeDown: (composeFile: string) =>
+    call<void>("docker_compose_down", { composeFile }),
+  dockerComposeRestart: (composeFile: string, service?: string) =>
+    call<void>("docker_compose_restart", {
+      composeFile,
+      service: service ?? null,
+    }),
 
   apiSend: (spec: ApiRequestSpec) => call<ApiResponse>("api_send", { spec }),
   apiSave: (name: string, collection: string, spec: ApiRequestSpec) =>

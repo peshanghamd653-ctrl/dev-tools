@@ -1,8 +1,4 @@
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { isDesktopShell, ipc } from "@/shared/ipc/client";
 
@@ -11,6 +7,13 @@ export const dockerKeys = {
   containers: ["docker", "containers"] as const,
   images: ["docker", "images"] as const,
   logs: (id: string) => ["docker", "logs", id] as const,
+};
+
+export const composeKeys = {
+  detect: (projectPath: string) =>
+    ["docker", "compose", "detect", projectPath] as const,
+  status: (composeFile: string) =>
+    ["docker", "compose", "status", composeFile] as const,
 };
 
 export function isUnavailable(error: unknown): boolean {
@@ -23,7 +26,8 @@ export function useDockerPing() {
     queryFn: ipc.dockerPing,
     enabled: isDesktopShell(),
     retry: false,
-    refetchInterval: (query) => (query.state.status === "error" ? 10_000 : 60_000),
+    refetchInterval: (query) =>
+      query.state.status === "error" ? 10_000 : 60_000,
   });
 }
 
@@ -69,6 +73,59 @@ export function useContainerActions() {
     }),
     restart: useMutation({
       mutationFn: (id: string) => ipc.dockerRestart(id),
+      onSettled: invalidate,
+    }),
+  };
+}
+
+/** The first compose file found in the project, or `null` if there is none. */
+export function useComposeDetect(projectPath: string | null) {
+  return useQuery({
+    queryKey: composeKeys.detect(projectPath ?? "none"),
+    queryFn: () => ipc.dockerComposeDetect(projectPath ?? ""),
+    enabled: isDesktopShell() && Boolean(projectPath),
+  });
+}
+
+/**
+ * Declared services and their live status. `available` gates this on
+ * `useDockerPing` succeeding the same way `useContainers` does — but unlike
+ * containers, a compose file's *declared* roster (`useComposeDetect`) is
+ * still worth showing with the daemon down, so only this query, not
+ * detection, is gated.
+ */
+export function useComposeStatus(
+  composeFile: string | null,
+  available: boolean,
+) {
+  return useQuery({
+    queryKey: composeKeys.status(composeFile ?? "none"),
+    queryFn: () => ipc.dockerComposeStatus(composeFile ?? ""),
+    enabled: isDesktopShell() && Boolean(composeFile) && available,
+    refetchInterval: 5000,
+  });
+}
+
+export function useComposeActions(composeFile: string | null) {
+  const queryClient = useQueryClient();
+  const invalidate = () =>
+    queryClient.invalidateQueries({
+      queryKey: composeKeys.status(composeFile ?? "none"),
+    });
+
+  return {
+    up: useMutation({
+      mutationFn: (service?: string) =>
+        ipc.dockerComposeUp(composeFile ?? "", service),
+      onSettled: invalidate,
+    }),
+    down: useMutation({
+      mutationFn: () => ipc.dockerComposeDown(composeFile ?? ""),
+      onSettled: invalidate,
+    }),
+    restart: useMutation({
+      mutationFn: (service?: string) =>
+        ipc.dockerComposeRestart(composeFile ?? "", service),
       onSettled: invalidate,
     }),
   };

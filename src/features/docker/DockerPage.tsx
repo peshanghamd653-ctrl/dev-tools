@@ -1,14 +1,11 @@
 import { useState } from "react";
-import {
-  Container,
-  Play,
-  RefreshCw,
-  ScrollText,
-  Square,
-} from "lucide-react";
+import { Container, Play, RefreshCw, ScrollText, Square } from "lucide-react";
 import { toast } from "sonner";
 
-import { isDesktopShell } from "@/shared/ipc/client";
+import { useGitStore } from "@/features/git/store";
+import { useProjects } from "@/features/projects/hooks";
+import { useActiveWorkspace } from "@/features/workspaces/hooks";
+import { isDesktopShell, type ComposeServiceStatus } from "@/shared/ipc/client";
 import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
@@ -22,6 +19,9 @@ import {
 import { Skeleton } from "@/shared/ui/skeleton";
 import {
   isUnavailable,
+  useComposeActions,
+  useComposeDetect,
+  useComposeStatus,
   useContainerActions,
   useContainerLogs,
   useContainers,
@@ -35,10 +35,21 @@ export function DockerPage() {
   const { data: containers, isLoading } = useContainers(available);
   const { data: images } = useImages(available);
   const actions = useContainerActions();
-  const [tab, setTab] = useState<"containers" | "images">("containers");
+  const [tab, setTab] = useState<"containers" | "images" | "compose">(
+    "containers",
+  );
   const [logsFor, setLogsFor] = useState<{ id: string; name: string } | null>(
     null,
   );
+
+  const activeWorkspace = useActiveWorkspace();
+  const { data: projects } = useProjects(activeWorkspace?.id);
+  const selectedProjectId = useGitStore((s) => s.selectedProjectId);
+  const project =
+    projects?.find((p) => p.id === selectedProjectId) ?? projects?.[0] ?? null;
+  const { data: composeFile } = useComposeDetect(project?.path ?? null);
+  const composeStatus = useComposeStatus(composeFile ?? null, available);
+  const composeActions = useComposeActions(composeFile ?? null);
 
   if (!isDesktopShell()) {
     return <Notice title="Docker needs the desktop shell" />;
@@ -87,6 +98,13 @@ export function DockerPage() {
             label={`Images${images ? ` (${images.length})` : ""}`}
             onClick={() => setTab("images")}
           />
+          {composeFile && (
+            <TabButton
+              active={tab === "compose"}
+              label={`Compose${composeStatus.data ? ` (${composeStatus.data.services.length})` : ""}`}
+              onClick={() => setTab("compose")}
+            />
+          )}
         </div>
       </div>
 
@@ -228,8 +246,133 @@ export function DockerPage() {
         </>
       )}
 
+      {tab === "compose" && composeFile && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <p className="min-w-0 truncate text-xs text-muted-foreground">
+              {composeStatus.data?.project.name ?? "…"} — {composeFile}
+            </p>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={composeActions.up.isPending}
+                onClick={() =>
+                  composeActions.up.mutate(undefined, {
+                    onSuccess: () => toast.success("Stack started"),
+                    onError: (error: unknown) => toast.error(String(error)),
+                  })
+                }
+              >
+                <Play className="size-3.5" />
+                Up
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={composeActions.down.isPending}
+                onClick={() =>
+                  composeActions.down.mutate(undefined, {
+                    onSuccess: () => toast.success("Stack stopped"),
+                    onError: (error: unknown) => toast.error(String(error)),
+                  })
+                }
+              >
+                <Square className="size-3.5" />
+                Down
+              </Button>
+            </div>
+          </div>
+
+          {!available && (
+            <Notice title="Docker isn't running">
+              Declared services are shown below with no live status. Start
+              Docker Desktop to see which are running.
+            </Notice>
+          )}
+
+          {composeStatus.data && (
+            <ul className="space-y-2">
+              {composeStatus.data.services.map((service) => (
+                <ComposeServiceRow
+                  key={service.service}
+                  service={service}
+                  onUp={() =>
+                    composeActions.up.mutate(service.service, {
+                      onSuccess: () => toast.success(`${service.service} up`),
+                      onError: (error: unknown) => toast.error(String(error)),
+                    })
+                  }
+                  onRestart={() =>
+                    composeActions.restart.mutate(service.service, {
+                      onSuccess: () =>
+                        toast.success(`${service.service} restarted`),
+                      onError: (error: unknown) => toast.error(String(error)),
+                    })
+                  }
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <LogsDialog target={logsFor} onClose={() => setLogsFor(null)} />
     </div>
+  );
+}
+
+function ComposeServiceRow({
+  service,
+  onUp,
+  onRestart,
+}: {
+  service: ComposeServiceStatus;
+  onUp: () => void;
+  onRestart: () => void;
+}) {
+  const running = service.container?.state === "running";
+  return (
+    <li>
+      <Card className="py-3">
+        <CardContent className="flex items-center gap-3 px-4">
+          <span
+            className={cn(
+              "size-2 shrink-0 rounded-full",
+              running
+                ? "bg-emerald-500"
+                : service.container
+                  ? "bg-zinc-500"
+                  : "bg-zinc-700",
+            )}
+            title={service.container?.state ?? "not created"}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">{service.service}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {service.container
+                ? `${service.container.image} · ${service.container.status}`
+                : "not created yet"}
+            </p>
+          </div>
+          <div className="flex gap-1">
+            {running ? (
+              <IconAction
+                label="Restart"
+                icon={<RefreshCw className="size-3.5" />}
+                onClick={onRestart}
+              />
+            ) : (
+              <IconAction
+                label="Up"
+                icon={<Play className="size-3.5" />}
+                onClick={onUp}
+              />
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </li>
   );
 }
 

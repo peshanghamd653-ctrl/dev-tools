@@ -62,9 +62,26 @@ impl Kernel {
         // Snapshot before migrations touch anything, so a bad one is
         // recoverable. Best effort — a failed backup must never stop the app
         // from starting. See [`crate::backup`].
+        //
+        // Calls the `Result`-returning helper directly, not
+        // `crate::backup::run_pre_migration_backup` (which every test still
+        // uses) — the wrapper collapses `Err` to `None` before this function
+        // could ever notify about it, and a failure here was previously
+        // visible only in the log. The failure is captured now and notified
+        // after `kernel` exists below, same as `restore` just above it.
         let phase = Instant::now();
-        crate::backup::run_pre_migration_backup(&pool, db_path, &db::migrator()).await;
+        let pre_migration_backup =
+            crate::backup::try_pre_migration_backup(&pool, db_path, &db::migrator()).await;
         let pre_migration_backup_us = phase.elapsed().as_micros() as u64;
+        match &pre_migration_backup {
+            Ok(Some(path)) => {
+                tracing::info!(backup = %path.display(), "pre-migration database backup written");
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "pre-migration database backup failed; continuing to migrate");
+            }
+        }
 
         let phase = Instant::now();
         db::run_migrations(&pool).await?;
@@ -100,6 +117,39 @@ impl Kernel {
                 tracing::warn!(error = %e, "could not record the restore notification");
             }
             kernel.audit(outcome.audit_event()).await;
+        }
+
+        // A failing backup used to be visible only in the log — see
+        // docs/database.md's "silently failing for three months" gap. Same
+        // notify-and-move-on shape as the restore block above; a failure to
+        // record the notification itself is not fatal to boot either.
+        if let Err(e) = &pre_migration_backup {
+            if let Err(notify_err) = kernel
+                .notify(
+                    "backup",
+                    "warning",
+                    "Pre-migration backup failed",
+                    Some(&format!(
+                        "DevOS could not snapshot the database before migrating: {e}. \
+                         Migrations still ran — this only means today's automatic \
+                         safety net was skipped."
+                    )),
+                )
+                .await
+            {
+                tracing::warn!(error = %notify_err, "could not record the pre-migration backup failure notification");
+            }
+        }
+
+        // Before anything else can submit a job, so a `running` row found
+        // here can only be one orphaned by the *previous* process — see
+        // `JobRunner::reconcile_stale`. Best effort, same as everything else
+        // in this recovery block: a boot that failed because reconciliation
+        // did must not happen.
+        match kernel.jobs.reconcile_stale().await {
+            Ok(0) => {}
+            Ok(count) => tracing::info!(count, "reconciled jobs left running by a crash"),
+            Err(e) => tracing::warn!(error = %e, "could not reconcile stale jobs"),
         }
 
         // Retention, best effort and in that order deliberately: a boot that
@@ -165,7 +215,35 @@ impl Kernel {
     /// retries, rather than inheriting a truncated file it believes is a
     /// complete backup.
     pub async fn run_daily_backup(&self) {
-        crate::backup::run_daily_backup(&self.pool, &self.db_path).await;
+        // `try_daily_backup` directly, not `crate::backup::run_daily_backup`
+        // (still what every test in `backup.rs` calls) — same reasoning as
+        // the pre-migration backup in `boot`: the wrapper collapses `Err` to
+        // `None` before a failure could ever reach a notification, and
+        // "visible only in the log" is the exact gap this call closes.
+        match crate::backup::try_daily_backup(&self.pool, &self.db_path).await {
+            Ok(Some(path)) => {
+                tracing::info!(backup = %path.display(), "daily database backup written");
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "daily database backup failed; continuing without it");
+                if let Err(notify_err) = self
+                    .notify(
+                        "backup",
+                        "warning",
+                        "Daily backup failed",
+                        Some(&format!(
+                            "DevOS could not write today's automatic database backup: {e}. \
+                             Your data is unaffected — only today's safety-net snapshot \
+                             was skipped."
+                        )),
+                    )
+                    .await
+                {
+                    tracing::warn!(error = %notify_err, "could not record the daily backup failure notification");
+                }
+            }
+        }
     }
 
     /// Register a module's contributions. Call before sharing the kernel.

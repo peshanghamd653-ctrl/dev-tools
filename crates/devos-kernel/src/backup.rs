@@ -127,7 +127,10 @@ pub async fn run_daily_backup(pool: &SqlitePool, db_path: &Path) -> Option<PathB
     }
 }
 
-async fn try_pre_migration_backup(
+/// `pub(crate)`, not private: `Kernel::boot` calls this directly rather than
+/// [`run_pre_migration_backup`] so it can notify on `Err` before the error is
+/// collapsed to `None` — see the notify call at the boot call site.
+pub(crate) async fn try_pre_migration_backup(
     pool: &SqlitePool,
     db_path: &Path,
     migrator: &Migrator,
@@ -165,7 +168,12 @@ async fn try_pre_migration_backup(
     Ok(Some(dest))
 }
 
-async fn try_daily_backup(pool: &SqlitePool, db_path: &Path) -> KernelResult<Option<PathBuf>> {
+/// `pub(crate)`, not private — see [`try_pre_migration_backup`]'s doc
+/// comment for why `Kernel::run_daily_backup` calls this directly.
+pub(crate) async fn try_daily_backup(
+    pool: &SqlitePool,
+    db_path: &Path,
+) -> KernelResult<Option<PathBuf>> {
     if !db_path.is_file() {
         tracing::debug!("no database file yet, skipping daily backup");
         return Ok(None);
@@ -1338,6 +1346,47 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    /// The pre-migration backup's failure-notification path
+    /// (`Kernel::boot`'s handling of `try_pre_migration_backup`'s `Err` arm)
+    /// is the same ten lines as the daily-backup one below, calling the same
+    /// `Kernel::notify` — proven end to end there. Not given its own
+    /// end-to-end test: constructing a database where a migration is
+    /// genuinely pending *and* still successfully re-applies after the
+    /// backup step fails would need a second real migration file, and this
+    /// crate has exactly one (`migrations/0001_core.sql`). The only way to
+    /// fake "pending" today, the version-corruption trick
+    /// `pre_migration_backup_runs_when_a_migration_is_pending` uses, produces
+    /// a version `db::run_migrations` cannot resolve — fine for a test that
+    /// never runs migrations afterward, fatal for one that does.
+    ///
+    /// Same fix, the other entry point: `Kernel::run_daily_backup` (called
+    /// from the desktop shell after boot, not during it) must also notify
+    /// rather than only log.
+    #[tokio::test]
+    async fn a_failing_daily_backup_produces_a_notification() {
+        let _serialize = BACKUP_TEST_LOCK.lock().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("devos.db");
+        let kernel = crate::Kernel::boot(&db_path).await.expect("boot");
+
+        // Planted after boot: a first-ever boot's pre-migration backup would
+        // skip anyway (nothing applied yet to protect), but this keeps the
+        // daily-backup failure this test is actually about the only one in
+        // play.
+        std::fs::write(backup_dir(&db_path), b"not a directory").unwrap();
+
+        kernel.run_daily_backup().await;
+
+        let notifications = crate::repo::list_notifications(&kernel.pool, 10)
+            .await
+            .unwrap();
+        let backup_notice = notifications
+            .iter()
+            .find(|n| n.module == "backup" && n.title.contains("Daily backup"))
+            .expect("the failure must produce a notification, not just a log line");
+        assert_eq!(backup_notice.level, "warning");
     }
 
     #[tokio::test]

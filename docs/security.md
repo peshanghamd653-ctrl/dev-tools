@@ -413,4 +413,8 @@ exist yet.
   implemented — see [database.md](database.md).
 - Crash recovery: SQLite WAL + the `jobs` table means interrupted work is
   visible (a `running` row at boot would indicate a crash mid-job) rather
-  than silently lost — no automatic stale-job reconciliation exists yet.
+  than silently lost. `JobRunner::reconcile_stale`, called once at
+  `Kernel::boot` before anything can submit a new job, closes this: every
+  `running` row it finds is the previous process's, gets marked `failed`
+  ("interrupted by a crash"), and produces a notification the same way any
+  other job failure does.

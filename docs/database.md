@@ -202,11 +202,14 @@ test proving a naive `fs::copy` loses a just-committed row — the failure
 this design exists to prevent.
 
 **A backup failure never breaks boot**: both entry points return `None` on
-error and log a warning. One honest gap follows from that, not closed:
-
-- A failing backup is visible only in the log. If backups are ever to be
-  *trusted*, "silently failing for three months" is the failure mode to
-  close, and a warning notification is the cheapest fix.
+error and log a warning. It no longer stops there — `Kernel::boot` and
+`Kernel::run_daily_backup` call the `Result`-returning helpers directly
+(`try_pre_migration_backup`/`try_daily_backup`, `pub(crate)` in
+`crates/devos-kernel/src/backup.rs`) so a failure can be reported before it
+is collapsed to `None`, and record a warning notification the same way a
+restore outcome already does. "Silently failing for three months" is closed;
+`Kernel::run_daily_backup`'s path is covered end to end by
+`a_failing_daily_backup_produces_a_notification` in `backup.rs`.
 
 ## Restore — implemented
 

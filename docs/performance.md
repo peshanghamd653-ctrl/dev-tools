@@ -155,13 +155,18 @@ measuring the next launch never sees it. It is also **not** what produced the
 so `BootTimings` was always going to show it; nothing was reading `boot_ms` on
 the launch that mattered.
 
-Nothing has been changed about it. The snapshot is taken before the app can
-write anything, which is the property that makes it worth having, and moving it
-off the boot path is a correctness question about restore, not a performance
-tweak. **Recommendation, not done here:** run the daily snapshot after the app
-is interactive rather than before, or skip it when the database is large enough
-that it would dominate startup and take it on a schedule instead. Either is a
-change to `crates/devos-kernel/src/backup.rs` and deserves its own review.
+**Done.** The daily snapshot now runs after the app is interactive, not before:
+`src-tauri/src/lib.rs` spawns `kernel.run_daily_backup()` on the same
+`Arc<Kernel>` every other background task uses, right after `app.manage(AppState)`
+— the window and webview already exist by the time it starts. `Kernel::run_daily_backup`'s
+own doc comment records why it isn't a bare detached `tokio::spawn`: that was
+tried first and lost the race against shutdown, holding `pool` open past the
+point the app believed it had closed and recreating the `-wal`/`-shm` sidecars
+a clean shutdown had just deleted — exactly the corruption path
+`sidecars_do_not_survive_the_swap` (`crates/devos-kernel/src/backup.rs`) exists
+to catch, and which it did. The fix threads the backup through the same
+`Arc<Kernel>` lifecycle as the scheduler and every other spawned task, so it is
+cancelled together with them on exit rather than outliving the pool.
 
 ## What is measured
 

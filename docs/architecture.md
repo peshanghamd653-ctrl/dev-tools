@@ -90,9 +90,10 @@ Rules that keep the system modular:
   are limited rather than forbidden — in practice a page may pull the
   *hooks or store* of a foundational feature (`workspaces`, `projects`,
   `app`), and occasionally a component (`dashboard` renders
-  `system/SystemMetrics`). What is not wanted is mutual coupling; `ai` and
-  `git` currently import each other's stores, which is the one place this
-  has gone wrong and is worth untangling.
+  `system/SystemMetrics`). What is not wanted is mutual coupling — `ai` and
+  `git` used to import each other's stores; `selectedProjectId` now lives in
+  `@/shared/stores/project`, with `features/git/store.ts` a thin re-export,
+  which is what untangled it.
 
 Live modules today (thirteen, matching the `register_module` calls in
 `src-tauri/src/lib.rs`): `core`, `terminal`, `git`, `ai`, `index`, `docker`,

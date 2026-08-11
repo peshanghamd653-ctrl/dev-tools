@@ -24,6 +24,18 @@ pub type GitResult<T> = Result<T, GitError>;
 /// Run git in `repo` and return stdout. Local operations get a 30s guard;
 /// network operations (push/pull/fetch/clone) get 300s.
 pub async fn run_git(repo: &Path, args: &[&str]) -> GitResult<String> {
+    run_git_with_env(repo, args, &[]).await
+}
+
+/// Same as [`run_git`], with extra environment variables set on the child
+/// process. Exists for `rebase --continue`/`--skip`, which must never stop
+/// to open an interactive editor — `GIT_EDITOR`/`GIT_SEQUENCE_EDITOR=true`
+/// makes any editor git would otherwise launch a no-op instead.
+pub async fn run_git_with_env(
+    repo: &Path,
+    args: &[&str],
+    envs: &[(&str, &str)],
+) -> GitResult<String> {
     let network_op = matches!(
         args.first().copied(),
         Some("push") | Some("pull") | Some("fetch") | Some("clone")
@@ -38,6 +50,7 @@ pub async fn run_git(repo: &Path, args: &[&str]) -> GitResult<String> {
     cmd.arg("--no-optional-locks")
         .args(args)
         .current_dir(repo)
+        .envs(envs.iter().copied())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

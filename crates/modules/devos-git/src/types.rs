@@ -68,3 +68,29 @@ pub struct GitCommit {
     pub time: i64,
     pub summary: String,
 }
+
+/// The three-way content of a conflicted file, read from git's index
+/// stages 1/2/3. `None` for a side with no version at that stage — the
+/// base is absent when both sides added the file independently; `ours`
+/// or `theirs` is absent when that side deleted it.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictSides {
+    pub base: Option<String>,
+    pub ours: Option<String>,
+    pub theirs: Option<String>,
+}
+
+/// Whether a rebase is currently paused mid-flight, and how far through
+/// it. Detected from `.git/rebase-merge` or `.git/rebase-apply` — see
+/// [`crate::ops::rebase_status`].
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../../src/shared/ipc/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub struct RebaseStatus {
+    pub in_progress: bool,
+    pub step: Option<u32>,
+    pub total: Option<u32>,
+    pub branch: Option<String>,
+}

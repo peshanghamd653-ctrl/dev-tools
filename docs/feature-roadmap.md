@@ -24,7 +24,10 @@ an empty header.
   sessions live in the Rust process so they survive route changes; tabs,
   split view, exit detection.
 - **Git**: status/stage/commit/branch/history/diff via `git` CLI
-  porcelain v2; diff viewer; push/pull; branch switch/create.
+  porcelain v2; diff viewer; push/pull; branch switch/create; merge
+  conflict resolution (base/ours/theirs view, keep-ours/keep-theirs,
+  manual content) and rebase (start/continue/abort/skip, paused-step
+  status).
 - **AI assistant (chat)**: `devos-ai` with `AiProvider` trait; Claude +
   Ollama, streaming, conversation persistence, markdown rendering.
 - **Secrets**: `devos-secrets` — OS-keystore master key + AES-256-GCM,

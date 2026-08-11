@@ -12,7 +12,13 @@ vi.mock("@/shared/ipc/client", async () => {
   return createClientMock();
 });
 
-import { ipc, type GitStatus, type Project } from "@/shared/ipc/client";
+import {
+  ipc,
+  type ConflictSides,
+  type GitStatus,
+  type Project,
+  type RebaseStatus,
+} from "@/shared/ipc/client";
 import { useDialogStore } from "@/shared/stores/dialogs";
 import { resetClientMock, setDesktopShell } from "@/shared/test/ipc";
 import { renderWithClient } from "@/shared/test/render";
@@ -90,5 +96,120 @@ describe("GitPage on a folder that is not a repository", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/C:\/projects\/devos/)).toBeInTheDocument();
     expect(screen.getByText("git init")).toBeInTheDocument();
+  });
+});
+
+const NOT_REBASING: RebaseStatus = {
+  inProgress: false,
+  step: null,
+  total: null,
+  branch: null,
+};
+
+const REPO: GitStatus = {
+  info: { isRepo: true, branch: "main", upstream: null, ahead: 0n, behind: 0n },
+  entries: [
+    {
+      path: "f.txt",
+      origPath: null,
+      staged: ".",
+      unstaged: ".",
+      untracked: false,
+      conflicted: true,
+    },
+  ],
+};
+
+function stubRepoBasics(status: GitStatus) {
+  vi.mocked(ipc.workspacesList).mockResolvedValue([WORKSPACE]);
+  vi.mocked(ipc.projectsList).mockResolvedValue([PROJECT]);
+  vi.mocked(ipc.gitStatus).mockResolvedValue(status);
+  vi.mocked(ipc.gitBranches).mockResolvedValue([]);
+  vi.mocked(ipc.gitLog).mockResolvedValue([]);
+  vi.mocked(ipc.gitRebaseStatus).mockResolvedValue(NOT_REBASING);
+}
+
+describe("GitPage conflict resolution", () => {
+  it("lists a conflicted file under its own Conflicts section", async () => {
+    stubRepoBasics(REPO);
+    renderWithClient(<GitPage />);
+
+    expect(await screen.findByText("Conflicts (1)")).toBeInTheDocument();
+    expect(screen.getByText("f.txt")).toBeInTheDocument();
+  });
+
+  it("shows base/ours/theirs content and resolves with a quick action", async () => {
+    stubRepoBasics(REPO);
+    const sides: ConflictSides = {
+      base: "base\n",
+      ours: "ours content\n",
+      theirs: "theirs content\n",
+    };
+    vi.mocked(ipc.gitConflictSides).mockResolvedValue(sides);
+    vi.mocked(ipc.gitResolveTheirs).mockResolvedValue(undefined);
+    renderWithClient(<GitPage />);
+
+    fireEvent.click(await screen.findByText("f.txt"));
+
+    expect(await screen.findByText("ours content")).toBeInTheDocument();
+    expect(screen.getByText("theirs content")).toBeInTheDocument();
+
+    // Two "Keep theirs" controls exist once a conflicted file is selected —
+    // the row's quick action and the panel's — so pick the panel's, the
+    // last one in DOM order.
+    const keepTheirsButtons = screen.getAllByRole("button", {
+      name: "Keep theirs",
+    });
+    fireEvent.click(keepTheirsButtons[keepTheirsButtons.length - 1]!);
+
+    await vi.waitFor(() =>
+      expect(ipc.gitResolveTheirs).toHaveBeenCalledWith(
+        "C:/projects/devos",
+        "f.txt",
+      ),
+    );
+  });
+
+  it("resolves ours directly from the file row without selecting it", async () => {
+    stubRepoBasics(REPO);
+    vi.mocked(ipc.gitResolveOurs).mockResolvedValue(undefined);
+    renderWithClient(<GitPage />);
+
+    await screen.findByText("f.txt");
+    fireEvent.click(screen.getByRole("button", { name: "Keep ours" }));
+
+    await vi.waitFor(() =>
+      expect(ipc.gitResolveOurs).toHaveBeenCalledWith(
+        "C:/projects/devos",
+        "f.txt",
+      ),
+    );
+  });
+});
+
+describe("GitPage rebase in progress", () => {
+  it("shows the paused step and lets it be continued", async () => {
+    stubRepoBasics({
+      info: { isRepo: true, branch: "main", upstream: null, ahead: 0n, behind: 0n },
+      entries: [],
+    });
+    vi.mocked(ipc.gitRebaseStatus).mockResolvedValue({
+      inProgress: true,
+      step: 1,
+      total: 2,
+      branch: "feature",
+    });
+    vi.mocked(ipc.gitRebaseContinue).mockResolvedValue(undefined);
+    renderWithClient(<GitPage />);
+
+    expect(
+      await screen.findByText("Rebasing feature — step 1 of 2"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await vi.waitFor(() =>
+      expect(ipc.gitRebaseContinue).toHaveBeenCalledWith("C:/projects/devos"),
+    );
   });
 });

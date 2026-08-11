@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use devos_git::{GitBranch, GitCommit, GitStatus};
+use devos_git::{ConflictSides, GitBranch, GitCommit, GitStatus, RebaseStatus};
 
 fn repo(path: &str) -> PathBuf {
     PathBuf::from(path)
@@ -77,4 +77,63 @@ pub async fn git_push(path: String) -> Result<String, String> {
 #[tauri::command]
 pub async fn git_pull(path: String) -> Result<String, String> {
     devos_git::pull(&repo(&path)).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn git_conflict_sides(path: String, file: String) -> Result<ConflictSides, String> {
+    devos_git::conflict_sides(&repo(&path), &file)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn git_resolve_ours(path: String, file: String) -> Result<(), String> {
+    devos_git::resolve_ours(&repo(&path), &file)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn git_resolve_theirs(path: String, file: String) -> Result<(), String> {
+    devos_git::resolve_theirs(&repo(&path), &file)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn git_resolve_with_content(
+    path: String,
+    file: String,
+    content: String,
+) -> Result<(), String> {
+    devos_git::resolve_with_content(&repo(&path), &file, &content)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn git_rebase_start(path: String, onto: String) -> Result<(), String> {
+    devos_git::rebase_start(&repo(&path), &onto)
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn git_rebase_continue(path: String) -> Result<(), String> {
+    devos_git::rebase_continue(&repo(&path)).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn git_rebase_abort(path: String) -> Result<(), String> {
+    devos_git::rebase_abort(&repo(&path)).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn git_rebase_skip(path: String) -> Result<(), String> {
+    devos_git::rebase_skip(&repo(&path)).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn git_rebase_status(path: String) -> Result<RebaseStatus, String> {
+    Ok(devos_git::rebase_status(&repo(&path)).await)
 }

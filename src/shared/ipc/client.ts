@@ -48,11 +48,13 @@ import type { HistorySecretScan } from "./bindings/HistorySecretScan";
 import type { HistorySecretScanStatus } from "./bindings/HistorySecretScanStatus";
 import type { OutdatedCheck } from "./bindings/OutdatedCheck";
 import type { OutdatedStatus } from "./bindings/OutdatedStatus";
+import type { ConflictSides } from "./bindings/ConflictSides";
 import type { GitBranch } from "./bindings/GitBranch";
 import type { GitCheck } from "./bindings/GitCheck";
 import type { GitCommit } from "./bindings/GitCommit";
 import type { GitFileEntry } from "./bindings/GitFileEntry";
 import type { GitRepoInfo } from "./bindings/GitRepoInfo";
+import type { RebaseStatus } from "./bindings/RebaseStatus";
 import type { FilePreview } from "./bindings/FilePreview";
 import type { FsEntry } from "./bindings/FsEntry";
 import type { GitStatus } from "./bindings/GitStatus";
@@ -107,6 +109,7 @@ export type {
   Conversation,
   CreatedIssue,
   DbColumn,
+  ConflictSides,
   ComposeProject,
   ComposeServiceStatus,
   ComposeStatus,
@@ -153,6 +156,7 @@ export type {
   QueryResult,
   DiskInfo,
   ProcessInfo,
+  RebaseStatus,
   SecretFinding,
   SecretScan,
   SecurityReport,
@@ -274,6 +278,22 @@ export const ipc = {
     call<string>("git_diff", { path, file, staged, untracked }),
   gitPush: (path: string) => call<string>("git_push", { path }),
   gitPull: (path: string) => call<string>("git_pull", { path }),
+  gitConflictSides: (path: string, file: string) =>
+    call<ConflictSides>("git_conflict_sides", { path, file }),
+  gitResolveOurs: (path: string, file: string) =>
+    call<void>("git_resolve_ours", { path, file }),
+  gitResolveTheirs: (path: string, file: string) =>
+    call<void>("git_resolve_theirs", { path, file }),
+  gitResolveWithContent: (path: string, file: string, content: string) =>
+    call<void>("git_resolve_with_content", { path, file, content }),
+  gitRebaseStart: (path: string, onto: string) =>
+    call<void>("git_rebase_start", { path, onto }),
+  gitRebaseContinue: (path: string) =>
+    call<void>("git_rebase_continue", { path }),
+  gitRebaseAbort: (path: string) => call<void>("git_rebase_abort", { path }),
+  gitRebaseSkip: (path: string) => call<void>("git_rebase_skip", { path }),
+  gitRebaseStatus: (path: string) =>
+    call<RebaseStatus>("git_rebase_status", { path }),
 
   secretSet: (name: string, value: string) =>
     call<void>("secret_set", { name, value }),

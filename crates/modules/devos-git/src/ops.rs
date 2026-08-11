@@ -3,8 +3,13 @@
 
 use std::path::Path;
 
-use crate::cli::{run_git, GitError, GitResult};
-use crate::types::{GitBranch, GitCommit, GitFileEntry, GitRepoInfo};
+use crate::cli::{run_git, run_git_with_env, GitError, GitResult};
+use crate::types::{ConflictSides, GitBranch, GitCommit, GitFileEntry, GitRepoInfo, RebaseStatus};
+
+/// `GIT_EDITOR`/`GIT_SEQUENCE_EDITOR` forced to a no-op for every rebase
+/// subcommand — a rebase driven by DevOS must never block waiting for an
+/// interactive editor that has nowhere to appear.
+const NO_EDITOR: &[(&str, &str)] = &[("GIT_EDITOR", "true"), ("GIT_SEQUENCE_EDITOR", "true")];
 
 const FIELD_SEP: char = '\u{1f}';
 
@@ -147,6 +152,128 @@ pub async fn push(repo: &Path) -> GitResult<String> {
 
 pub async fn pull(repo: &Path) -> GitResult<String> {
     run_git(repo, &["pull"]).await
+}
+
+/// The base/ours/theirs content of a conflicted file, from git's index
+/// stages 1/2/3.
+pub async fn conflict_sides(repo: &Path, file: &str) -> GitResult<ConflictSides> {
+    Ok(ConflictSides {
+        base: show_stage(repo, 1, file).await?,
+        ours: show_stage(repo, 2, file).await?,
+        theirs: show_stage(repo, 3, file).await?,
+    })
+}
+
+/// `git show :{stage}:{file}`. A stage that does not exist for this path
+/// (added independently on both sides has no base; deleted on one side
+/// has no version there) is `None`, not an error — confirmed against real
+/// git output: the failure is `"is in the index, but not at stage N"`,
+/// distinct from any other failure this could plausibly produce.
+async fn show_stage(repo: &Path, stage: u8, file: &str) -> GitResult<Option<String>> {
+    match run_git(repo, &["show", &format!(":{stage}:{file}")]).await {
+        Ok(content) => Ok(Some(content)),
+        Err(GitError::Failed { stderr, .. })
+            if stderr.contains("is in the index, but not at stage") =>
+        {
+            Ok(None)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Resolve a conflict by keeping the current branch's version.
+pub async fn resolve_ours(repo: &Path, file: &str) -> GitResult<()> {
+    resolve_side(repo, file, "--ours", "does not have our version").await
+}
+
+/// Resolve a conflict by keeping the incoming version.
+pub async fn resolve_theirs(repo: &Path, file: &str) -> GitResult<()> {
+    resolve_side(repo, file, "--theirs", "does not have their version").await
+}
+
+/// `git checkout --ours/--theirs -- file` followed by `git add`. When the
+/// side being kept was deleted there, `checkout` itself refuses (there is
+/// no content to check out) — confirmed against real git output, the
+/// error is `"does not have {our,their} version"`. Keeping a side that
+/// deleted the file means deleting it, via `git rm`.
+async fn resolve_side(repo: &Path, file: &str, flag: &str, missing_marker: &str) -> GitResult<()> {
+    match run_git(repo, &["checkout", flag, "--", file]).await {
+        Ok(_) => run_git(repo, &["add", "--", file]).await.map(|_| ()),
+        Err(GitError::Failed { stderr, .. }) if stderr.contains(missing_marker) => {
+            run_git(repo, &["rm", "--", file]).await.map(|_| ())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Resolve a conflict with caller-supplied content — the general case for
+/// a manual merge that is neither side verbatim.
+pub async fn resolve_with_content(repo: &Path, file: &str, content: &str) -> GitResult<()> {
+    std::fs::write(repo.join(file), content)?;
+    run_git(repo, &["add", "--", file]).await.map(|_| ())
+}
+
+pub async fn rebase_start(repo: &Path, onto: &str) -> GitResult<()> {
+    run_git_with_env(repo, &["rebase", onto], NO_EDITOR)
+        .await
+        .map(|_| ())
+}
+
+pub async fn rebase_continue(repo: &Path) -> GitResult<()> {
+    run_git_with_env(repo, &["rebase", "--continue"], NO_EDITOR)
+        .await
+        .map(|_| ())
+}
+
+pub async fn rebase_abort(repo: &Path) -> GitResult<()> {
+    run_git_with_env(repo, &["rebase", "--abort"], NO_EDITOR)
+        .await
+        .map(|_| ())
+}
+
+pub async fn rebase_skip(repo: &Path) -> GitResult<()> {
+    run_git_with_env(repo, &["rebase", "--skip"], NO_EDITOR)
+        .await
+        .map(|_| ())
+}
+
+/// Whether a rebase is currently paused, read straight off disk rather
+/// than run through `git` — there is no git subcommand that reports this
+/// directly. Supports both rebase backends: `rebase-merge` (git's default
+/// today, used even for a plain non-interactive rebase) and the older
+/// `rebase-apply` (still reachable via `rebase.backend=apply`), which
+/// track the same information under different file names.
+pub async fn rebase_status(repo: &Path) -> RebaseStatus {
+    let not_in_progress = RebaseStatus {
+        in_progress: false,
+        step: None,
+        total: None,
+        branch: None,
+    };
+    let merge_dir = repo.join(".git").join("rebase-merge");
+    let apply_dir = repo.join(".git").join("rebase-apply");
+    let (dir, step_file, total_file) = if merge_dir.is_dir() {
+        (merge_dir, "msgnum", "end")
+    } else if apply_dir.is_dir() {
+        (apply_dir, "next", "last")
+    } else {
+        return not_in_progress;
+    };
+
+    let branch = std::fs::read_to_string(dir.join("head-name"))
+        .ok()
+        .and_then(|s| s.trim().strip_prefix("refs/heads/").map(str::to_string));
+
+    RebaseStatus {
+        in_progress: true,
+        step: read_step(&dir.join(step_file)),
+        total: read_step(&dir.join(total_file)),
+        branch,
+    }
+}
+
+fn read_step(path: &Path) -> Option<u32> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
 const MAX_DIFF_BYTES: usize = 512 * 1024;
@@ -371,6 +498,13 @@ mod tests {
             run_git(path, &["config", "user.name", "DevOS Test"])
                 .await
                 .expect("config name");
+            // A user's global `core.autocrlf true` (common on Windows) would
+            // rewrite every LF this suite writes into CRLF on checkout,
+            // breaking exact-content assertions for reasons that have
+            // nothing to do with the git plumbing under test.
+            run_git(path, &["config", "core.autocrlf", "false"])
+                .await
+                .expect("config autocrlf");
             dir
         }
 
@@ -452,6 +586,225 @@ mod tests {
             let plain = tempfile::tempdir().unwrap();
             let info = repo_info(plain.path()).await.unwrap();
             assert!(!info.is_repo);
+        }
+
+        /// Merges `theirs` into the current branch and returns the repo,
+        /// left mid-conflict (merge exits non-zero on a real conflict, so
+        /// the result is intentionally not `.unwrap()`ed by the caller).
+        async fn merge_conflict_repo() -> TempDir {
+            let dir = init_repo().await;
+            let repo = dir.path();
+            std::fs::write(repo.join("f.txt"), "base\n").unwrap();
+            stage(repo, &["f.txt".into()]).await.unwrap();
+            commit(repo, "base").await.unwrap();
+
+            switch(repo, "theirs", true).await.unwrap();
+            std::fs::write(repo.join("f.txt"), "theirs\n").unwrap();
+            stage(repo, &["f.txt".into()]).await.unwrap();
+            commit(repo, "theirs change").await.unwrap();
+
+            switch(repo, "main", false).await.unwrap();
+            std::fs::write(repo.join("f.txt"), "ours\n").unwrap();
+            stage(repo, &["f.txt".into()]).await.unwrap();
+            commit(repo, "ours change").await.unwrap();
+
+            let _ = run_git(repo, &["merge", "theirs"]).await;
+            dir
+        }
+
+        #[tokio::test]
+        async fn conflict_sides_reports_all_three_stages_for_a_content_conflict() {
+            let dir = merge_conflict_repo().await;
+            let repo = dir.path();
+
+            let (_, entries) = status(repo).await.unwrap();
+            assert!(entries[0].conflicted);
+
+            let sides = conflict_sides(repo, "f.txt").await.unwrap();
+            assert_eq!(sides.base.as_deref(), Some("base\n"));
+            assert_eq!(sides.ours.as_deref(), Some("ours\n"));
+            assert_eq!(sides.theirs.as_deref(), Some("theirs\n"));
+        }
+
+        /// A delete/modify conflict — confirmed against real git output
+        /// that the deleted side has no stage-2 or stage-3 content, and
+        /// that `checkout --ours`/`--theirs` refuses with a specific,
+        /// distinguishable message when asked to keep the deleted side.
+        #[tokio::test]
+        async fn resolve_ours_deletes_the_file_when_our_side_deleted_it() {
+            let dir = init_repo().await;
+            let repo = dir.path();
+            std::fs::write(repo.join("keep.txt"), "base\n").unwrap();
+            stage(repo, &["keep.txt".into()]).await.unwrap();
+            commit(repo, "base").await.unwrap();
+
+            switch(repo, "theirs", true).await.unwrap();
+            std::fs::write(repo.join("keep.txt"), "theirs modifies\n").unwrap();
+            stage(repo, &["keep.txt".into()]).await.unwrap();
+            commit(repo, "theirs modifies").await.unwrap();
+
+            switch(repo, "main", false).await.unwrap();
+            run_git(repo, &["rm", "keep.txt"]).await.unwrap();
+            commit(repo, "ours deletes").await.unwrap();
+
+            let _ = run_git(repo, &["merge", "theirs"]).await;
+            let sides = conflict_sides(repo, "keep.txt").await.unwrap();
+            assert!(sides.ours.is_none(), "our side deleted the file");
+            assert_eq!(sides.theirs.as_deref(), Some("theirs modifies\n"));
+
+            resolve_ours(repo, "keep.txt").await.unwrap();
+            let (_, entries) = status(repo).await.unwrap();
+            assert!(
+                entries.is_empty(),
+                "keeping our deletion leaves nothing to resolve"
+            );
+            assert!(!repo.join("keep.txt").exists());
+        }
+
+        #[tokio::test]
+        async fn resolve_theirs_keeps_the_incoming_content() {
+            let dir = merge_conflict_repo().await;
+            let repo = dir.path();
+
+            resolve_theirs(repo, "f.txt").await.unwrap();
+
+            let (_, entries) = status(repo).await.unwrap();
+            assert_eq!(
+                entries[0].staged, "M",
+                "resolved conflict stages as a modify"
+            );
+            assert_eq!(
+                std::fs::read_to_string(repo.join("f.txt")).unwrap(),
+                "theirs\n"
+            );
+        }
+
+        #[tokio::test]
+        async fn resolve_with_content_stages_a_manual_merge() {
+            let dir = merge_conflict_repo().await;
+            let repo = dir.path();
+
+            resolve_with_content(repo, "f.txt", "manually merged\n")
+                .await
+                .unwrap();
+
+            let (_, entries) = status(repo).await.unwrap();
+            assert!(!entries[0].conflicted);
+            assert_eq!(
+                std::fs::read_to_string(repo.join("f.txt")).unwrap(),
+                "manually merged\n"
+            );
+        }
+
+        #[tokio::test]
+        async fn rebase_status_reports_no_rebase_outside_one() {
+            let dir = init_repo().await;
+            let status = rebase_status(dir.path()).await;
+            assert!(!status.in_progress);
+            assert_eq!(status.step, None);
+        }
+
+        /// A rebase that hits a conflict: `rebase_status` reports the
+        /// paused step, and resolving + `rebase_continue` finishes it —
+        /// confirmed against real git that this needs `GIT_EDITOR`/
+        /// `GIT_SEQUENCE_EDITOR` forced off, or it would block waiting for
+        /// an editor that has nowhere to appear in a headless test.
+        #[tokio::test]
+        async fn a_conflicting_rebase_can_be_resolved_and_continued() {
+            let dir = init_repo().await;
+            let repo = dir.path();
+            std::fs::write(repo.join("r.txt"), "base\n").unwrap();
+            stage(repo, &["r.txt".into()]).await.unwrap();
+            commit(repo, "base").await.unwrap();
+
+            std::fs::write(repo.join("r.txt"), "main change\n").unwrap();
+            stage(repo, &["r.txt".into()]).await.unwrap();
+            commit(repo, "main change").await.unwrap();
+
+            switch(repo, "feature", true).await.unwrap();
+            run_git(repo, &["reset", "--hard", "HEAD~1"]).await.unwrap();
+            std::fs::write(repo.join("r.txt"), "feature change\n").unwrap();
+            stage(repo, &["r.txt".into()]).await.unwrap();
+            commit(repo, "feature change").await.unwrap();
+
+            let result = rebase_start(repo, "main").await;
+            assert!(result.is_err(), "rebase stops for a real conflict");
+
+            let mid = rebase_status(repo).await;
+            assert!(mid.in_progress);
+            assert_eq!(mid.step, Some(1));
+            assert_eq!(mid.total, Some(1));
+            assert_eq!(mid.branch.as_deref(), Some("feature"));
+
+            resolve_with_content(repo, "r.txt", "resolved\n")
+                .await
+                .unwrap();
+            rebase_continue(repo).await.unwrap();
+
+            let done = rebase_status(repo).await;
+            assert!(
+                !done.in_progress,
+                "finished rebase leaves no rebase-merge dir"
+            );
+            assert_eq!(
+                std::fs::read_to_string(repo.join("r.txt")).unwrap(),
+                "resolved\n"
+            );
+        }
+
+        #[tokio::test]
+        async fn rebase_can_be_aborted_back_to_the_pre_rebase_state() {
+            let dir = init_repo().await;
+            let repo = dir.path();
+            std::fs::write(repo.join("r.txt"), "base\n").unwrap();
+            stage(repo, &["r.txt".into()]).await.unwrap();
+            commit(repo, "base").await.unwrap();
+            std::fs::write(repo.join("r.txt"), "main change\n").unwrap();
+            stage(repo, &["r.txt".into()]).await.unwrap();
+            commit(repo, "main change").await.unwrap();
+
+            switch(repo, "feature", true).await.unwrap();
+            run_git(repo, &["reset", "--hard", "HEAD~1"]).await.unwrap();
+            std::fs::write(repo.join("r.txt"), "feature change\n").unwrap();
+            stage(repo, &["r.txt".into()]).await.unwrap();
+            let before = commit(repo, "feature change").await.unwrap();
+
+            assert!(rebase_start(repo, "main").await.is_err());
+            assert!(rebase_status(repo).await.in_progress);
+
+            rebase_abort(repo).await.unwrap();
+
+            assert!(!rebase_status(repo).await.in_progress);
+            let head = run_git(repo, &["rev-parse", "HEAD"]).await.unwrap();
+            assert_eq!(head.trim(), before, "abort restores the pre-rebase HEAD");
+        }
+
+        #[tokio::test]
+        async fn rebase_skip_drops_the_conflicting_commit() {
+            let dir = init_repo().await;
+            let repo = dir.path();
+            std::fs::write(repo.join("r.txt"), "base\n").unwrap();
+            stage(repo, &["r.txt".into()]).await.unwrap();
+            commit(repo, "base").await.unwrap();
+            std::fs::write(repo.join("r.txt"), "main change\n").unwrap();
+            stage(repo, &["r.txt".into()]).await.unwrap();
+            commit(repo, "main change").await.unwrap();
+
+            switch(repo, "feature", true).await.unwrap();
+            run_git(repo, &["reset", "--hard", "HEAD~1"]).await.unwrap();
+            std::fs::write(repo.join("r.txt"), "feature change\n").unwrap();
+            stage(repo, &["r.txt".into()]).await.unwrap();
+            commit(repo, "feature change").await.unwrap();
+
+            assert!(rebase_start(repo, "main").await.is_err());
+            rebase_skip(repo).await.unwrap();
+
+            assert!(!rebase_status(repo).await.in_progress);
+            assert_eq!(
+                std::fs::read_to_string(repo.join("r.txt")).unwrap(),
+                "main change\n",
+                "the skipped commit's change never lands"
+            );
         }
     }
 }

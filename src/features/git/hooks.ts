@@ -13,6 +13,9 @@ export const gitKeys = {
   branches: (path: string) => ["git", path, "branches"] as const,
   diff: (path: string, file: string, staged: boolean) =>
     ["git", path, "diff", file, staged] as const,
+  conflictSides: (path: string, file: string) =>
+    ["git", path, "conflictSides", file] as const,
+  rebaseStatus: (path: string) => ["git", path, "rebaseStatus"] as const,
 };
 
 export function useGitStatus(path: string | undefined) {
@@ -52,6 +55,24 @@ export function useGitDiff(
     queryKey: gitKeys.diff(path ?? "none", file ?? "none", staged),
     queryFn: () => ipc.gitDiff(path ?? "", file ?? "", staged, untracked),
     enabled: isDesktopShell() && Boolean(path) && Boolean(file),
+    refetchInterval: 4000,
+  });
+}
+
+export function useConflictSides(path: string | undefined, file: string | null) {
+  return useQuery({
+    queryKey: gitKeys.conflictSides(path ?? "none", file ?? "none"),
+    queryFn: () => ipc.gitConflictSides(path ?? "", file ?? ""),
+    enabled: isDesktopShell() && Boolean(path) && Boolean(file),
+  });
+}
+
+/** Whether — and how far into — a rebase is currently paused. */
+export function useRebaseStatus(path: string | undefined) {
+  return useQuery({
+    queryKey: gitKeys.rebaseStatus(path ?? "none"),
+    queryFn: () => ipc.gitRebaseStatus(path ?? ""),
+    enabled: isDesktopShell() && Boolean(path),
     refetchInterval: 4000,
   });
 }
@@ -98,6 +119,35 @@ export function useGitMutations(path: string | undefined) {
     }),
     pull: useMutation({
       mutationFn: () => ipc.gitPull(repo()),
+      onSettled: invalidate,
+    }),
+    resolveOurs: useMutation({
+      mutationFn: (file: string) => ipc.gitResolveOurs(repo(), file),
+      onSettled: invalidate,
+    }),
+    resolveTheirs: useMutation({
+      mutationFn: (file: string) => ipc.gitResolveTheirs(repo(), file),
+      onSettled: invalidate,
+    }),
+    resolveWithContent: useMutation({
+      mutationFn: (args: { file: string; content: string }) =>
+        ipc.gitResolveWithContent(repo(), args.file, args.content),
+      onSettled: invalidate,
+    }),
+    rebaseStart: useMutation({
+      mutationFn: (onto: string) => ipc.gitRebaseStart(repo(), onto),
+      onSettled: invalidate,
+    }),
+    rebaseContinue: useMutation({
+      mutationFn: () => ipc.gitRebaseContinue(repo()),
+      onSettled: invalidate,
+    }),
+    rebaseAbort: useMutation({
+      mutationFn: () => ipc.gitRebaseAbort(repo()),
+      onSettled: invalidate,
+    }),
+    rebaseSkip: useMutation({
+      mutationFn: () => ipc.gitRebaseSkip(repo()),
       onSettled: invalidate,
     }),
   };

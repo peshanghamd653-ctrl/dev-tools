@@ -35,11 +35,13 @@ import {
 import { Input } from "@/shared/ui/input";
 import { DiffViewer } from "./DiffViewer";
 import {
+  useConflictSides,
   useGitBranches,
   useGitDiff,
   useGitLog,
   useGitMutations,
   useGitStatus,
+  useRebaseStatus,
 } from "./hooks";
 import { useGitStore } from "./store";
 
@@ -63,12 +65,14 @@ export function GitPage() {
   const { data: status } = useGitStatus(repoPath);
   const { data: branches } = useGitBranches(repoPath);
   const { data: commits } = useGitLog(repoPath);
+  const { data: rebaseStatus } = useRebaseStatus(repoPath);
   const mutations = useGitMutations(repoPath);
 
   const [tab, setTab] = useState<"changes" | "history">("changes");
   const [selected, setSelected] = useState<SelectedFile | null>(null);
   const [message, setMessage] = useState("");
   const [newBranch, setNewBranch] = useState<string | null>(null);
+  const [rebaseTarget, setRebaseTarget] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const aiProvider = useAiModelStore((s) => s.provider);
   const aiModel = useAiModelStore((s) => s.model);
@@ -115,9 +119,13 @@ export function GitPage() {
   }
 
   const entries = status?.entries ?? [];
+  const conflictedFiles = entries.filter((e) => e.conflicted);
   const stagedFiles = entries.filter(entryHasStaged);
-  const unstagedFiles = entries.filter(entryHasUnstaged);
+  const unstagedFiles = entries.filter((e) => entryHasUnstaged(e) && !e.conflicted);
   const info = status?.info;
+  const selectedEntry = selected
+    ? entries.find((e) => e.path === selected.path)
+    : undefined;
 
   return (
     <div className="flex h-full flex-col">
@@ -172,6 +180,12 @@ export function GitPage() {
                 <Plus className="size-4" />
                 New branch…
               </DropdownMenuItem>
+              {!rebaseStatus?.inProgress && (
+                <DropdownMenuItem onSelect={() => setRebaseTarget("")}>
+                  <GitBranchIcon className="size-4" />
+                  Rebase onto…
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -196,6 +210,28 @@ export function GitPage() {
                     onError: (err) => toast.error(String(err)),
                   },
                 );
+              }
+            }}
+          />
+        )}
+
+        {rebaseTarget !== null && (
+          <Input
+            value={rebaseTarget}
+            onChange={(e) => setRebaseTarget(e.target.value)}
+            placeholder="branch to rebase onto"
+            className="h-7 w-44 font-mono text-xs"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setRebaseTarget(null);
+              if (e.key === "Enter" && rebaseTarget.trim()) {
+                const onto = rebaseTarget.trim();
+                setRebaseTarget(null);
+                mutations.rebaseStart.mutate(onto, {
+                  onSuccess: () => toast.success(`Rebased onto ${onto}`),
+                  onError: (err) =>
+                    toast.error(`Rebase paused: ${String(err)}`),
+                });
               }
             }}
           />
@@ -243,6 +279,59 @@ export function GitPage() {
         )}
       </header>
 
+      {rebaseStatus?.inProgress && (
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b bg-orange-500/10 px-3 text-xs">
+          <GitBranchIcon className="size-3.5 text-orange-400" />
+          <span>
+            Rebasing {rebaseStatus.branch ?? "detached HEAD"} — step{" "}
+            {rebaseStatus.step ?? "?"} of {rebaseStatus.total ?? "?"}
+          </span>
+          <div className="flex-1" />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-xs"
+            disabled={mutations.rebaseContinue.isPending}
+            onClick={() =>
+              mutations.rebaseContinue.mutate(undefined, {
+                onSuccess: () => toast.success("Rebase continued"),
+                onError: (e) => toast.error(`Rebase paused: ${String(e)}`),
+              })
+            }
+          >
+            Continue
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-xs"
+            disabled={mutations.rebaseSkip.isPending}
+            onClick={() =>
+              mutations.rebaseSkip.mutate(undefined, {
+                onSuccess: () => toast.success("Skipped commit"),
+                onError: (e) => toast.error(String(e)),
+              })
+            }
+          >
+            Skip
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-xs"
+            disabled={mutations.rebaseAbort.isPending}
+            onClick={() =>
+              mutations.rebaseAbort.mutate(undefined, {
+                onSuccess: () => toast.success("Rebase aborted"),
+                onError: (e) => toast.error(String(e)),
+              })
+            }
+          >
+            Abort
+          </Button>
+        </div>
+      )}
+
       {info && !info.isRepo ? (
         <Notice title="Not a git repository">
           {project.path} has no .git directory. Initialize it from the terminal
@@ -268,6 +357,41 @@ export function GitPage() {
             {tab === "changes" ? (
               <>
                 <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                  <FileSection
+                    title="Conflicts"
+                    files={conflictedFiles}
+                    staged={false}
+                    selected={selected}
+                    onSelect={(f) =>
+                      setSelected({ path: f.path, staged: false, untracked: false })
+                    }
+                    action={(f) => (
+                      <span className="flex">
+                        <RowAction
+                          label="Keep ours"
+                          icon={<span className="text-[9px] font-bold">O</span>}
+                          onClick={() =>
+                            mutations.resolveOurs.mutate(f.path, {
+                              onSuccess: () =>
+                                toast.success(`Kept our version of ${f.path}`),
+                              onError: (e) => toast.error(String(e)),
+                            })
+                          }
+                        />
+                        <RowAction
+                          label="Keep theirs"
+                          icon={<span className="text-[9px] font-bold">T</span>}
+                          onClick={() =>
+                            mutations.resolveTheirs.mutate(f.path, {
+                              onSuccess: () =>
+                                toast.success(`Kept their version of ${f.path}`),
+                              onError: (e) => toast.error(String(e)),
+                            })
+                          }
+                        />
+                      </span>
+                    )}
+                  />
                   <FileSection
                     title="Staged"
                     files={stagedFiles}
@@ -400,7 +524,26 @@ export function GitPage() {
           </aside>
 
           <section className="min-h-0">
-            {selected ? (
+            {selected && selectedEntry?.conflicted ? (
+              <ConflictPanel
+                repoPath={repoPath ?? ""}
+                file={selected.path}
+                onResolveOurs={() =>
+                  mutations.resolveOurs.mutate(selected.path, {
+                    onSuccess: () =>
+                      toast.success(`Kept our version of ${selected.path}`),
+                    onError: (e) => toast.error(String(e)),
+                  })
+                }
+                onResolveTheirs={() =>
+                  mutations.resolveTheirs.mutate(selected.path, {
+                    onSuccess: () =>
+                      toast.success(`Kept their version of ${selected.path}`),
+                    onError: (e) => toast.error(String(e)),
+                  })
+                }
+              />
+            ) : selected ? (
               <div className="flex h-full flex-col">
                 <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3">
                   <span className="truncate font-mono text-xs">
@@ -422,6 +565,77 @@ export function GitPage() {
           </section>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Base/ours/theirs read-only view of a conflicted file, with quick-resolve
+ * actions. A manual merge (neither side verbatim) is resolved by editing
+ * the working-tree file directly — it still shows in "Conflicts" with
+ * markers until staged, at which point the ordinary "Stage" action on an
+ * unstaged row already handles it, same as any other file. */
+function ConflictPanel({
+  repoPath,
+  file,
+  onResolveOurs,
+  onResolveTheirs,
+}: {
+  repoPath: string;
+  file: string;
+  onResolveOurs: () => void;
+  onResolveTheirs: () => void;
+}) {
+  const { data: sides } = useConflictSides(repoPath, file);
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3">
+        <span className="truncate font-mono text-xs">{file}</span>
+        <Badge variant="outline" className="text-[10px] text-orange-400">
+          conflict
+        </Badge>
+        <div className="flex-1" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 text-xs"
+          onClick={onResolveOurs}
+        >
+          Keep ours
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 text-xs"
+          onClick={onResolveTheirs}
+        >
+          Keep theirs
+        </Button>
+      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-2 divide-x">
+        <ConflictSidePane label="Ours (current)" content={sides?.ours} />
+        <ConflictSidePane label="Theirs (incoming)" content={sides?.theirs} />
+      </div>
+    </div>
+  );
+}
+
+function ConflictSidePane({
+  label,
+  content,
+}: {
+  label: string;
+  content: string | null | undefined;
+}) {
+  return (
+    <div className="flex min-h-0 flex-col">
+      <p className="shrink-0 border-b px-3 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
+      <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs">
+        {content === undefined
+          ? "Loading…"
+          : (content ?? "(deleted on this side)")}
+      </pre>
     </div>
   );
 }

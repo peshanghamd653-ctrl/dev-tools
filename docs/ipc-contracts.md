@@ -104,6 +104,12 @@ Used by:
 | `git_switch` | `path, branch, create` | `()` |
 | `git_diff` | `path, file, staged, untracked` | `string` (unified diff) |
 | `git_push` / `git_pull` | `path` | `string` (CLI output) |
+| `git_conflict_sides` | `path, file` | `ConflictSides { base, ours, theirs }` (each `Option<String>`) |
+| `git_resolve_ours` / `git_resolve_theirs` | `path, file` | `()` |
+| `git_resolve_with_content` | `path, file, content` | `()` |
+| `git_rebase_start` | `path, onto` | `()` |
+| `git_rebase_continue` / `git_rebase_abort` / `git_rebase_skip` | `path` | `()` |
+| `git_rebase_status` | `path` | `RebaseStatus { inProgress, step, total, branch }` |
 
 ### AI + secrets (M1–M2)
 

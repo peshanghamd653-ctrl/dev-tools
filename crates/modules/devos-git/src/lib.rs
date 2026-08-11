@@ -5,12 +5,15 @@ mod cli;
 mod ops;
 mod types;
 
-pub use cli::{run_git, GitError, GitResult};
+pub use cli::{run_git, run_git_with_env, GitError, GitResult};
 pub use ops::{
-    branches, commit, diff_file, discard, log, pull, push, repo_info, stage, staged_diff, status,
-    switch, unstage,
+    branches, commit, conflict_sides, diff_file, discard, log, pull, push, rebase_abort,
+    rebase_continue, rebase_skip, rebase_start, rebase_status, repo_info, resolve_ours,
+    resolve_theirs, resolve_with_content, stage, staged_diff, status, switch, unstage,
 };
-pub use types::{GitBranch, GitCommit, GitFileEntry, GitRepoInfo, GitStatus};
+pub use types::{
+    ConflictSides, GitBranch, GitCommit, GitFileEntry, GitRepoInfo, GitStatus, RebaseStatus,
+};
 
 use devos_kernel::module::{Module, ModuleCtx};
 use devos_kernel::types::CommandDescriptor;

@@ -40,6 +40,9 @@ import type { DockerRootCheck } from "./bindings/DockerRootCheck";
 import type { DockerRootStatus } from "./bindings/DockerRootStatus";
 import type { EnvEntry } from "./bindings/EnvEntry";
 import type { EnvFileCheck } from "./bindings/EnvFileCheck";
+import type { HistorySecretFinding } from "./bindings/HistorySecretFinding";
+import type { HistorySecretScan } from "./bindings/HistorySecretScan";
+import type { HistorySecretScanStatus } from "./bindings/HistorySecretScanStatus";
 import type { OutdatedCheck } from "./bindings/OutdatedCheck";
 import type { OutdatedStatus } from "./bindings/OutdatedStatus";
 import type { GitBranch } from "./bindings/GitBranch";
@@ -114,6 +117,9 @@ export type {
   DockerRootStatus,
   EnvEntry,
   EnvFileCheck,
+  HistorySecretFinding,
+  HistorySecretScan,
+  HistorySecretScanStatus,
   OutdatedCheck,
   OutdatedStatus,
   GitBranch,

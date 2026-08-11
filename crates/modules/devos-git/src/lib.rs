@@ -5,7 +5,7 @@ mod cli;
 mod ops;
 mod types;
 
-pub use cli::{GitError, GitResult};
+pub use cli::{run_git, GitError, GitResult};
 pub use ops::{
     branches, commit, diff_file, discard, log, pull, push, repo_info, stage, staged_diff, status,
     switch, unstage,

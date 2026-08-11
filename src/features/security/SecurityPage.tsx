@@ -18,6 +18,7 @@ import {
   type DockerRootCheck,
   type EnvFileCheck,
   type GitCheck,
+  type HistorySecretScan,
   type OutdatedCheck,
   type SecretScan,
   type SecurityReport,
@@ -50,6 +51,16 @@ function buildFixPrompt(report: SecurityReport): string {
         "it, and if it's a real credential, remove it from the file, make " +
         "sure the file is gitignored if it should be, and note that the " +
         "value should be rotated (you cannot rotate it yourself).",
+    );
+  }
+  for (const finding of report.historySecrets.findings) {
+    lines.push(
+      `- Possible ${finding.kind} committed in ${finding.file} at commit ${finding.commit}. ` +
+        "It may since have been removed from the working tree, but it is still " +
+        "in git history — reachable by anyone with clone access. Note that the " +
+        "value should be rotated (you cannot rotate it yourself), and that " +
+        "actually removing it from history is a separate, destructive step " +
+        "(rewriting commits) you should not do without the user's explicit go-ahead.",
     );
   }
   for (const file of report.envFiles.files) {
@@ -91,6 +102,7 @@ function hasIssues(report: SecurityReport): boolean {
   return (
     !report.git.clean ||
     report.secrets.findings.length > 0 ||
+    report.historySecrets.findings.length > 0 ||
     report.envFiles.files.length > 0 ||
     report.dockerRoot.status === "runningAsRoot" ||
     report.dependencies.some((d) => d.status === "vulnerable") ||
@@ -128,9 +140,9 @@ export function SecurityPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Security</h1>
           <p className="text-sm text-muted-foreground">
-            Git cleanliness, a secret scan, unignored .env files, Docker
-            containers running as root, dependency vulnerabilities, and outdated
-            packages for {project.name}.
+            Git cleanliness, a secret scan (working tree and history), unignored
+            .env files, Docker containers running as root, dependency
+            vulnerabilities, and outdated packages for {project.name}.
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -176,6 +188,7 @@ export function SecurityPage() {
         <div className="space-y-3">
           <GitSection check={report.git} />
           <SecretsSection scan={report.secrets} />
+          <HistorySecretsSection scan={report.historySecrets} />
           <EnvFilesSection check={report.envFiles} />
           <DockerRootSection check={report.dockerRoot} />
           {report.dependencies.map((check) => (
@@ -263,6 +276,50 @@ function SecretsSection({ scan }: { scan: SecretScan }) {
           {scan.findings.map((finding, i) => (
             <li key={i} className="font-mono text-xs text-muted-foreground">
               {finding.file}:{finding.line} — {finding.kind}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function HistorySecretsSection({ scan }: { scan: HistorySecretScan }) {
+  if (scan.status === "notARepo" || scan.status === "noHistory") {
+    return null;
+  }
+  if (scan.status === "error") {
+    return (
+      <StatusRow
+        ok={false}
+        title="Git history scan failed"
+        detail={scan.detail ?? undefined}
+      />
+    );
+  }
+  if (scan.findings.length === 0) {
+    return (
+      <StatusRow
+        ok
+        title="No secrets found in git history"
+        detail={`${scan.commitsScanned} commit${scan.commitsScanned === 1 ? "" : "s"} scanned`}
+      />
+    );
+  }
+  return (
+    <Card className="gap-0 py-3">
+      <CardContent className="space-y-2 px-4">
+        <div className="flex items-start gap-3">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-yellow-300" />
+          <p className="text-sm">
+            {scan.findings.length} potential secret
+            {scan.findings.length === 1 ? "" : "s"} found in git history
+          </p>
+        </div>
+        <ul className="space-y-1 pl-7">
+          {scan.findings.map((finding, i) => (
+            <li key={i} className="font-mono text-xs text-muted-foreground">
+              {finding.commit} — {finding.file} — {finding.kind}
             </li>
           ))}
         </ul>

@@ -8,7 +8,21 @@ do not edit it by hand. Only `feat`, `fix` and `perf` commits appear, plus
 anything marked breaking: those are the ones that change something for a person
 using the app. Each release says how many other commits it contains.
 
-## 0.2.0 — unreleased
+## 0.3.0 — unreleased
+
+### Added
+
+- **git** — merge conflict resolution and rebase tools [`3af8217`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/3af8217bd35d6c6c6978e6edd4e4793e9d180abf)
+- **api** — vault-back secret environment variables (SEC-105) [`06ddba8`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/06ddba876dcc5a4a5bb60d0914e47db3f216b50e)
+- **docker** — real Docker Compose support [`8c55277`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/8c552772f1e887fc466aa940dff121f937d0399a)
+- **security** — scan git history for secrets, not just the working tree [`23c7057`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/23c7057f4a18404dc744bdac99028930a374813e)
+- **kernel** — reconcile stale jobs and notify on backup failure [`01121fc`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/01121fca07a2a83dbb380803d1ab4b1ae8aab751)
+- **browser** — embedded browser pane with real DevTools (Ctrl+Shift+B) [`c0c1d9a`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/c0c1d9a6918d31188a210bf6785d8c6da82ad69a)
+- **ai** — give Gemini the agentic tool loop — read, write, and run, same as Claude and Ollama [`3e9a42b`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/3e9a42b91b5c2b6ec0abfff6d422f6a579bd39c3)
+
+_2 further commits in this release changed no user-facing behaviour (documentation, CI, tests, refactors) and are not listed. `git log` has them._
+
+## 0.2.0 — 2026-08-10
 
 ### Added
 
@@ -48,7 +62,7 @@ using the app. Each release says how many other commits it contains.
 - **kernel** — move the daily backup off the boot path [`d7a9c46`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/d7a9c461c7706d656a4fa2df3f3ffdb445879fb1)
 - find where startup actually goes — 90-96% is WebView2 creation [`299da86`](https://github.com/peshanghamd653-ctrl/dev-tools/commit/299da86bed32a64ab00a1051f1ee2f2e087e3ef3)
 
-_4 further commits in this release changed no user-facing behaviour (documentation, CI, tests, refactors) and are not listed. `git log` has them._
+_5 further commits in this release changed no user-facing behaviour (documentation, CI, tests, refactors) and are not listed. `git log` has them._
 
 ## 0.1.0 — 2026-08-08
 

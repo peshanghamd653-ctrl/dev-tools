@@ -201,12 +201,12 @@ fn plain_messages(system: Option<&str>, turns: &[ChatTurn]) -> Vec<Value> {
 /// in the same `{type, function: {name, arguments}}` envelope as the request,
 /// followed by one `{"role": "tool", "content": ...}` message per result — is
 /// the OpenAI-compatible convention Ollama's own documentation models tool
-/// calling on. It could not be verified against a live server in the
-/// environment this was written in; the hermetic-server test below pins the
-/// *outgoing* request shape and the parsing of a *canned* response, which is
-/// the most this crate's existing test conventions can do without a real
-/// Ollama install. If a real model's continuation expectations turn out to
-/// differ, this function is the one place to reconcile them.
+/// calling on. The hermetic-server test below pins the *outgoing* request
+/// shape and the parsing of a *canned* response; `live_ollama_actually_calls_a_tool`
+/// (`#[ignore]`d — `cargo test -p devos-ai -- --ignored` with a local Ollama
+/// running) is the real-server confirmation that hermetic test conventions
+/// alone couldn't give: run for real on 2026-08-11, the model called a tool
+/// and correctly reported its result, so this shape is not a guess.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_agent(
     provider: &OllamaProvider,
@@ -649,5 +649,88 @@ mod tests {
 
         assert_eq!(transcript, "Hi there.");
         assert_eq!(server.await.unwrap().len(), 1);
+    }
+
+    /// Not run by `cargo test` or CI — every other test in this module hits
+    /// a hermetic local server precisely so the suite never depends on a
+    /// real model actually being installed. This one is the opposite on
+    /// purpose: `docs/testing.md` names "no live-API test for
+    /// Claude/Ollama/Gemini" as an open gap, and the wire-format doc comment
+    /// on `run_agent` says its continuation shape "could not be verified
+    /// against a live server." This is that verification, kept in the tree
+    /// so it is a `cargo test -- --ignored` away next time rather than a
+    /// one-off someone has to reinvent.
+    ///
+    /// Requires a local Ollama (`ollama serve`) with a tool-calling-capable
+    /// model pulled — override with `DEVOS_TEST_OLLAMA_MODEL` if the default
+    /// isn't installed.
+    #[tokio::test]
+    #[ignore = "needs a real local Ollama server with a tool-calling model"]
+    async fn live_ollama_actually_calls_a_tool() {
+        let model =
+            std::env::var("DEVOS_TEST_OLLAMA_MODEL").unwrap_or_else(|_| "qwen3.5:2b".into());
+
+        struct AddExecutor;
+        #[async_trait::async_trait]
+        impl ToolExecutor for AddExecutor {
+            async fn execute(&self, name: &str, input: &Value) -> Result<String, String> {
+                assert_eq!(name, "add_two_numbers");
+                let a = input["a"].as_f64().ok_or("missing a")?;
+                let b = input["b"].as_f64().ok_or("missing b")?;
+                Ok((a + b).to_string())
+            }
+        }
+
+        let provider = OllamaProvider::new();
+        let tools = vec![ToolDef {
+            name: "add_two_numbers".into(),
+            description: "Adds two numbers and returns the exact sum. Always use this rather than computing a sum yourself.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "a": {"type": "number"},
+                    "b": {"type": "number"},
+                },
+                "required": ["a", "b"],
+            }),
+        }];
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let transcript = run_agent(
+            &provider,
+            None,
+            &model,
+            Some("You are a precise assistant. Always use the add_two_numbers tool for arithmetic instead of computing it yourself."),
+            &[ChatTurn {
+                role: "user".into(),
+                content: "What is 47182 plus 89357? Use the tool.".into(),
+            }],
+            &tools,
+            &AddExecutor,
+            &tx,
+        )
+        .await
+        .expect("live ollama agent run");
+
+        drop(tx);
+        let mut deltas = Vec::new();
+        while let Some(d) = rx.recv().await {
+            deltas.push(d);
+        }
+        let called = deltas
+            .iter()
+            .any(|d| matches!(d, AiDelta::ToolCall { name, .. } if name == "add_two_numbers"));
+        assert!(
+            called,
+            "model did not call add_two_numbers — got transcript {transcript:?}, deltas {deltas:?}"
+        );
+        // Comma-tolerant: a model narrating the tool's result is free to
+        // write "136,539" rather than the bare digit string the tool
+        // returned, and that is still the right answer.
+        let digits_only: String = transcript.chars().filter(char::is_ascii_digit).collect();
+        assert!(
+            digits_only.contains("136539"),
+            "the correct sum (136539) should appear in the model's reply — got {transcript:?}"
+        );
     }
 }

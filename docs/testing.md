@@ -80,10 +80,18 @@ support macOS).
 
 ## Known gaps (honest, not yet closed)
 
-- **No live-API test for Claude/Ollama.** The SSE/NDJSON parsers are tested
-  against real captured frame shapes, but nothing in CI calls a real
-  provider (no key available in CI, and it would be flaky/costly). Manual
-  verification happens by running the app.
+- **No live-API test for Claude/Gemini.** The SSE parsers are tested against
+  real captured frame shapes, but nothing in CI calls either provider (no key
+  available in CI, and it would be flaky/costly). Manual verification
+  happens by running the app.
+  **Ollama is the exception**: `live_ollama_actually_calls_a_tool` in
+  `crates/devos-ai/src/providers/ollama.rs` runs the real agent loop against
+  a local `ollama serve`, checked in as `#[ignore]`d rather than a one-off —
+  `cargo test -p devos-ai -- --ignored` to run it (needs a tool-calling
+  model pulled; `DEVOS_TEST_OLLAMA_MODEL` overrides the default). Run for
+  real on 2026-08-11: the model called the tool and reported its exact
+  result, confirming the NDJSON continuation shape this crate assumed is
+  correct.
 - **The e2e CI job has never run on a GitHub runner.** The old blocker —
   the app hardcoding its database to `app_data_dir()/devos.db`, leaving a CI
   run nowhere isolated to boot — is gone: `DEVOS_DATA_DIR` overrides that

@@ -108,8 +108,9 @@ code and FTS5's word tokenizer would not match `Query` inside `useQuery`. See
   in-memory only, tracked via `TerminalManager`). Embeddings now exist as
   `index_embeddings` (see above) — `sqlite-vec` was evaluated and rejected,
   so no virtual table is planned.
-- **M3 (remainder)** `api_environments` (variables) · the credential-bearing
-  shape of `db_connections`. The table itself now exists, but only in its
+- **M3 (remainder)** the credential-bearing shape of `db_connections`
+  (`api_environments`'s own secret variables are vault-backed now — see
+  [security.md](security.md)). The table itself now exists, but only in its
   SQLite form (name + path); server drivers add a `secret_id` referencing
   `secrets` plus host/port/user/database columns when they land
   ([ADR-0007](adr/0007-sqlite-only-database-manager-first.md))

@@ -341,6 +341,10 @@ pub fn run() {
             let phase = Instant::now();
             tauri::async_runtime::block_on(devos_api::init(&kernel.pool))
                 .map_err(|e| format!("api tables: {e}"))?;
+            // One-time fixup for environments saved before secret values were
+            // vault-backed (SEC-105) — idempotent, safe to run every boot.
+            tauri::async_runtime::block_on(devos_api::migrate_secrets(&kernel.pool, &secrets))
+                .map_err(|e| format!("api secret migration: {e}"))?;
             let api_tables_us = phase.elapsed().as_micros() as u64;
 
             let phase = Instant::now();

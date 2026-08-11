@@ -52,6 +52,7 @@ mod tests {
 
     fn var(key: &str, value: &str) -> ApiEnvVar {
         ApiEnvVar {
+            id: String::new(),
             key: key.into(),
             value: value.into(),
             secret: false,

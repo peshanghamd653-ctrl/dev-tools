@@ -85,6 +85,24 @@ the user's OS account.
   meantime and is what a file-level backup or sync client would pick up.
   Retention is deliberately short and the directory is documented here
   rather than left for someone to find while investigating a leak.
+- **API environment variables marked secret are vault-backed too (SEC-105
+  closed)** — a deliberately different shape from every other secret above.
+  Provider keys and `github_token`/`vercel_token` are write-only: set,
+  overwrite, delete, never read back, because nothing needs to show them
+  again. An `ApiEnvVar` is user data the Environments editor's own reveal
+  toggle is built to show — it round-trips through IPC in plaintext on
+  purpose. What changed is *at-rest* storage only: a variable's value used
+  to sit in the `api_environments.vars` JSON blob unencrypted; a `secret:
+  true` variable's value now lives in the `secrets` table under
+  `api-env-var:{id}` (AES-256-GCM, same as every other secret), with an
+  empty placeholder left in the JSON blob. The vault key is the variable's
+  stable `id`, not its `key` name, so renaming a variable in the editor
+  cannot orphan its vault entry. Deleting a variable, deleting its
+  environment, or toggling `secret` off all clean up the corresponding
+  vault entry (`crates/modules/devos-api/src/repo.rs`). Environments saved
+  before this existed are migrated in place on boot
+  (`devos_api::migrate_secrets`, idempotent — a variable with nothing left
+  in its plaintext JSON value has nothing left to migrate).
 
 ## AI tool-calling — implemented (M2)
 

@@ -734,7 +734,7 @@ function EnvironmentsDialog({
                         aria-label={
                           v.secret ? "Marked secret" : "Mark as secret"
                         }
-                        title="Secret only masks the value in this editor — it is not encrypted"
+                        title="Secret masks the value in this editor and encrypts it at rest"
                         onClick={() => updateVar(i, { secret: !v.secret })}
                       >
                         <span className="text-[10px] font-semibold">S</span>
@@ -759,7 +759,7 @@ function EnvironmentsDialog({
                     onClick={() =>
                       setVars((rows) => [
                         ...rows,
-                        { key: "", value: "", secret: false },
+                        { id: "", key: "", value: "", secret: false },
                       ])
                     }
                   >
@@ -767,8 +767,9 @@ function EnvironmentsDialog({
                     Add variable
                   </Button>
                   <p className="text-[11px] text-muted-foreground">
-                    Marking a variable secret only masks it in this editor —
-                    values are stored as plain text, same as headers.
+                    Marking a variable secret masks it in this editor and
+                    encrypts it at rest. Headers and non-secret values are
+                    still stored as plain text.
                   </p>
                 </div>
               )}

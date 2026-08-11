@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 devos-kernel = { path = "../../devos-kernel" }
+devos-secrets = { path = "../../devos-secrets" }
 reqwest.workspace = true
 tokio.workspace = true
 serde.workspace = true

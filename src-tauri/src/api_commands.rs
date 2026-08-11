@@ -13,7 +13,7 @@ pub async fn api_send(
     state: State<'_, AppState>,
     spec: ApiRequestSpec,
 ) -> Result<ApiResponse, String> {
-    let active = devos_api::active_environment(&state.kernel.pool)
+    let active = devos_api::active_environment(&state.kernel.pool, &state.secrets)
         .await
         .map_err(|e| e.to_string())?;
     let resolved = match &active {
@@ -47,7 +47,7 @@ pub async fn api_send(
 
 #[tauri::command]
 pub async fn api_environments(state: State<'_, AppState>) -> Result<Vec<ApiEnvironment>, String> {
-    devos_api::list_environments(&state.kernel.pool)
+    devos_api::list_environments(&state.kernel.pool, &state.secrets)
         .await
         .map_err(|e| e.to_string())
 }
@@ -69,14 +69,14 @@ pub async fn api_environment_update(
     name: String,
     vars: Vec<ApiEnvVar>,
 ) -> Result<ApiEnvironment, String> {
-    devos_api::update_environment(&state.kernel.pool, &id, &name, &vars)
+    devos_api::update_environment(&state.kernel.pool, &state.secrets, &id, &name, &vars)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn api_environment_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    devos_api::delete_environment(&state.kernel.pool, &id)
+    devos_api::delete_environment(&state.kernel.pool, &state.secrets, &id)
         .await
         .map_err(|e| e.to_string())
 }

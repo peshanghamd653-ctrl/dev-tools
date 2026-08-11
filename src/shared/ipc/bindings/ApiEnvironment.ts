@@ -6,15 +6,15 @@ import type { ApiEnvVar } from "./ApiEnvVar";
  * resolves `{{KEY}}` placeholders against. At most one environment is
  * `active` at a time; `api_send` resolves against whichever one is.
  *
- * **`ApiEnvVar::secret` is not yet backed by the secrets vault.** Every
- * variable, "secret" or not, is stored as plain JSON in `api_environments`
- * — the same place `api_requests.headers` already stores plaintext, a gap
- * this module's own SEC-105 finding already named. Marking a variable
- * secret today buys UI masking only (the value is hidden by default in the
- * editor); it does not encrypt anything, and it does not stop the value
- * from reaching an AI provider if it is later substituted into a request
- * whose contents get shared with a model. Routing secret values through
- * `devos-secrets` instead is real future work, not something this flag
- * should be read as already doing.
+ * **`ApiEnvVar::secret` is backed by the secrets vault (SEC-105).** A
+ * variable marked secret has its value encrypted via
+ * `devos_secrets::SecretStore` under `api-env-var:{ApiEnvVar::id}` — the
+ * `api_environments.vars` JSON blob stores an empty string for it, never
+ * the plaintext. `repo::hydrate` fills the real value back in on every
+ * read (`list_environments`, `active_environment`, and the environment
+ * returned from `create_environment`/`update_environment`), so the editor
+ * and `api_send`'s `{{VAR}}` substitution see it exactly as before —
+ * only at-rest storage changed. A variable that is not secret is still
+ * plain JSON, same as `api_requests.headers`.
  */
 export type ApiEnvironment = { id: string, name: string, vars: Array<ApiEnvVar>, active: boolean, updatedAt: number, };

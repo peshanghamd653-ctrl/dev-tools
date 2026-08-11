@@ -8,7 +8,7 @@ mod substitute;
 
 pub use repo::{
     active_environment, create_environment, delete_environment, delete_request, init,
-    list_environments, list_history, list_requests, record_history, save_request,
+    list_environments, list_history, list_requests, migrate_secrets, record_history, save_request,
     set_active_environment, update_environment,
 };
 pub use send::send_request;
@@ -24,6 +24,8 @@ use devos_kernel::types::CommandDescriptor;
 pub enum ApiError {
     #[error("database error: {0}")]
     Db(#[from] sqlx::Error),
+    #[error("secret store error: {0}")]
+    Secret(#[from] devos_secrets::SecretError),
     #[error("invalid request: {0}")]
     Invalid(String),
     #[error("request failed: {0}")]
@@ -79,13 +81,20 @@ pub struct SavedRequest {
     pub updated_at: i64,
 }
 
-/// One entry in an environment's variable set. `secret` is a display hint
-/// only — see the doc comment on [`ApiEnvironment`] for what that does and
-/// does not mean today.
+/// One entry in an environment's variable set.
+///
+/// `id` is a stable identifier, independent of `key` — it is what
+/// [`SecretStore`](devos_secrets::SecretStore) vault entries for `secret`
+/// variables are keyed by (see [`ApiEnvironment`]'s doc comment), so
+/// renaming `key` never orphans a vault entry. Assigned once, on first
+/// save; a var arriving with an empty `id` (a brand-new row from the
+/// editor) gets one generated for it.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../../src/shared/ipc/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct ApiEnvVar {
+    #[serde(default)]
+    pub id: String,
     pub key: String,
     pub value: String,
     pub secret: bool,
@@ -95,16 +104,16 @@ pub struct ApiEnvVar {
 /// resolves `{{KEY}}` placeholders against. At most one environment is
 /// `active` at a time; `api_send` resolves against whichever one is.
 ///
-/// **`ApiEnvVar::secret` is not yet backed by the secrets vault.** Every
-/// variable, "secret" or not, is stored as plain JSON in `api_environments`
-/// — the same place `api_requests.headers` already stores plaintext, a gap
-/// this module's own SEC-105 finding already named. Marking a variable
-/// secret today buys UI masking only (the value is hidden by default in the
-/// editor); it does not encrypt anything, and it does not stop the value
-/// from reaching an AI provider if it is later substituted into a request
-/// whose contents get shared with a model. Routing secret values through
-/// `devos-secrets` instead is real future work, not something this flag
-/// should be read as already doing.
+/// **`ApiEnvVar::secret` is backed by the secrets vault (SEC-105).** A
+/// variable marked secret has its value encrypted via
+/// `devos_secrets::SecretStore` under `api-env-var:{ApiEnvVar::id}` — the
+/// `api_environments.vars` JSON blob stores an empty string for it, never
+/// the plaintext. `repo::hydrate` fills the real value back in on every
+/// read (`list_environments`, `active_environment`, and the environment
+/// returned from `create_environment`/`update_environment`), so the editor
+/// and `api_send`'s `{{VAR}}` substitution see it exactly as before —
+/// only at-rest storage changed. A variable that is not secret is still
+/// plain JSON, same as `api_requests.headers`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../../src/shared/ipc/bindings/")]
 #[serde(rename_all = "camelCase")]

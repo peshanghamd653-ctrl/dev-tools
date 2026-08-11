@@ -64,7 +64,9 @@ function environment(over: Partial<ApiEnvironment> = {}): ApiEnvironment {
   return {
     id: "e1",
     name: "Production",
-    vars: [{ key: "API_URL", value: "https://api.example.com", secret: false }],
+    vars: [
+      { id: "v1", key: "API_URL", value: "https://api.example.com", secret: false },
+    ],
     active: false,
     updatedAt: 1_700_000_000_000,
     ...over,
@@ -384,7 +386,12 @@ describe("ApiClientPage environments dialog", () => {
     vi.mocked(ipc.apiEnvironmentUpdate).mockResolvedValue({
       ...env,
       vars: [
-        { key: "API_URL", value: "https://api.example.com", secret: false },
+        {
+          id: "v1",
+          key: "API_URL",
+          value: "https://api.example.com",
+          secret: false,
+        },
       ],
     });
     renderWithClient(<ApiClientPage />);
@@ -401,11 +408,14 @@ describe("ApiClientPage environments dialog", () => {
     fireEvent.click(dialog.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(ipc.apiEnvironmentUpdate).toHaveBeenCalledWith(
-        "e1",
-        "Production",
-        [{ key: "API_URL", value: "https://api.example.com", secret: false }],
-      ),
+      expect(ipc.apiEnvironmentUpdate).toHaveBeenCalledWith("e1", "Production", [
+        {
+          id: "",
+          key: "API_URL",
+          value: "https://api.example.com",
+          secret: false,
+        },
+      ]),
     );
   });
 
